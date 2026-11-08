@@ -1,0 +1,571 @@
+# DESIGN.md — Visual design system
+
+The visual language for Coffer is a dark, dense, professional-tool UI
+with hairline structure, compact 28px rows, mono numerals, and two accent colours that
+each carry one meaning.
+
+Architecture and product decisions live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md);
+this file covers how the app looks and feels.
+
+## Source of truth
+
+| | |
+|---|---|
+| Tool | [Paper](https://paper.design) (read via the Paper MCP server) |
+| File | **Festive comet** — <https://app.paper.design/file/01M6GNHMB1RVVHY51G5W61H75N/p-1-0> |
+| Page | `Editor — v1` (`p-1-0`) |
+| Artboards | Editor (`1-0`), Empty file (`JK-0`), 1920×1080 |
+| Token snapshot | [`design/tokens.json`](design/tokens.json), [`design/tokens.css`](design/tokens.css) — content hash `f56b500f`, extracted 2026-11-08 |
+
+The reference artboards show a design-editor app. What carries over to Coffer is the
+**system** (tokens, chrome, components, interaction states, the AI-agent colour role), not
+the editor's features. The coffee-shop mock-up drawn inside the editor canvas is sample
+content; its serif (Fraunces) and cream palette are **not** part of the system.
+
+**Component scope**
+
+| | Components |
+|---|---|
+| Used as specified | Title bar, tab, command bar, kbd, segmented control, list row, section label row, inspector field row, select, toggle, buttons (neutral primary, outline, outline compact, icon, chip), badge, status dot, underline tabs, card, empty state, tooltip, status bar, agent card, progress bar |
+| Repurposed | Floating toolbar → bulk-action bar for multi-selected transactions. Selection overlay → selection language for charts. Agent buttons → inbox actions ("Review 12 suggestions", "Approve all", "Reject all"). Avatar → agent avatar only |
+| Not used | Tool dock; prompt composer (Coffer has no in-app chat: the AI lives in the external MCP client); collaborator avatars and "Share"; the editor's brand mark |
+
+The editor's molten gem is that product's mark, not ours. Until Coffer has its own
+mark, the title bar shows a wordmark: "Coffer", Inter 13/16 600, `--color-text`,
+−0.01em.
+
+**Rules**
+
+1. Paper wins. If this file and the Paper file disagree, the Paper file is right; update
+   this file and re-export the tokens.
+2. Don't invent values. Use the values listed here. Values marked **Proposed** are
+   decided and may be used in code, but they aren't in the Paper file yet. When one is
+   added in Paper, move it into the Tokens tables and drop the marker.
+3. Code references tokens by name, never raw hex or px literals outside the theme module.
+4. New Paper tokens: re-run the Paper MCP `get_tokens` export (json + css) into `design/`
+   and update the tables below in the same change.
+
+## Character
+
+- **Dark, chrome-first.** Near-black chrome around a slightly lighter content canvas.
+  There is no light theme yet.
+- **Hairlines, not boxes.** Panels and sections are separated by 1px `hairline` borders.
+  Information sits directly on surfaces; cards are reserved for things that float or
+  demand attention.
+- **Dense and calm.** 12px body text, 28px rows, 4px spacing grid. Hierarchy comes from
+  weight and colour steps, not size jumps.
+- **Two accents, one job each.** `molten` (orange) means *brand, selection, focus,
+  "you are here"*. `moldavite` (green) means *the AI agent*: presence, its proposals, its
+  progress. Everything else is greyscale.
+- **Numbers are mono.** Coordinates, counts, sizes, and shortcuts use Geist Mono. In
+  Coffer this extends to every amount, date, and figure.
+
+## Tokens
+
+The 35 tokens defined in the Paper file, verbatim. Only eight colour tokens are actually
+bound to nodes (`chrome`, `canvas`, `field`, `hover`, `hairline`, `text`, `molten-soft`,
+`moldavite-soft`); everything else in the artboards is literal values. Those literals
+match the type and spacing tokens, but they are not linked to them.
+
+### Colour
+
+| Token | Value | Role |
+|---|---|---|
+| `--color-chrome` | `#0F0F10` | Title bar, side panels, inspector — the app frame |
+| `--color-canvas` | `#18181A` | Main content area (the "work" surface) |
+| `--color-raised` | `#1A1A1C` | Raised surface on canvas |
+| `--color-field` | `#1F1F22` | Inputs, selects, segmented-control tracks, command bar |
+| `--color-hover` | `#26262A` | Hovered/current row or tab; kbd background |
+| `--color-hairline` | `#232326` | 1px dividers and panel borders |
+| `--color-text` | `#EDEDEF` | Primary text and icons |
+| `--color-text-muted` | `#8E8E93` | Secondary text, labels, inactive tabs, default icons |
+| `--color-text-faint` | `#5C5C61` | Tertiary text, counts, field prefixes (X/Y) |
+| `--color-molten` | `#FF6B1A` | Brand mark, selection outline/handles, measurement labels, notification dot |
+| `--color-molten-soft` | `#FF6B1A24` | Selected row background |
+| `--color-moldavite` | `#7CC48A` | AI agent: primary agent buttons, agent name, live dots, progress |
+| `--color-moldavite-soft` | `#7CC48A1F` | Agent count badges |
+
+### Typography
+
+| Token | Value |
+|---|---|
+| `--font-ui` | `"Inter"` |
+| `--font-mono` | `"Geist Mono"` |
+| `--text-xs` | `11px` |
+| `--text-sm` | `12px` |
+| `--text-md` | `13px` |
+| `--text-lg` | `15px` |
+| `--font-weight-regular` | `450` |
+| `--font-weight-medium` | `550` |
+| `--font-weight-strong` | `650` |
+| `--tracking-tight` | `-0.01em` |
+| `--tracking-caps` | `0.06em` |
+| `--leading-ui` | `16px` |
+
+### Space, size, shape
+
+| Token | Value |
+|---|---|
+| `--spacing-1` … `--spacing-4` | `4px`, `8px`, `12px`, `16px` |
+| `--radius-sm` / `-md` / `-lg` | `4px` / `6px` / `10px` |
+| `--container-panel` | `272px` (left panel width) |
+| `--opacity-muted` | `60%` |
+| `--breakpoint-desktop` | `1920px` |
+
+### Proposed: tokens for values typed into the artboards
+
+The artboards repeat these literal values. Near-duplicates are merged (the visual
+difference is below 1% lightness), so each role has one value.
+
+| Proposed token | Value | Merges | Use |
+|---|---|---|---|
+| `--color-text-secondary` | `#B4B4B9` | `#A1A1A6` (tooltip body) | Text one step below primary: list labels, chips, kbd glyphs, tooltip body, secondary icons |
+| `--color-text-strong` | `#D6D6DA` | | Text on outline buttons, empty-state titles, emphasized values |
+| `--color-icon-faint` | `#6E6E73` | | Chevrons, sort indicators, income bars in charts |
+| `--color-icon-disabled` | `#4A4A4F` | | Disabled icons |
+| `--color-float` | `#141416` | | Floating surfaces (toolbar, cards, popovers), status bar |
+| `--color-control-active` | `#2C2C30` | | Active segment, active icon button, toggle track (off), pressed state |
+| `--color-border` | `#2A2A2E` | | Borders on floating surfaces and chips |
+| `--color-border-strong` | `#2E2E33` | | Outline-button borders, dashed empty states, inline separators, chart baseline |
+| `--color-tooltip-border` | `#333338` | | Tooltip border, kbd inside tooltips |
+| `--color-avatar` | `#3A3A3F` | | Neutral avatar fill |
+| `--color-on-light` | `var(--color-chrome)` | | Text on the neutral primary button |
+| `--color-on-moldavite` | `#0E1710` | | Text on solid moldavite buttons |
+| `--color-moldavite-text` | `#A9D9B2` | | Agent text on dark ("Approve all", agent labels) |
+| `--color-moldavite-text-muted` | `#7E8A81` | | Secondary text inside agent surfaces |
+| `--color-moldavite-text-faint` | `#5C6B60` | | Timestamps inside agent surfaces (non-essential text only; 3.2:1) |
+| `--color-moldavite-surface` | `#111813` | `#121A14` | Agent card fill |
+| `--color-moldavite-surface-raised` | `#162019` | | Agent ghost button, hover on agent card rows |
+| `--color-moldavite-well` | `#1B241D` | `#14231A` | Icon wells and agent avatar fill |
+| `--color-moldavite-border` | `#24352A` | `#2A3D2E` | Agent card border |
+| `--color-moldavite-border-strong` | `#2E4535` | `#2A4031` | Agent outline button border |
+| `--color-moldavite-track` | `#22332A` | | Agent progress-bar track |
+
+The amber marker (`#E7C24A`) becomes `--color-warning` (see Status colours).
+
+Contrast on `--color-canvas`: `text` 15.2:1, `text-secondary` 8.6:1, `text-muted` 5.4:1,
+`text-faint` 2.7:1. **`text-faint` fails WCAG for text**, so use it only for decorative or
+redundant information (counts that are also given elsewhere, field prefixes), never for
+something the user needs to read.
+
+## Type scale
+
+**Proposed weights: 400 / 500 / 600 / 700.** The artboards apply 400 (unset), 500, 550,
+600, 650 and 700, while the tokens say 450/550/650 and are bound to nothing. The
+decision:
+
+| Token | Proposed value | Was | Replaces in artboards |
+|---|---|---|---|
+| `--font-weight-regular` | `400` | `450` | 400 (what actually renders) |
+| `--font-weight-medium` | `500` | `550` | 500 and 550 |
+| `--font-weight-strong` | `600` | `650` | 600 and 650 |
+| `--font-weight-bold` (new) | `700` | — | 700 (badges, agent primary button) |
+
+Why: 400 is what every unset text node already renders at. 550 and 650 sit only 50 units
+from their neighbours, a difference that barely shows at 11–13px. And all four values exist
+as static Inter instances, so the GPUI build doesn't depend on variable-font rendering.
+The component specs below quote the artboards; implement 550 as 500 and 650 as 600.
+
+Line heights snap to a 2px grid. Tracking: tight on large type, open on caps.
+
+| Role | Size / line | Weight | Tracking | Colour | Example |
+|---|---|---|---|---|---|
+| Display | 32 / 38 | 600 | −0.025em | text | Hero heading |
+| Display figure | 32 / 38, Geist Mono | 600 | −0.025em | text | Overview "Spent" total |
+| Figure | 20 / 24, Geist Mono | 600 | −0.01em | text | Overview "Income" and "Net" |
+| Reading heading | 15 / 20 | 600 | −0.01em | text | Headings in saved AI reviews (`--text-lg`) |
+| Reading body | 13 / 20 | 400 | — | text | Body of saved AI reviews |
+| Title | 13 / 16 | 600 | −0.01em | text | Panel header, inspector title |
+| Card title | 13 / 16 | 600 | — | text | Card titles |
+| Section title | 12 / 16 | 600 | — | text | Inspector sections |
+| Body | 12 / 16 | 400–500 | — | text / secondary / muted | Rows, tabs, labels |
+| Button | 12 / 16 | 600 (neutral), 700 (agent), 500 (outline) | — | per button | |
+| Caption | 11 / 14 | 400–500 | — | muted | Subtitles, status bar, small buttons |
+| Section label | 11 / 14 | 600 | +0.06em, UPPERCASE | muted | "ACCOUNTS", table headers |
+| Mono value | 11 / 14 | 400 | — | text / muted | Dates, counts, balances in lists |
+| Mono amount | 12 / 16 | 400 | — | text | Amounts in tables |
+| Mono micro | 10 / 12 | 400–600 | — | secondary / white on molten | Kbd glyphs, chart axis labels, selection labels |
+| Badge | 10 / 12 | 700 | — | moldavite | Count badges |
+
+**For Coffer:** every monetary amount, date, percentage, and count is Geist Mono with
+tabular figures, right-aligned in tables. Inter is for words.
+
+## Layout and sizing
+
+- **Grid:** 4px base (`spacing-1`…`4`). Observed gaps: 2, 4, 6, 8, 10, 12, 16. Prefer
+  the token steps; 6px and 10px appear for tight icon+label pairs and section padding.
+- **App frame:** title bar 40px · left panel 272px · right inspector 296px · status bar 28px.
+  Panels use `chrome` with a 1px `hairline` border on the canvas side.
+- **Control heights:** 16 (toggle, badges, kbd-in-tooltip) · 18 (kbd) · 24 (small button) ·
+  26 (compact button, avatar) · **28 (default: rows, tabs, fields, icon buttons)** ·
+  30 (primary buttons, segmented control) · 36 (dock tools, floating toolbar) · 48 (dock).
+- **Section padding:** inspector sections 14px all round with 8px internal gap; list
+  sections 6px inline / 4px top / 10px bottom; rows 8px inline.
+- **Radius usage:** 2px colour swatches/markers · 3px measurement labels · 4px kbd, inner
+  segments, swatches · **6px rows, fields, tabs, icon buttons** · 7px primary buttons and
+  command bar · 8px segmented track, tooltip, cards in panels, dock tools · 10px floating
+  toolbar, agent card · 12px starter cards · 13px dock · 14px chips (pill) and composer.
+
+## Elevation
+
+Flat by default. Only floating things get shadow.
+
+| Level | Shadow | Used on |
+|---|---|---|
+| Inset highlight | `inset 0 1px 0 #FFFFFF0A` | Active segment in segmented control |
+| Swatch ring | `inset 0 0 0 1px #FFFFFF1F` | Colour swatches |
+| Tooltip | `0 6px 18px #00000066` | Tooltip |
+| Toolbar | `0 8px 24px #00000073` | Contextual action bar |
+| Dock | `0 10px 30px #00000080` | Bottom tool dock |
+| Composer | `0 0 0 4px #7CC48A0F, 0 16px 40px #00000059` | Agent prompt composer (moldavite halo) |
+
+Floating surfaces: `#141416` fill, `#2A2A2E` 1px border, radius 10–13.
+
+## Components
+
+Values below are from the artboards. Names in parentheses are the Paper node IDs, for
+lookup with the Paper MCP (`get_jsx` / `get_computed_styles`).
+
+**Title bar** (`2-0`) — 40px, `chrome`, bottom hairline, 12px left / 8px right padding, 4px gap.
+Brand mark at left (molten faceted gem), command bar centred, window controls right.
+
+**Tab** (`7-0`, `I-0`) — 28px, radius 6, 10px padding, 7px icon gap, 12/16 weight 500,
+`text-muted`. Active: `hover` background, `text`, weight 550, close button (18px, radius 4).
+Optional 8×8 colour marker (radius 2). Tabs are separated by a 1×14 hairline.
+
+**Command bar** (`T-0`) — 340×28, `field` fill, hairline border, radius 7, search icon,
+placeholder in `text-muted`, trailing kbd.
+
+**Kbd** (`Y-0`) — 18px, `hover` fill, radius 4, 5px padding, Geist Mono 11/14, `#B4B4B9`.
+In tooltips: 16px, `#333338`, mono 10/12.
+
+**Segmented control** (`28-0`, `EG-0`) — track `field`, radius 8 (panel) or 6 (inspector),
+2px padding. Active segment `#2C2C30`, radius 6/4, inset highlight, text `text` weight 500.
+Inactive text `text-muted`.
+
+**List row** (`2W-0`, `5D-0`) — 28px, radius 6, 8px inline padding, 6–8px gap, icon +
+label + trailing mono count (`text-faint`, 11/14).
+States: default transparent / `text-secondary` label · hover/current `hover` fill,
+`text` label · **selected `molten-soft` fill, white label**. Nesting indents the row.
+
+**Section label row** (`2F-0`) — 28px, caps label (11/14, 600, +0.06em, `text-muted`),
+trailing icon actions.
+
+**Inspector field row** (`E8-0`, `EY-0`) — 28px, label column 64px (`text-muted` 12/16),
+control fills the rest. Field: `field` fill, radius 6, 8px padding, optional faint prefix
+(e.g. "X") and trailing mono unit.
+
+**Select** (`EA-0`) — field style, 10px left / 8px right, value `text`, chevron 8px
+`#8E8E93`.
+
+**Toggle** (`ER-0`, `14S-0`) — 28×16 track, radius 8, 2px padding, 12px knob.
+Off: track `#2C2C30`, knob `text-muted`. On: track `text` (`#EDEDEF`), knob `chrome`.
+(Neutral, not coloured: switches don't use the accents.)
+
+**Buttons**
+
+| Variant | Spec | Example |
+|---|---|---|
+| Primary (neutral) | 30px, `#EDEDEF` fill, radius 7, 14px padding, `#0F0F10` text 12/16 600 | "Share" |
+| Agent primary | 30px, `moldavite` fill, radius 7, `#0E1710` text 12/16 650–700, optional trailing kbd | "Draft it", "Review 12 changes" |
+| Agent outline | 30px, 1px `#2E4535` border, radius 7, 12px padding, `#A9D9B2` text 12/16 500 | "Undo all" |
+| Agent ghost | 36px, `#162019` fill, radius 8, sparkle icon in moldavite, `#A9D9B2` text 550 | "Ask agent" |
+| Outline | 24px, 1px `#2E2E33` border, radius 6, 9px padding, `#D6D6DA` 11/14 550 | "Connect" |
+| Outline compact | 26px, 1px `hairline` border, radius 6, 8px padding, `#B4B4B9` 11/14 500 | "Main" |
+| Icon button | 28×28, radius 6, icon 12–16px; dock: 36×36 radius 8, active `#2C2C30` with white icon | Panel toggle, dock tools |
+| Chip | 28px, 1px `#2A2A2E` border, radius 14 (pill), 11px padding, `#B4B4B9` 12/16 | "Landing page" |
+
+**Badge** (`DR-0`) — 16px min, radius 8, 4px padding, `moldavite-soft` fill, moldavite
+10/12 700. Agent-only; a neutral badge would use `hover` + `text-muted`.
+
+**Status dot** — 6×6, radius 3. Moldavite = agent connected/live. Molten = unread/new.
+
+**Tabs (underline)** (`DM-0`) — inspector tabs: 12/16 500; active `text` with 1.5px
+`text`-coloured bottom border; inactive `text-muted`.
+
+**Card** (`13M-0`) — `#141416`, 1px `hairline`, radius 12, 16px padding, 6px gap; icon
+well, 13/16 600 title, 11/14 muted body, kbd hints.
+
+**Empty state** (`11K-0`) — dashed 1px `#2E2E33`, radius 8, 16×14 padding, 10px gap,
+title `#D6D6DA` 12/16 550, body muted 11/14, list of kbd + action rows.
+
+**Prompt composer** (`126-0`) — `#141416`, 1px `#2E2E33`, radius 14, 16px padding, moldavite
+halo shadow; 14/22 input; footer row with attach, agent picker, context chip, agent primary
+button.
+
+**Tooltip** (`DE-0`) — `#26262A`, 1px `#333338`, radius 8, 8×10 padding, tooltip shadow;
+title 12/16 600 + kbd, body `#A1A1A6` 11/15.
+
+**Floating toolbar** (`AF-0`) / **dock** (`BF-0`) — `#141416`, 1px `#2A2A2E`, radius 10/13,
+toolbar/dock shadow, 2px gap, separators 1×16–20 `#2E2E33`.
+
+**Status bar** (`CO-0`) — 28px, `#141416`, top hairline, 12px padding, 16px gap, 11/14 muted
+text, mono values, 1×12 separators, status dots.
+
+**Agent card** (`IO-0`, `9K-0`) — `#111813`/`#121A14` fill, 1px `#24352A`/`#2A3D2E` border,
+radius 8–10, 10–12px padding; header (sparkle + agent name in moldavite 600 + muted
+context); list of proposed changes (icon well `#1B241D`, `text-strong` label, mono
+timestamp `#5C6B60`); actions row (agent primary + agent outline).
+
+**Progress bar** (`9Q-0`) — 3px, radius 2, track `#22332A`, fill moldavite.
+
+**Avatar** (`1V-0`) — 26px circle, 2px `chrome` ring, `#3A3A3F` fill, initial 11/14 650.
+Agent avatar: `#14231A` fill, moldavite ring.
+
+**Selection overlay** — molten 1–1.5px outline, 7×7 white handles with molten border,
+molten measurement labels (mono 10/12 600, white). In Coffer this is the
+selection/focus language for charts and tables (e.g. a selected bar or row range).
+
+## Iconography
+
+Inline SVG, outline style: stroke 1.1–1.3px, round caps and joins, no fills except the
+sparkle (agent) and the brand mark. Sizes 10, 12, 14, 16. Colours: `text-muted` default,
+`#B4B4B9` secondary, `text`/white active, `#6E6E73` chevrons, `#4A4A4F` disabled.
+The four-point **sparkle** (`M6 0.5L7.3 4.7L11.5 6L7.3 7.3L6 11.5L4.7 7.3L0.5 6L4.7 4.7Z`)
+is reserved for the AI agent.
+
+## Applying the system to Coffer
+
+**Colour semantics**
+
+| Meaning | Treatment |
+|---|---|
+| Brand, current view, selection, focus | `molten` |
+| Anything from an AI client over MCP: inbox suggestions, saved reviews, "agent connected" | `moldavite` (+ sparkle icon) |
+| Unread/new | molten dot |
+| Problem: over budget, overdrawn, failed import, reconciliation mismatch, destructive action | `danger` (see Status colours) |
+| Caution: budget at 85% or more, unconfirmed transfer pair, import with skipped rows | `warning` |
+| Success: import done, reconciled | Neutral: `text` plus a check icon. No success colour (green belongs to the agent) |
+
+**Money**
+
+- Amounts are Geist Mono, tabular figures, right-aligned, `--color-text`. **Colour never
+  carries the sign**: outflows use a true minus (`−£12.40`, U+2212) and inflows a plus
+  (`+£1,250.00`). Neither is green or red, because green means "agent" and orange means
+  "selected".
+- Each amount shows its own currency symbol. Foreign-currency transactions show the
+  original amount below in mono 10/12 `text-muted` (`€14.50`).
+- Transfers, including pot moves, are `text-muted` with a ⇄ icon. They're excluded from
+  totals, and the dimming says so.
+- Colour appears on money only when it means something beyond the sign: `danger` for a
+  negative balance or an over-budget figure, `warning` for a budget at 85% or more.
+- Thousands separators and decimal marks follow the user's locale; the currency's minor
+  units decide the decimals (JPY shows none).
+
+**Shell mapping (suggested, to be confirmed in Paper)**
+
+| Reference design | Coffer |
+|---|---|
+| Title bar tabs | Views (Overview, Transactions, Trends, Budgets, Net worth, Inbox, Reviews) |
+| Command bar (⌘K) | Search transactions, run commands (import, jump to month) |
+| Left panel: pages + layer tree | Accounts tree with pots nested under their parent; categories |
+| Canvas | Charts and tables |
+| Inspector | Detail for the selected transaction/category/account; rule editor |
+| Agent card + "Review N changes" | Inbox: AI-proposed categories, rules, transfer pairs |
+| Status bar | Import status, last sync, "1 agent connected" (MCP), home currency |
+
+## Proposed: status colours
+
+Chosen to stay clear of both accents: `danger` is a rose, not a red, so it reads as
+distinct from `molten` (ΔE 14.8 in OKLab ×100, against 8.8 for the first red tried, `#F26D78`). `warning`
+reuses the amber that already exists in the file.
+
+| Token | Value | Contrast | Use |
+|---|---|---|---|
+| `--color-danger` | `#E5598E` | 5.2:1 on canvas | Danger text, icons, 6px dots, chart overage |
+| `--color-danger-soft` | `#E5598E1F` | danger text on it 4.5:1 | Danger banner / row background |
+| `--color-on-danger` | `#1A0B11` | 5.6:1 on danger | Text on a solid danger button ("Delete import") |
+| `--color-warning` | `#E7C24A` | 10.3:1 on canvas | Warning text, icons, dots, budget bars at 85% or more |
+| `--color-warning-soft` | `#E7C24A1F` | warning text on it 8.1:1 | Warning banner background |
+| `--color-on-warning` | `#1A1405` | 10.7:1 on warning | Text on solid warning (rare) |
+
+Destructive buttons are outline by default (1px `danger` border, `danger` text); a solid
+danger fill appears only in the final confirmation of a dialog.
+
+## Proposed: data visualisation
+
+**Approach.** Charts are monochrome by default, and colour appears only when categories are
+being compared. Selection uses the same molten language as everywhere else.
+
+**Categorical palette.** Six colours, each with its own lightness step, so they stay
+distinguishable when hue is lost. They avoid the hues of `molten`, `moldavite`, `danger` and
+`warning`. Measured as OKLab ΔE ×100, the closest pair among the six colours and the
+four accent/status colours is **12.2** for normal vision, **7.0** for protanopia and
+**8.2** for deuteranopia (Machado 2009 simulation). Every colour has at least 3:1
+contrast on `canvas` (WCAG non-text contrast).
+
+| Token | Value | OKLCH | Contrast on canvas |
+|---|---|---|---|
+| `--color-chart-1` | `#C1E3FC` | 0.90 0.05 240 | 13.2:1 |
+| `--color-chart-2` | `#FBA0CC` | 0.81 0.12 350 | 9.3:1 |
+| `--color-chart-3` | `#B396E8` | 0.73 0.12 300 | 7.1:1 |
+| `--color-chart-4` | `#1AA0B9` | 0.65 0.11 215 | 5.7:1 |
+| `--color-chart-5` | `#5777C1` | 0.58 0.12 265 | 4.1:1 |
+| `--color-chart-6` | `#92508C` | 0.53 0.12 330 | 3.2:1 |
+| "Other" | 1px `text-muted` outline, `field` fill | — | outline 5.4:1 |
+
+Rules:
+
+- At most six named series; everything else is grouped as "Other". "Other" is drawn as an
+  outline, not a seventh colour: every mid-grey that passes contrast collides with one of
+  the six (or with `danger`) under colour-blindness simulation, while the outline
+  treatment reads as "the rest" for everyone.
+- Colour never stands alone: every series has a direct label or a legend row with its
+  value. Categories keep the same colour on every chart (assigned by spending rank over the
+  last 12 months, then stored on the category).
+- The same colour marks a category in tables: an 8×8 square, radius 2, before the
+  category name.
+- Prefer a ranked bar list (category, mono amount, 3px bar) to a donut. Use a donut only for
+  six slices or fewer, 2px gaps between slices, total in the centre as a display figure.
+
+**Income vs spending (monthly overview).** Spending bars `text-secondary`, income bars
+`icon-faint`, net savings a 1.5px `text` line. Hovered month: tooltip. Selected month:
+1.5px molten outline around the bar pair plus a molten mono label (selection language).
+
+**Chart chrome.**
+
+| Element | Spec |
+|---|---|
+| Axis labels | Geist Mono 10/12, `text-muted` (not `text-faint`: it fails contrast) |
+| Gridlines | Horizontal only, 1px `hairline`; no vertical gridlines, no chart border |
+| Baseline / zero line | 1px `border-strong` |
+| Bars | Radius 2 on the value end; group gap 40% of bar width |
+| Lines | 1.5px, round joins; points hidden until hover (6px dot, 2px `canvas` ring) |
+| Area fill | Series colour at 8% opacity |
+| Budget line | 1px dashed `text-muted`; the part over budget is `danger` |
+| Tooltip | Tooltip component; values in mono; series marker 8×8 radius 2 |
+
+## Proposed: data table (Transactions)
+
+The table sits directly on `canvas`, not in a card, using the list-row language.
+
+| Part | Spec |
+|---|---|
+| Header | 28px, sticky, `canvas` fill, bottom `hairline`; section-label type. Sortable columns show an 8px chevron (`icon-faint`) on hover; the active sort column label is `text` |
+| Day group header | 28px, 8px top padding, no fill: "Tue 14 Oct" 11/14 600 `text-secondary`, daily net right-aligned in mono 11/14 `text-muted` |
+| Row | 28px, radius 6, 8px inline padding, 12px column gap; no row dividers (hairlines only between day groups) |
+| Columns | Merchant (12/16 `text`, truncates, flexible) · Category (8×8 marker + 12/16 `text-secondary`, 180px) · Account (12/16 `text-muted`, 140px; hidden when filtered to one account) · Amount (mono 12/16, right-aligned, min 96px). The date lives in the day header |
+| Hover / selected | `hover` fill / `molten-soft` fill with `text` labels; multi-select with ⇧/⌘ |
+| Bulk actions | Floating toolbar centred 24px above the bottom edge: "3 selected · Categorise · Mark as transfer · Create rule · ✕" |
+| Uncategorised | Dashed 1px `border-strong` marker + "Uncategorised" in `text-muted` |
+| AI-suggested category | 10px sparkle + label in `moldavite-text`; approve/reject from the inspector or the inbox |
+| Transfer | ⇄ icon, merchant and amount in `text-muted`, category "Transfer · Savings pot" |
+| Flagged (reconciliation) | 6px `danger` dot before the amount; tooltip explains |
+| Inline edit | Enter or double-click on Category opens a select popover in place; Esc cancels, Enter commits |
+| Empty | Empty-state component: "No transactions yet" + kbd row "⌘I Import a statement" |
+
+One density only (28px rows). The inspector shows the full detail: raw description in mono
+11/14, notes, original currency, rule that categorised it.
+
+## Proposed: interaction states
+
+| State | Spec |
+|---|---|
+| Hover | Rows, tabs, icon buttons, outline buttons, chips: `hover` fill. Neutral primary: `#FFFFFF`. Agent primary: `#8FD09C` (text contrast 10.2:1) |
+| Pressed | Neutral primary: `text-strong` (`#D6D6DA`). Agent primary: `#6DB27B` (7.2:1). Everything else: `control-active` |
+| Focus (keyboard, focus-visible only) | 1.5px `molten` ring, 2px outside the element, radius = element radius + 2. Rows in scrolling lists draw the ring inset so it isn't clipped. Molten on canvas is 6.2:1 |
+| Selected | `molten-soft` fill; can combine with focus |
+| Disabled | 40% opacity (`--opacity-disabled`, proposed), no hover or pressed, default cursor |
+| Loading | Skeleton blocks in `field`, radius 4, opacity pulsing 60% ↔ 100% over 1.2s. Import progress uses a neutral progress bar (track `border`, fill `text`); the moldavite bar is for agent work only |
+
+## Proposed: motion
+
+| Token (proposed) | Duration | Use |
+|---|---|---|
+| `--motion-fast` | 90ms | Hover and pressed colour changes |
+| `--motion-base` | 150ms | Toggles, segmented control, tooltip and popover in |
+| `--motion-slow` | 220ms | Panels and inspector open/close, sheets, the import dialog |
+| `--motion-chart` | 320ms | Chart data changes (month switch, filters) |
+
+- Easing: `cubic-bezier(0.2, 0, 0, 1)` for entering and moving; exits use
+  `cubic-bezier(0.4, 0, 1, 1)` at two-thirds of the duration. No bounce or spring.
+- Tooltips appear after 500ms; moving between adjacent targets shows the next one
+  immediately; hiding is instant.
+- Charts: bars grow from the baseline on first render only; later changes animate values in
+  place. Numbers never count up. No animation on window resize.
+- Respect the OS reduced-motion setting: everything goes to 0ms except opacity fades, which
+  stay at 90ms or less.
+
+## Proposed: finance screens
+
+Window minimum 1280×800, designed at 1440×900. Shell: title bar with view tabs
+(Overview, Transactions, Trends, Budgets, Net worth, Inbox, Reviews; Inbox carries a
+moldavite count badge when suggestions are pending) and the ⌘K command bar; left panel
+272px; inspector 296px (collapsible); status bar 28px.
+
+**Left panel.** ACCOUNTS section: one row per account with its mono balance right-aligned;
+pots nested 20px under their parent with a pot icon. Net worth total at the top as a
+mono 13/16 600 figure. CATEGORIES section below, used as a filter.
+
+**Overview.** Month switcher (‹ Oct 2026 ›) top-left. Three figures in a row: Spent
+(display figure), Income and Net (figure), each with a caption delta vs last month
+("+8% vs Sep", `text-muted`). Then the 12-month income vs spending chart (240px high).
+Below that, two columns: category breakdown as a ranked bar list (left), and recurring
+payments plus, when suggestions are pending, the agent card "Claude · 12 suggestions" with
+"Review" (right).
+
+**Transactions.** Toolbar: search field (240px), filter chips (Account, Category, Date,
+"Uncategorised 14"), and "Import ⌘I" outline button on the right. Then the data table.
+The inspector shows the selected transaction: merchant as title, amount as display figure,
+field rows (date, account, category select, note), raw description, "Create rule from this"
+and transfer pairing.
+
+**Import (dialog, 760px).** Steps in a segmented control: File → Map → Review.
+- Map: left column of field rows (detected preset "Monzo" as a select at the top, then date
+  column + format, amount, merchant, description, ...); right column, a live preview of the
+  first 10 parsed rows. Rows that fail to parse get the flagged style.
+- Review: "312 new · 16 already imported · 0 flagged" in mono, reconciliation result, and a
+  neutral primary button "Import 312 transactions".
+
+**Trends.** A category or merchant picker at the top (select + search). Below it: the
+pick's monthly spending over 12 months (bars, `text-secondary`, average as a dashed
+`text-muted` line); top merchants as a ranked bar list; and recurring payments as list
+rows (merchant, cadence, mono amount, next expected date), where an increase since the
+last payment is flagged with `warning`.
+
+**Inbox.** Agent cards grouped by kind (Categorisations, Rules, Transfer pairs), each with
+its source ("Claude Code · 2h ago"). Each item has approve ✓ / reject ✕ icon buttons; each
+group has "Approve all (12)" (agent primary) and "Reject all" (agent outline).
+
+**Budgets.** One row per category: name, "£212 of £300" in mono, a 3px bar (fill
+`text-secondary`; `warning` at 85% or more; `danger` over 100%, with the overage drawn
+past the end), remaining amount right-aligned.
+
+**Net worth.** Line chart (`text` line, 8% area) over 12 or 24 months, then account
+balances with their change for the period. Accounts with no balance data (e.g. Monzo
+exports) show a neutral card: "Enter today's balance to include this account".
+
+**Reviews.** List of saved AI reviews (period, title, source client) on the left; the
+selected review in reading type (13/20 body, 15/20 headings) on the right.
+
+**Light theme.** Not in v1.
+
+## Moving the proposals into Paper
+
+When the designer adds these to the Paper file:
+
+1. Create the proposed colour, font-weight and opacity tokens and bind the existing
+   artboard nodes to them. (Motion durations aren't a Paper token type, so they stay in
+   this file.)
+2. Change the three weight tokens to 400/500/600 and add 700.
+3. Design the screens above, then replace the "Proposed" text here with the Paper node IDs.
+4. Re-export `design/tokens.json` and `design/tokens.css`.
+
+## Implementing in GPUI
+
+- **Fonts:** bundle Inter and Geist Mono with the app (both SIL OFL 1.1, compatible with
+  `MIT OR Apache-2.0` distribution; include their licence files). Fraunces is not used.
+- **Weights:** with the proposed 400/500/600/700, bundle the static Inter instances for
+  those four weights (and Geist Mono 400/600), which avoids depending on variable-font
+  rendering. GPUI's `FontWeight` is an `f32` (`gpui` `text_system.rs`), so if the
+  designer keeps 550/650, test them in the GPUI fidelity spike with the variable font.
+- **Motion:** check that GPUI's animation API can express the durations and easing curves
+  above, during the fidelity spike.
+- **Theme module:** one Rust module in `crates/app` maps every token above to a constant
+  or theme field, generated from or checked against `design/tokens.json`. Components
+  never contain raw colour or size literals.
+- **gpui-component:** override its theme with the tokens in this file; replace stock components
+  where their structure doesn't match the specs above (e.g. toggle, segmented control,
+  agent card). Stock styling must not leak into the UI.
+- **Fidelity check:** compare implemented screens against Paper screenshots
+  (`get_screenshot`) at 1x and 2x before marking UI work done.
