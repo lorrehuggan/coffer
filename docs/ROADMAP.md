@@ -36,10 +36,11 @@ parallel. D2 needs M1's first item (the Cargo workspace) so the theme lands in
 
 **D2 — GPUI theme + token showcase (fidelity spike, part 1)**
 
-- ⬜ Theme module in `crates/app` holding every `DESIGN.md` token as typed values (no
+- ✅ Theme module in `crates/app` holding every `DESIGN.md` token as typed values (no
   strings, no literals outside the module)
-- ⬜ Test that checks the Paper-sourced values against `design/tokens.json`, so drift fails
-  the build
+- ✅ Test that checks the Paper-sourced values against `design/tokens.json`, so drift fails
+  the build. Both live in `src/theme/tokens.rs` until the M1 workspace split moves them
+  to `crates/app`
 - ⬜ Bundle fonts: Inter 400/500/600/700 and Geist Mono 400/600 (static instances, SIL OFL,
   licence files included)
 - ⬜ Map `gpui-component`'s theme onto the tokens; list the components that need a custom

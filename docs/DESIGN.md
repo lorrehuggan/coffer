@@ -564,6 +564,12 @@ When the designer adds these to the Paper file:
 - **Theme module:** one Rust module in `crates/app` maps every token above to a constant
   or theme field, generated from or checked against `design/tokens.json`. Components
   never contain raw colour or size literals.
+  Implemented in `src/theme/tokens.rs` (moves to `crates/app` in M1); its drift test
+  fails when `design/tokens.json` changes a value, and pins the exported 450/550/650
+  weights so it also fails once they are updated.
+- **Letter spacing:** GPUI's text style has no letter-spacing property, so the tracking
+  tokens (−0.01em, +0.06em caps, −0.025em display) are stored but can't be applied yet.
+  Decide in the fidelity spike whether that's acceptable or needs a workaround.
 - **gpui-component:** override its theme with the tokens in this file; replace stock components
   where their structure doesn't match the specs above (e.g. toggle, segmented control,
   agent card). Stock styling must not leak into the UI.
