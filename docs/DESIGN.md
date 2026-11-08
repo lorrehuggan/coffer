@@ -11,11 +11,12 @@ this file covers how the app looks and feels.
 
 | | |
 |---|---|
-| Tool | [Paper](https://paper.design) (read via the Paper MCP server) |
-| File | **Festive comet** — <https://app.paper.design/file/01M6GNHMB1RVVHY51G5W61H75N/p-1-0> |
-| Page | `Editor — v1` (`p-1-0`) |
-| Artboards | Editor (`1-0`), Empty file (`JK-0`), 1920×1080 |
-| Token snapshot | [`design/tokens.json`](../design/tokens.json), [`design/tokens.css`](../design/tokens.css) — content hash `f56b500f`, extracted 2026-11-08 |
+| Tool | [Paper](https://paper.design), read and written via the Paper MCP server |
+| Coffer file | **Not created yet.** Created in D1 (see [`ROADMAP.md`](ROADMAP.md)); its URL goes here |
+| Reference file | **Festive comet** — <https://app.paper.design/file/01M6GNHMB1RVVHY51G5W61H75N/p-1-0>. Not Coffer's file: a design-editor app this system was extracted from. Read it for detail; never edit it |
+| Reference page | `Editor — v1` (`p-1-0`) |
+| Reference artboards | Editor (`1-0`), Empty file (`JK-0`), 1920×1080 |
+| Token snapshot | [`design/tokens.json`](../design/tokens.json), [`design/tokens.css`](../design/tokens.css) — exported from the **reference** file, content hash `f56b500f`, extracted 2026-11-08. Replaced by the Coffer file's export in D1 |
 
 The reference artboards show a design-editor app. What carries over to Coffer is the
 **system** (tokens, chrome, components, interaction states, the AI-agent colour role), not
@@ -36,14 +37,15 @@ mark, the title bar shows a wordmark: "Coffer", Inter 13/16 600, `--color-text`,
 
 **Rules**
 
-1. Paper wins. If this file and the Paper file disagree, the Paper file is right; update
-   this file and re-export the tokens.
+1. Paper wins. If this file and the Coffer Paper file disagree, the Paper file is right;
+   update this file and re-export the tokens. Until the Coffer file exists, this file is
+   the spec and the reference file only fills in detail it doesn't record.
 2. Don't invent values. Use the values listed here. Values marked **Proposed** are
-   decided and may be used in code, but they aren't in the Paper file yet. When one is
-   added in Paper, move it into the Tokens tables and drop the marker.
+   decided and may be used in code, but they aren't in Paper yet. When one is
+   added to the Coffer file, move it into the Tokens tables and drop the marker.
 3. Code references tokens by name, never raw hex or px literals outside the theme module.
-4. New Paper tokens: re-run the Paper MCP `get_tokens` export (json + css) into `design/`
-   and update the tables below in the same change.
+4. New Paper tokens: re-run the Paper MCP `get_tokens` export (json + css) from the Coffer
+   file into `design/` and update the tables below in the same change.
 
 ## Character
 
@@ -62,7 +64,7 @@ mark, the title bar shows a wordmark: "Coffer", Inter 13/16 600, `--color-text`,
 
 ## Tokens
 
-The 35 tokens defined in the Paper file, verbatim. Only eight colour tokens are actually
+The 35 tokens defined in the reference file, verbatim. Only eight colour tokens are actually
 bound to nodes (`chrome`, `canvas`, `field`, `hover`, `hairline`, `text`, `molten-soft`,
 `moldavite-soft`); everything else in the artboards is literal values. Those literals
 match the type and spacing tokens, but they are not linked to them.
@@ -223,8 +225,8 @@ Floating surfaces: `#141416` fill, `#2A2A2E` 1px border, radius 10–13.
 
 ## Components
 
-Values below are from the artboards. Names in parentheses are the Paper node IDs, for
-lookup with the Paper MCP (`get_jsx` / `get_computed_styles`).
+Values below are from the reference artboards. Names in parentheses are node IDs in the
+reference file, for lookup with the Paper MCP (`get_jsx` / `get_computed_styles`).
 
 **Title bar** (`2-0`) — 40px, `chrome`, bottom hairline, 12px left / 8px right padding, 4px gap.
 Brand mark at left (molten faceted gem), command bar centred, window controls right.
@@ -540,16 +542,20 @@ selected review in reading type (13/20 body, 15/20 headings) on the right.
 
 **Light theme.** Not in v1.
 
-## Moving the proposals into Paper
+## Setting up the Coffer Paper file
 
-When the designer adds these to the Paper file:
+D1 in [`ROADMAP.md`](ROADMAP.md). The file starts empty; nothing is copied from the
+reference file except the values recorded here.
 
-1. Create the proposed colour, font-weight and opacity tokens and bind the existing
-   artboard nodes to them. (Motion durations aren't a Paper token type, so they stay in
-   this file.)
-2. Change the three weight tokens to 400/500/600 and add 700.
-3. Design the screens above, then replace the "Proposed" text here with the Paper node IDs.
-4. Re-export `design/tokens.json` and `design/tokens.css`.
+1. Create the file and record its URL under "Source of truth".
+2. Create every token in this file: the reference tokens, with the three weight tokens at
+   400/500/600 plus 700, and the proposed colour and opacity tokens. (Motion durations
+   aren't a Paper token type, so they stay in this file.)
+3. Build a foundations artboard and a components artboard from those tokens only, and
+   replace the reference node IDs in "Components" with the Coffer file's node IDs.
+4. Design the screens above (D3, D4, D6), then replace the "Proposed" text here with the
+   Paper node IDs.
+5. Export `design/tokens.json` and `design/tokens.css` from the Coffer file.
 
 ## Implementing in GPUI
 

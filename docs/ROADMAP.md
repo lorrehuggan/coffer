@@ -22,17 +22,24 @@ Each milestone ends with something usable, and has explicit exit criteria.
 ## Design track — runs alongside M1–M2 ⬜
 
 Prove the visual system in Paper and in GPUI before the GUI milestones depend on it.
-Specs live in [`DESIGN.md`](DESIGN.md). D1 and D2 are independent and can run in
-parallel. D2 needs M1's first item (the Cargo workspace) so the theme lands in
-`crates/app`. D5 needs D2 and D3.
+Specs live in [`DESIGN.md`](DESIGN.md). Coffer has no Paper file yet: "Festive comet" is
+a reference file only, so D1 starts a fresh one and D3–D6 are designed in it. D1 and D2
+are independent and can run in parallel. D2 needs M1's first item (the Cargo workspace)
+so the theme lands in `crates/app`. D3 and D4 need D1; D5 needs D2 and D3.
 
-**D1 — Tokens in Paper**
+**D1 — Coffer Paper file: tokens and components**
 
-- ⬜ Add the proposed colour, font-weight and opacity tokens from `DESIGN.md`; change the
-  weight tokens to 400/500/600 and add 700
-- ⬜ Bind the existing artboard nodes to tokens
-- ⬜ Re-export `design/tokens.json` / `design/tokens.css`; drop the "Proposed" marks for
-  everything now in Paper
+- ⬜ Create the Coffer file in Paper (via the Paper MCP); record its URL in `DESIGN.md` →
+  "Source of truth"
+- ⬜ Create every token in `DESIGN.md`: the reference set plus the "Proposed" colour,
+  font-weight and opacity tokens, with weights at 400/500/600/700
+- ⬜ Foundations artboard: colour swatches, type scale, spacing and radii, built from tokens
+  only (no literal values)
+- ⬜ Components artboard: the components `DESIGN.md` uses as specified (buttons in every
+  state, list row, transaction row with mono amounts, field, select, toggle, segmented
+  control, badge, chip, agent card, …), every node bound to tokens
+- ⬜ Export `design/tokens.json` / `design/tokens.css` from the new file; drop the "Proposed"
+  marks; update the D2 drift test, which pins the reference file's 450/550/650 weights
 
 **D2 — GPUI theme + token showcase (fidelity spike, part 1)**
 
