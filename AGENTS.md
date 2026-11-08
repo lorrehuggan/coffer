@@ -8,8 +8,8 @@ charts, and exposes the data to AI clients through an MCP server.
 
 - **Design and rationale:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — read before changing
   architecture, schema, import behaviour, or the MCP surface.
-- **What to build next:** [`ROADMAP.md`](ROADMAP.md) — milestones and status.
-- **Visual design system:** [`DESIGN.md`](DESIGN.md) (sourced from the Paper
+- **What to build next:** [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestones and status.
+- **Visual design system:** [`docs/DESIGN.md`](docs/DESIGN.md) (sourced from the Paper
   file) — read before any UI work. Use its tokens and component specs; never invent
   colours, sizes, or radii, and never ship stock `gpui-component` styling. Missing values
   get designed in Paper first.
@@ -114,6 +114,6 @@ Changing any of these needs an explicit decision recorded in `docs/ARCHITECTURE.
   `MIT OR Apache-2.0`.
 - Add or update tests with every behaviour change. Importer quirks found in real files
   (e.g. Monzo refunds appearing as positive "Money Out") become fixture rows plus tests.
-- When a roadmap item is finished, tick it in `ROADMAP.md`. When a design decision
+- When a roadmap item is finished, tick it in `docs/ROADMAP.md`. When a design decision
   changes, update `docs/ARCHITECTURE.md` in the same change.
 - Don't commit, push, or tag unless the user asks.

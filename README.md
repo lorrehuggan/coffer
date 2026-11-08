@@ -6,7 +6,7 @@ and lets AI clients (Claude Code, Claude Desktop, Codex) query your data through
 MCP server.
 
 > **Status:** early development (milestone M0). The app is currently a GPUI
-> hello-world; see [`ROADMAP.md`](ROADMAP.md) for what comes next.
+> hello-world; see [`docs/ROADMAP.md`](docs/ROADMAP.md) for what comes next.
 
 ## Principles
 
@@ -49,10 +49,19 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): design, data model, import pipeline,
   MCP surface
-- [`ROADMAP.md`](ROADMAP.md): milestones and status
-- [`DESIGN.md`](DESIGN.md): visual design system and tokens
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): milestones and status
+- [`docs/DESIGN.md`](docs/DESIGN.md): visual design system and tokens
 - [`AGENTS.md`](AGENTS.md): guidelines for AI coding agents
 
 ## License
 
-Intended to be dual-licensed under MIT or Apache-2.0 (license files not yet added).
+Licensed under either of
+
+- Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE))
+- MIT license ([`LICENSE-MIT`](LICENSE-MIT))
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for
+inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual
+licensed as above, without any additional terms or conditions.

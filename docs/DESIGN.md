@@ -4,7 +4,7 @@ The visual language for Coffer is a dark, dense, professional-tool UI
 with hairline structure, compact 28px rows, mono numerals, and two accent colours that
 each carry one meaning.
 
-Architecture and product decisions live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md);
+Architecture and product decisions live in [`ARCHITECTURE.md`](ARCHITECTURE.md);
 this file covers how the app looks and feels.
 
 ## Source of truth
@@ -15,7 +15,7 @@ this file covers how the app looks and feels.
 | File | **Festive comet** — <https://app.paper.design/file/01M6GNHMB1RVVHY51G5W61H75N/p-1-0> |
 | Page | `Editor — v1` (`p-1-0`) |
 | Artboards | Editor (`1-0`), Empty file (`JK-0`), 1920×1080 |
-| Token snapshot | [`design/tokens.json`](design/tokens.json), [`design/tokens.css`](design/tokens.css) — content hash `f56b500f`, extracted 2026-11-08 |
+| Token snapshot | [`design/tokens.json`](../design/tokens.json), [`design/tokens.css`](../design/tokens.css) — content hash `f56b500f`, extracted 2026-11-08 |
 
 The reference artboards show a design-editor app. What carries over to Coffer is the
 **system** (tokens, chrome, components, interaction states, the AI-agent colour role), not

@@ -3,7 +3,7 @@
 Coffer is a local-first personal finance dashboard: import bank statements,
 see where your money goes, and talk to your data through any MCP-capable AI client
 (Claude Code, Claude Desktop, Codex). Design decisions live in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); this file tracks what gets built, in what order.
+[`ARCHITECTURE.md`](ARCHITECTURE.md); this file tracks what gets built, in what order.
 
 Status legend: ✅ done · 🚧 in progress · ⬜ not started
 
@@ -83,7 +83,7 @@ screen closely enough that the designer signs off.
 Import real statements into a local database from the command line.
 
 - ⬜ Convert to a Cargo workspace: `crates/core`, `crates/import`, `crates/mcp`, `crates/app`
-- ⬜ Add `LICENSE-MIT`, `LICENSE-APACHE`; set `license = "MIT OR Apache-2.0"`
+- ✅ Add `LICENSE-MIT`, `LICENSE-APACHE`; set `license = "MIT OR Apache-2.0"`
 - ⬜ SQLite setup: platform data dir, WAL mode, 0600 permissions, versioned migrations
 - ⬜ Schema: accounts, import batches, transactions, balance snapshots, categories,
   rules, transfer groups, budgets, FX rates, suggestions, reports
