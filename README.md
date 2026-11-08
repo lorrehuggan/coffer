@@ -66,6 +66,9 @@ Licensed under either of
 
 at your option.
 
+The bundled fonts in [`assets/fonts/`](assets/fonts/) (Inter and Geist Mono) are
+licensed separately under the SIL Open Font License 1.1; see the `OFL.txt` beside each.
+
 Unless you explicitly state otherwise, any contribution intentionally submitted for
 inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual
 licensed as above, without any additional terms or conditions.

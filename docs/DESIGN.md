@@ -561,6 +561,10 @@ reference file except the values recorded here.
 
 - **Fonts:** bundle Inter and Geist Mono with the app (both SIL OFL 1.1, compatible with
   `MIT OR Apache-2.0` distribution; include their licence files). Fraunces is not used.
+  Implemented: the files (Inter 4.1, Geist 1.9.2) and their `OFL.txt` are in
+  `assets/fonts/`; `src/theme/fonts.rs` compiles them into the binary, registers them at
+  startup, and sets them as `gpui-component`'s UI and mono families. Startup fails if a
+  face doesn't resolve to itself, so a missing weight can't silently fall back.
 - **Weights:** with the proposed 400/500/600/700, bundle the static Inter instances for
   those four weights (and Geist Mono 400/600), which avoids depending on variable-font
   rendering. GPUI's `FontWeight` is an `f32` (`gpui` `text_system.rs`), so if the

@@ -876,6 +876,7 @@ version = "0.1.0"
 dependencies = [
  "gpui-kit",
  "serde_json",
+ "ttf-parser",
 ]
 
 [[package]]

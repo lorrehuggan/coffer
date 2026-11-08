@@ -28,6 +28,7 @@ fn main() {
         .run(move |cx| {
             // Must be called before using any GPUI Kit components.
             gpui_kit::init(cx);
+            coffer::theme::fonts::install(cx).expect("Failed to load the bundled fonts");
 
             gpui_kit::open_window(WindowOptions::default(), cx, |_, cx| cx.new(|_| HelloWorld))
                 .expect("Failed to open window");

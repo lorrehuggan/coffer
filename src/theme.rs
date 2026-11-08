@@ -3,4 +3,5 @@
 //! Lives in the root crate until the M1 workspace split, then moves to
 //! `crates/app`.
 
+pub mod fonts;
 pub mod tokens;
