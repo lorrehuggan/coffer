@@ -23,6 +23,7 @@ in
 
   packages = with pkgs; [
     git
+    lefthook
     pkg-config
     clang
     openssl
@@ -39,6 +40,8 @@ in
   enterShell = ''
     rustc --version
     cargo --version
+    # Install/refresh git hooks from lefthook.yml (idempotent, quiet).
+    lefthook install >/dev/null
   '';
 
   enterTest = ''

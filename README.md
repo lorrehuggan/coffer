@@ -45,6 +45,10 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
+A [lefthook](https://lefthook.dev) `pre-push` hook (installed automatically when the
+devenv shell loads) runs fmt, clippy, tests, and docs, and blocks pushing bank exports
+or databases outside `fixtures/`. Run it by hand with `lefthook run pre-push --force`.
+
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): design, data model, import pipeline,

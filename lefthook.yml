@@ -1,0 +1,40 @@
+# Git hooks: https://lefthook.dev
+#
+# Only pre-push is used: commits stay fast, nothing broken leaves the machine.
+# lefthook is provided by the devenv shell and installed on shell entry.
+# Run manually: lefthook run pre-push
+# Bypass in an emergency: LEFTHOOK=0 git push   (or git push --no-verify)
+
+min_version: 2.0.0
+no_tty: true
+
+pre-push:
+  # Cheapest first, stop at the first failure.
+  piped: true
+  jobs:
+    - name: no-bank-data
+      # Refuse to push real statements or databases outside fixtures/.
+      script: "no-bank-data.sh"
+      runner: bash
+      use_stdin: true
+
+    - name: lockfile
+      # Cargo.lock must match Cargo.toml; --locked fails rather than rewrites.
+      run: cargo metadata --locked --format-version 1 > /dev/null
+
+    - name: fmt
+      run: cargo fmt --all -- --check
+
+    - name: clippy
+      run: >-
+        cargo clippy --workspace --all-targets --all-features --locked
+        -- -D warnings
+
+    - name: test
+      run: cargo test --workspace --all-features --locked
+
+    - name: doc
+      # Broken intra-doc links and malformed docs are errors.
+      run: cargo doc --workspace --no-deps --all-features --locked
+      env:
+        RUSTDOCFLAGS: -D warnings

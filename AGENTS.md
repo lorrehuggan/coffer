@@ -37,11 +37,18 @@ cargo test -p <crate> <name>                      # one crate / test (workspace)
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 devenv test                                       # environment check (cargo check)
+lefthook run pre-push --force                      # everything the pre-push hook runs
 ```
 
 Before reporting work as done: `cargo fmt --all`, clippy with `-D warnings`, and
 `cargo test` pass. The GUI can't be exercised headlessly; say so when a change is only
 build-verified.
+
+Git hooks are managed by lefthook (`lefthook.yml`, installed on devenv shell entry).
+Only `pre-push` is used: data guard (no statements/databases outside `fixtures/`),
+`--locked` lockfile check, fmt, clippy `-D warnings`, tests, and docs with
+`RUSTDOCFLAGS=-D warnings`. There is no CI yet, so this hook is the gate; don't bypass
+it with `--no-verify`.
 
 ## Architecture (target layout)
 
