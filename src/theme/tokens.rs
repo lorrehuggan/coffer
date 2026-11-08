@@ -6,19 +6,14 @@
 //! Two kinds of values live here:
 //!
 //! - **Exported tokens**: the tokens in `design/tokens.json` /
-//!   `design/tokens.css`. Their names mirror the CSS custom properties
-//!   (`--color-text-muted` → [`color::TEXT_MUTED`], `--spacing-2` →
-//!   [`spacing::S2`]). A test checks them against
-//!   `design/tokens.json`, so a re-export that changes a value fails the build.
-//! - **Proposed tokens**: values `DESIGN.md` marks as *Proposed*. They are
-//!   decided and may be used, but are not in the token export yet. Each one
-//!   says so in its docs. When one is added to the export, add it to the drift
-//!   test.
-//!
-//! The font-weight tokens are the one deliberate disagreement with the export:
-//! it still has 450/550/650, and `DESIGN.md` decides 400/500/600/700. The drift
-//! test pins the exported values, so it fails (and asks for this override to
-//! be removed) once the export is updated.
+//!   `design/tokens.css`, exported from the Coffer Paper file. Each constant's
+//!   docs start with its CSS custom property (`--color-text-muted` →
+//!   [`color::TEXT_MUTED`], `--spacing-2` → [`spacing::S2`]). A test checks every
+//!   exported token against its constant, so a re-export that adds, removes or
+//!   changes a token fails the build until this module follows.
+//! - **Code-only values**: things Paper has no token type for (motion, shadows,
+//!   border and ring widths, the minimum window size) and values derived from
+//!   tokens ([`color::CHART`]). `DESIGN.md` is their source.
 
 use std::time::Duration;
 
@@ -48,8 +43,7 @@ const fn translucent(rgba: u32) -> Rgba {
 pub mod color {
     use super::{Rgba, opaque, translucent};
 
-    // Exported tokens.
-
+    // Surfaces, text and the two accents.
     /// `--color-chrome`: title bar, side panels, inspector (the app frame).
     pub const CHROME: Rgba = opaque(0x0F0F10);
     /// `--color-canvas`: main content area (the "work" surface).
@@ -84,97 +78,108 @@ pub mod color {
     /// `--color-moldavite-soft`: agent count badges.
     pub const MOLDAVITE_SOFT: Rgba = translucent(0x7CC48A1F);
 
-    // Proposed: neutrals typed into the artboards.
+    // Neutrals.
 
-    /// Proposed. Text one step below primary: list labels, chips, kbd glyphs,
-    /// tooltip body, secondary icons, spending bars.
+    /// `--color-text-secondary`: text one step below primary: list labels,
+    /// chips, kbd glyphs, tooltip body, secondary icons, spending bars.
     pub const TEXT_SECONDARY: Rgba = opaque(0xB4B4B9);
-    /// Proposed. Text on outline buttons, empty-state titles, emphasized
-    /// values; pressed neutral primary button.
+    /// `--color-text-strong`: text on outline buttons, empty-state titles,
+    /// emphasized values; pressed neutral primary button.
     pub const TEXT_STRONG: Rgba = opaque(0xD6D6DA);
-    /// Proposed. Chevrons, sort indicators, income bars in charts.
+    /// `--color-icon-faint`: chevrons, sort indicators, income bars in charts.
     pub const ICON_FAINT: Rgba = opaque(0x6E6E73);
-    /// Proposed. Disabled icons.
+    /// `--color-icon-disabled`: disabled icons.
     pub const ICON_DISABLED: Rgba = opaque(0x4A4A4F);
-    /// Proposed. Floating surfaces (toolbar, cards, popovers), status bar.
+    /// `--color-float`: floating surfaces (toolbar, cards, popovers), status bar.
     pub const FLOAT: Rgba = opaque(0x141416);
-    /// Proposed. Active segment, active icon button, toggle track (off),
-    /// pressed state.
+    /// `--color-control-active`: active segment, active icon button, toggle
+    /// track (off), pressed state.
     pub const CONTROL_ACTIVE: Rgba = opaque(0x2C2C30);
-    /// Proposed. Borders on floating surfaces and chips; neutral progress track.
+    /// `--color-border`: borders on floating surfaces and chips; neutral
+    /// progress track.
     pub const BORDER: Rgba = opaque(0x2A2A2E);
-    /// Proposed. Outline-button borders, dashed empty states, inline
-    /// separators, chart baseline.
+    /// `--color-border-strong`: outline-button borders, dashed empty states,
+    /// inline separators, chart baseline.
     pub const BORDER_STRONG: Rgba = opaque(0x2E2E33);
-    /// Proposed. Tooltip border, kbd inside tooltips.
+    /// `--color-tooltip-border`: tooltip border, kbd inside tooltips.
     pub const TOOLTIP_BORDER: Rgba = opaque(0x333338);
-    /// Proposed. Neutral avatar fill.
+    /// `--color-avatar`: neutral avatar fill.
     pub const AVATAR: Rgba = opaque(0x3A3A3F);
-    /// Proposed. Text on the neutral primary button.
+    /// `--color-on-light` (an alias of `--color-chrome`): text on the neutral
+    /// primary button.
     pub const ON_LIGHT: Rgba = CHROME;
-    /// White: selected-row labels, selection handles, text on molten
+    /// `--color-white`: selected-row labels, selection handles, text on molten
     /// measurement labels, hovered neutral primary button.
     pub const WHITE: Rgba = opaque(0xFFFFFF);
 
-    // Proposed: agent (moldavite) family.
+    // Agent (moldavite) family.
 
-    /// Proposed. Text on solid moldavite buttons.
+    /// `--color-on-moldavite`: text on solid moldavite buttons.
     pub const ON_MOLDAVITE: Rgba = opaque(0x0E1710);
-    /// Proposed. Hovered agent primary button (text contrast 10.2:1).
+    /// `--color-moldavite-hover`: hovered agent primary button (text contrast
+    /// 10.2:1).
     pub const MOLDAVITE_HOVER: Rgba = opaque(0x8FD09C);
-    /// Proposed. Pressed agent primary button (text contrast 7.2:1).
+    /// `--color-moldavite-pressed`: pressed agent primary button (text contrast
+    /// 7.2:1).
     pub const MOLDAVITE_PRESSED: Rgba = opaque(0x6DB27B);
-    /// Proposed. Agent text on dark ("Approve all", agent labels,
-    /// AI-suggested categories).
+    /// `--color-moldavite-text`: agent text on dark ("Approve all", agent
+    /// labels, AI-suggested categories).
     pub const MOLDAVITE_TEXT: Rgba = opaque(0xA9D9B2);
-    /// Proposed. Secondary text inside agent surfaces.
+    /// `--color-moldavite-text-muted`: secondary text inside agent surfaces.
     pub const MOLDAVITE_TEXT_MUTED: Rgba = opaque(0x7E8A81);
-    /// Proposed. Timestamps inside agent surfaces. Non-essential text only
-    /// (3.2:1).
+    /// `--color-moldavite-text-faint`: timestamps inside agent surfaces.
+    /// Non-essential text only (3.2:1).
     pub const MOLDAVITE_TEXT_FAINT: Rgba = opaque(0x5C6B60);
-    /// Proposed. Agent card fill.
+    /// `--color-moldavite-surface`: agent card fill.
     pub const MOLDAVITE_SURFACE: Rgba = opaque(0x111813);
-    /// Proposed. Agent ghost button, hover on agent card rows.
+    /// `--color-moldavite-surface-raised`: agent ghost button, hover on agent
+    /// card rows, hovered agent outline button.
     pub const MOLDAVITE_SURFACE_RAISED: Rgba = opaque(0x162019);
-    /// Proposed. Icon wells and agent avatar fill.
+    /// `--color-moldavite-well`: icon wells and agent avatar fill.
     pub const MOLDAVITE_WELL: Rgba = opaque(0x1B241D);
-    /// Proposed. Agent card border.
+    /// `--color-moldavite-border`: agent card border.
     pub const MOLDAVITE_BORDER: Rgba = opaque(0x24352A);
-    /// Proposed. Agent outline button border.
+    /// `--color-moldavite-border-strong`: agent outline button border.
     pub const MOLDAVITE_BORDER_STRONG: Rgba = opaque(0x2E4535);
-    /// Proposed. Agent progress-bar track.
+    /// `--color-moldavite-track`: agent progress-bar track.
     pub const MOLDAVITE_TRACK: Rgba = opaque(0x22332A);
 
-    // Proposed: status colours.
+    // Status colours.
 
-    /// Proposed. Danger text, icons, 6px dots, chart overage, destructive
-    /// outline buttons (5.2:1 on canvas).
+    /// `--color-danger`: danger text, icons, 6px dots, chart overage,
+    /// destructive outline buttons (5.2:1 on canvas).
     pub const DANGER: Rgba = opaque(0xE5598E);
-    /// Proposed. Danger banner / row background.
+    /// `--color-danger-soft`: danger banner / row background.
     pub const DANGER_SOFT: Rgba = translucent(0xE5598E1F);
-    /// Proposed. Text on a solid danger button (5.6:1 on danger).
+    /// `--color-on-danger`: text on a solid danger button (5.6:1 on danger).
     pub const ON_DANGER: Rgba = opaque(0x1A0B11);
-    /// Proposed. Warning text, icons, dots, budget bars at 85% or more
+    /// `--color-danger-hover`: hovered solid danger button ([`ON_DANGER`] text
+    /// on it 6.7:1).
+    pub const DANGER_HOVER: Rgba = opaque(0xED6F9B);
+    /// `--color-danger-pressed`: pressed solid danger button ([`ON_DANGER`]
+    /// text on it 4.5:1).
+    pub const DANGER_PRESSED: Rgba = opaque(0xD04A7E);
+    /// `--color-warning`: warning text, icons, dots, budget bars at 85% or more
     /// (10.3:1 on canvas).
     pub const WARNING: Rgba = opaque(0xE7C24A);
-    /// Proposed. Warning banner background.
+    /// `--color-warning-soft`: warning banner background.
     pub const WARNING_SOFT: Rgba = translucent(0xE7C24A1F);
-    /// Proposed. Text on solid warning (rare; 10.7:1 on warning).
+    /// `--color-on-warning`: text on solid warning (rare; 10.7:1 on warning).
     pub const ON_WARNING: Rgba = opaque(0x1A1405);
 
-    // Proposed: categorical chart palette.
+    // Categorical chart palette.
 
-    /// Proposed. Chart series 1 (13.2:1 on canvas).
+    /// `--color-chart-1`: chart series 1 (13.2:1 on canvas).
     pub const CHART_1: Rgba = opaque(0xC1E3FC);
-    /// Proposed. Chart series 2 (9.3:1 on canvas).
+    /// `--color-chart-2`: chart series 2 (9.3:1 on canvas).
     pub const CHART_2: Rgba = opaque(0xFBA0CC);
-    /// Proposed. Chart series 3 (7.1:1 on canvas).
+    /// `--color-chart-3`: chart series 3 (7.1:1 on canvas).
     pub const CHART_3: Rgba = opaque(0xB396E8);
-    /// Proposed. Chart series 4 (5.7:1 on canvas).
+    /// `--color-chart-4`: chart series 4 (5.7:1 on canvas).
     pub const CHART_4: Rgba = opaque(0x1AA0B9);
-    /// Proposed. Chart series 5 (4.1:1 on canvas).
+    /// `--color-chart-5`: chart series 5 (4.1:1 on canvas).
     pub const CHART_5: Rgba = opaque(0x5777C1);
-    /// Proposed. Chart series 6 (3.2:1 on canvas).
+    /// `--color-chart-6`: chart series 6 (3.2:1 on canvas).
     pub const CHART_6: Rgba = opaque(0x92508C);
     /// The six categorical series in rank order. "Other" is not a seventh
     /// colour: draw it as a 1px [`TEXT_MUTED`] outline on [`FIELD`].
@@ -194,7 +199,8 @@ pub mod font {
 pub mod text {
     use super::{Pixels, px};
 
-    /// Mono micro and badges: kbd glyphs, chart axis labels, selection labels.
+    /// `--text-2xs`: mono micro and badges: kbd glyphs, chart axis labels,
+    /// selection labels.
     pub const MICRO: Pixels = px(10.);
     /// `--text-xs`: captions, section labels, mono values.
     pub const XS: Pixels = px(11.);
@@ -204,9 +210,9 @@ pub mod text {
     pub const MD: Pixels = px(13.);
     /// `--text-lg`: reading headings.
     pub const LG: Pixels = px(15.);
-    /// Overview "Income" and "Net" figures.
+    /// `--text-xl`: Overview "Income" and "Net" figures.
     pub const FIGURE: Pixels = px(20.);
-    /// Display headings and the display figure.
+    /// `--text-2xl`: display headings and the display figure.
     pub const DISPLAY: Pixels = px(32.);
 }
 
@@ -214,35 +220,34 @@ pub mod text {
 pub mod leading {
     use super::{Pixels, px};
 
-    /// Paired with [`super::text::MICRO`].
+    /// `--leading-micro`: paired with [`super::text::MICRO`].
     pub const MICRO: Pixels = px(12.);
-    /// Paired with [`super::text::XS`].
+    /// `--leading-caption`: paired with [`super::text::XS`].
     pub const CAPTION: Pixels = px(14.);
     /// `--leading-ui`: paired with [`super::text::SM`] and [`super::text::MD`].
     pub const UI: Pixels = px(16.);
-    /// Reading type: 13/20 body and 15/20 headings.
+    /// `--leading-reading`: reading type, 13/20 body and 15/20 headings.
     pub const READING: Pixels = px(20.);
-    /// Paired with [`super::text::FIGURE`].
+    /// `--leading-figure`: paired with [`super::text::FIGURE`].
     pub const FIGURE: Pixels = px(24.);
-    /// Paired with [`super::text::DISPLAY`].
+    /// `--leading-display`: paired with [`super::text::DISPLAY`].
     pub const DISPLAY: Pixels = px(38.);
 }
 
-/// Font weights.
-///
-/// Proposed values (400/500/600/700) that override the exported 450/550/650 tokens;
-/// all four exist as static Inter instances. Artboard specs quoting 550 mean
-/// [`MEDIUM`](weight::MEDIUM) and 650 mean [`STRONG`](weight::STRONG).
+/// Font weights. All four exist as static Inter instances. Artboard specs from
+/// the reference file that quote 550 mean [`MEDIUM`](weight::MEDIUM) and 650
+/// mean [`STRONG`](weight::STRONG).
 pub mod weight {
     use super::FontWeight;
 
-    /// `--font-weight-regular` (exported: 450).
+    /// `--font-weight-regular`: body, captions, mono values and amounts.
     pub const REGULAR: FontWeight = FontWeight(400.);
-    /// `--font-weight-medium` (exported: 550).
+    /// `--font-weight-medium`: emphasised body, outline buttons.
     pub const MEDIUM: FontWeight = FontWeight(500.);
-    /// `--font-weight-strong` (exported: 650).
+    /// `--font-weight-strong`: titles, section labels, neutral primary button,
+    /// display.
     pub const STRONG: FontWeight = FontWeight(600.);
-    /// Proposed `--font-weight-bold`: badges, agent primary button.
+    /// `--font-weight-bold`: badges, agent primary button.
     pub const BOLD: FontWeight = FontWeight(700.);
 }
 
@@ -255,98 +260,111 @@ pub mod tracking {
     pub const TIGHT: f32 = -0.01;
     /// `--tracking-caps`: uppercase section labels.
     pub const CAPS: f32 = 0.06;
-    /// Display headings and the display figure.
+    /// `--tracking-display`: display headings and the display figure.
     pub const DISPLAY: f32 = -0.025;
 }
 
-/// Spacing on the 4px grid. `Sn` is `n × 4px`, so `S1`–`S4` are the exported
-/// `--spacing-1`–`--spacing-4`; the half steps are the observed tight gaps.
+/// Spacing on the 4px grid. `Sn` is `--spacing-n` (`n × 4px`); half steps write
+/// the `.` as `_` (`S1_5` is `--spacing-1_5`, 6px). Component geometry that Paper
+/// also stores as `spacing` tokens lives in [`size`].
 pub mod spacing {
     use super::{Pixels, px};
 
-    /// Separator and toolbar gaps.
+    /// `--spacing-0_5`: separator and toolbar gaps.
     pub const S0_5: Pixels = px(2.);
     /// `--spacing-1`.
     pub const S1: Pixels = px(4.);
-    /// Tight icon + label pairs; list-section inline padding.
+    /// `--spacing-1_5`: tight icon + label pairs; list-section inline padding.
     pub const S1_5: Pixels = px(6.);
     /// `--spacing-2`.
     pub const S2: Pixels = px(8.);
-    /// Tight icon + label pairs; list-section bottom padding.
+    /// `--spacing-2_5`: tight icon + label pairs; list-section bottom padding.
     pub const S2_5: Pixels = px(10.);
     /// `--spacing-3`.
     pub const S3: Pixels = px(12.);
-    /// Inspector section padding.
+    /// `--spacing-3_5`: inspector section padding.
     pub const S3_5: Pixels = px(14.);
     /// `--spacing-4`.
     pub const S4: Pixels = px(16.);
-    /// Nesting indent for pots under their parent account.
+    /// `--spacing-5`: nesting indent for pots under their parent account.
     pub const S5: Pixels = px(20.);
-    /// Floating bulk-action bar offset above the bottom edge.
+    /// `--spacing-6`: floating bulk-action bar offset above the bottom edge.
     pub const S6: Pixels = px(24.);
 }
 
-/// Corner radii. [`SM`](radius::SM), [`MD`](radius::MD), and [`LG`](radius::LG) are exported tokens; the rest are the
-/// radii the component specs use.
+/// Corner radii.
 pub mod radius {
     use super::{Pixels, px};
 
-    /// Colour swatches and markers, chart bars, progress bars.
+    /// `--radius-marker`: colour swatches and markers, chart bars, progress
+    /// bars.
     pub const MARKER: Pixels = px(2.);
-    /// Molten measurement labels.
+    /// `--radius-label`: molten measurement labels.
     pub const LABEL: Pixels = px(3.);
     /// `--radius-sm`: kbd, inner segments, tab close button, skeletons.
     pub const SM: Pixels = px(4.);
     /// `--radius-md`: rows, fields, tabs, icon buttons, outline buttons.
     pub const MD: Pixels = px(6.);
-    /// Primary buttons and the command bar.
+    /// `--radius-button`: primary buttons and the command bar.
     pub const BUTTON: Pixels = px(7.);
-    /// Segmented track, tooltip, cards in panels, empty state, badges,
-    /// toggle track.
+    /// `--radius-surface`: segmented track, tooltip, cards in panels, empty
+    /// state, badges, toggle track.
     pub const SURFACE: Pixels = px(8.);
     /// `--radius-lg`: floating toolbar, agent card.
     pub const LG: Pixels = px(10.);
-    /// Cards.
+    /// `--radius-card`: cards.
     pub const CARD: Pixels = px(12.);
-    /// Chips (28px pill).
+    /// `--radius-pill`: chips (28px pill).
     pub const PILL: Pixels = px(14.);
 }
 
 /// Fixed sizes: control heights, the app frame, and small component geometry.
+///
+/// Paper stores heights and geometry as `spacing` tokens and layout widths as
+/// `container` tokens. Border and ring widths and the minimum window size have
+/// no token type and are code-only.
 pub mod size {
     use super::{Pixels, px};
 
     // Control heights.
 
-    /// Toggle, badges, kbd inside tooltips.
+    /// `--spacing-control-xs`: toggle, badges, kbd inside tooltips, agent-card
+    /// icon wells.
     pub const CONTROL_XS: Pixels = px(16.);
-    /// Kbd; tab close button.
+    /// `--spacing-kbd`: kbd; tab close button.
     pub const KBD: Pixels = px(18.);
-    /// Small (outline) buttons.
+    /// `--spacing-control-sm`: small (outline) buttons.
     pub const CONTROL_SM: Pixels = px(24.);
-    /// Compact buttons, avatar.
+    /// `--spacing-control-compact`: compact buttons, avatar.
     pub const CONTROL_COMPACT: Pixels = px(26.);
-    /// The default: rows, tabs, fields, icon buttons, chips.
+    /// `--spacing-control`: the default: rows, tabs, fields, icon buttons,
+    /// chips.
     pub const CONTROL: Pixels = px(28.);
-    /// Primary buttons, segmented control.
+    /// `--spacing-control-lg`: primary buttons, segmented control.
     pub const CONTROL_LG: Pixels = px(30.);
-    /// Floating toolbar, agent ghost button.
+    /// `--spacing-control-xl`: floating toolbar, agent ghost button.
     pub const CONTROL_XL: Pixels = px(36.);
 
     // App frame.
 
-    /// Title bar height.
+    /// `--spacing-title-bar`: title bar height.
     pub const TITLE_BAR: Pixels = px(40.);
     /// `--container-panel`: left panel width.
     pub const PANEL: Pixels = px(272.);
-    /// Right inspector width.
+    /// `--container-inspector`: right inspector width.
     pub const INSPECTOR: Pixels = px(296.);
-    /// Status bar height.
+    /// `--spacing-status-bar`: status bar height.
     pub const STATUS_BAR: Pixels = px(28.);
-    /// Command bar width.
+    /// `--container-command-bar`: command bar width.
     pub const COMMAND_BAR: Pixels = px(340.);
-    /// Inspector field-row label column.
+    /// `--container-field-label`: inspector field-row label column.
     pub const FIELD_LABEL: Pixels = px(64.);
+    /// `--container-column-category`: transactions table category column.
+    pub const COLUMN_CATEGORY: Pixels = px(180.);
+    /// `--container-column-account`: transactions table account column.
+    pub const COLUMN_ACCOUNT: Pixels = px(140.);
+    /// `--container-column-amount`: transactions table amount column (minimum).
+    pub const COLUMN_AMOUNT: Pixels = px(96.);
     /// `--breakpoint-desktop`.
     pub const BREAKPOINT_DESKTOP: Pixels = px(1920.);
     /// Minimum window width.
@@ -364,52 +382,54 @@ pub mod size {
     pub const FOCUS_RING: Pixels = px(1.5);
     /// Focus ring gap outside the element; its radius is the element's + 2.
     pub const FOCUS_RING_OFFSET: Pixels = px(2.);
-    /// Progress bars and ranked-bar-list bars.
+    /// `--spacing-progress`: progress bars and ranked-bar-list bars.
     pub const PROGRESS: Pixels = px(3.);
-    /// Status dots and chart hover points.
+    /// `--spacing-dot`: status dots and chart hover points.
     pub const DOT: Pixels = px(6.);
-    /// Selection handles.
+    /// `--spacing-handle`: selection handles.
     pub const HANDLE: Pixels = px(7.);
-    /// Colour markers (tabs, category squares, chart legends); select chevron.
+    /// `--spacing-marker`: colour markers (tabs, category squares, chart
+    /// legends); select chevron.
     pub const MARKER: Pixels = px(8.);
-    /// Toggle knob.
+    /// `--spacing-toggle-knob`: toggle knob.
     pub const TOGGLE_KNOB: Pixels = px(12.);
-    /// Toggle track width (its height is [`CONTROL_XS`]).
+    /// `--spacing-toggle-width`: toggle track width (its height is
+    /// [`CONTROL_XS`]).
     pub const TOGGLE_WIDTH: Pixels = px(28.);
-    /// Icon sizes.
+    /// `--spacing-icon-xs`: icon size.
     pub const ICON_XS: Pixels = px(10.);
-    /// Icon sizes.
+    /// `--spacing-icon-sm`: icon size.
     pub const ICON_SM: Pixels = px(12.);
-    /// Icon sizes.
+    /// `--spacing-icon-md`: icon size.
     pub const ICON_MD: Pixels = px(14.);
-    /// Icon sizes.
+    /// `--spacing-icon-lg`: icon size.
     pub const ICON_LG: Pixels = px(16.);
 }
 
 /// Opacity.
 pub mod opacity {
-    /// `--opacity-muted`; the low end of the skeleton pulse.
+    /// `--opacity-muted`: muted elements; the low end of the skeleton pulse.
     pub const MUTED: f32 = 0.6;
-    /// Proposed `--opacity-disabled`.
+    /// `--opacity-disabled`: disabled controls.
     pub const DISABLED: f32 = 0.4;
-    /// Chart area fill under a series line.
+    /// `--opacity-area-fill`: chart area fill under a series line.
     pub const AREA_FILL: f32 = 0.08;
 }
 
-/// Proposed motion tokens. Motion is not an exported token type, so these stay in
-/// `DESIGN.md`. With the OS reduced-motion setting, everything goes to zero
-/// except opacity fades, which stay at [`FAST`](motion::FAST) or less.
+/// Motion. Paper has no motion token type, so these are code-only and
+/// `DESIGN.md` is their source. With the OS reduced-motion setting, everything
+/// goes to zero except opacity fades, which stay at [`FAST`](motion::FAST) or
+/// less.
 pub mod motion {
     use super::Duration;
 
-    /// Proposed `--motion-fast`: hover and pressed colour changes.
+    /// `--motion-fast`: hover and pressed colour changes.
     pub const FAST: Duration = Duration::from_millis(90);
-    /// Proposed `--motion-base`: toggles, segmented control, tooltip and
-    /// popover in.
+    /// `--motion-base`: toggles, segmented control, tooltip and popover in.
     pub const BASE: Duration = Duration::from_millis(150);
-    /// Proposed `--motion-slow`: panels, inspector, sheets, the import dialog.
+    /// `--motion-slow`: panels, inspector, sheets, the import dialog.
     pub const SLOW: Duration = Duration::from_millis(220);
-    /// Proposed `--motion-chart`: chart data changes.
+    /// `--motion-chart`: chart data changes.
     pub const CHART: Duration = Duration::from_millis(320);
     /// Hover delay before a tooltip appears.
     pub const TOOLTIP_DELAY: Duration = Duration::from_millis(500);
@@ -630,14 +650,9 @@ mod tests {
     const TOKENS_JSON: &str = include_str!("../../design/tokens.json");
     const TOKENS_CSS: &str = include_str!("../../design/tokens.css");
 
-    /// Exported tokens whose code value deliberately differs, with the value
-    /// the export is expected to still have. When the export changes one of
-    /// these, the test fails: adopt the exported value and remove the entry.
-    const SUPERSEDED: &[(&str, &str)] = &[
-        ("--font-weight-regular", "450"),
-        ("--font-weight-medium", "550"),
-        ("--font-weight-strong", "650"),
-    ];
+    fn export() -> serde_json::Value {
+        serde_json::from_str(TOKENS_JSON).expect("design/tokens.json is valid JSON")
+    }
 
     fn hex(color: Rgba) -> String {
         let byte = |channel: f32| (channel * 255.).round() as u8;
@@ -658,51 +673,160 @@ mod tests {
         format!("{}px", f32::from(value))
     }
 
+    fn opacity_percent(value: f32) -> String {
+        format!("{}%", (value * 100.).round())
+    }
+
     /// Every exported token, formatted the way the export writes it.
     fn code_tokens() -> BTreeMap<&'static str, String> {
         BTreeMap::from([
+            // Colour.
             ("--color-chrome", hex(color::CHROME)),
+            ("--color-float", hex(color::FLOAT)),
             ("--color-canvas", hex(color::CANVAS)),
             ("--color-raised", hex(color::RAISED)),
             ("--color-field", hex(color::FIELD)),
             ("--color-hover", hex(color::HOVER)),
+            ("--color-control-active", hex(color::CONTROL_ACTIVE)),
             ("--color-hairline", hex(color::HAIRLINE)),
+            ("--color-border", hex(color::BORDER)),
+            ("--color-border-strong", hex(color::BORDER_STRONG)),
+            ("--color-tooltip-border", hex(color::TOOLTIP_BORDER)),
+            ("--color-avatar", hex(color::AVATAR)),
+            ("--color-white", hex(color::WHITE)),
             ("--color-text", hex(color::TEXT)),
+            ("--color-text-strong", hex(color::TEXT_STRONG)),
+            ("--color-text-secondary", hex(color::TEXT_SECONDARY)),
             ("--color-text-muted", hex(color::TEXT_MUTED)),
+            ("--color-icon-faint", hex(color::ICON_FAINT)),
             ("--color-text-faint", hex(color::TEXT_FAINT)),
+            ("--color-icon-disabled", hex(color::ICON_DISABLED)),
+            ("--color-on-light", hex(color::ON_LIGHT)),
             ("--color-molten", hex(color::MOLTEN)),
             ("--color-molten-soft", hex(color::MOLTEN_SOFT)),
             ("--color-moldavite", hex(color::MOLDAVITE)),
+            ("--color-moldavite-hover", hex(color::MOLDAVITE_HOVER)),
+            ("--color-moldavite-pressed", hex(color::MOLDAVITE_PRESSED)),
             ("--color-moldavite-soft", hex(color::MOLDAVITE_SOFT)),
+            ("--color-on-moldavite", hex(color::ON_MOLDAVITE)),
+            ("--color-moldavite-text", hex(color::MOLDAVITE_TEXT)),
+            (
+                "--color-moldavite-text-muted",
+                hex(color::MOLDAVITE_TEXT_MUTED),
+            ),
+            (
+                "--color-moldavite-text-faint",
+                hex(color::MOLDAVITE_TEXT_FAINT),
+            ),
+            ("--color-moldavite-surface", hex(color::MOLDAVITE_SURFACE)),
+            (
+                "--color-moldavite-surface-raised",
+                hex(color::MOLDAVITE_SURFACE_RAISED),
+            ),
+            ("--color-moldavite-well", hex(color::MOLDAVITE_WELL)),
+            ("--color-moldavite-border", hex(color::MOLDAVITE_BORDER)),
+            (
+                "--color-moldavite-border-strong",
+                hex(color::MOLDAVITE_BORDER_STRONG),
+            ),
+            ("--color-moldavite-track", hex(color::MOLDAVITE_TRACK)),
+            ("--color-danger", hex(color::DANGER)),
+            ("--color-danger-soft", hex(color::DANGER_SOFT)),
+            ("--color-danger-hover", hex(color::DANGER_HOVER)),
+            ("--color-danger-pressed", hex(color::DANGER_PRESSED)),
+            ("--color-on-danger", hex(color::ON_DANGER)),
+            ("--color-warning", hex(color::WARNING)),
+            ("--color-warning-soft", hex(color::WARNING_SOFT)),
+            ("--color-on-warning", hex(color::ON_WARNING)),
+            ("--color-chart-1", hex(color::CHART_1)),
+            ("--color-chart-2", hex(color::CHART_2)),
+            ("--color-chart-3", hex(color::CHART_3)),
+            ("--color-chart-4", hex(color::CHART_4)),
+            ("--color-chart-5", hex(color::CHART_5)),
+            ("--color-chart-6", hex(color::CHART_6)),
+            // Typography.
             ("--font-ui", format!("\"{}\"", font::UI)),
             ("--font-mono", format!("\"{}\"", font::MONO)),
+            ("--text-2xs", pixels(text::MICRO)),
             ("--text-xs", pixels(text::XS)),
             ("--text-sm", pixels(text::SM)),
             ("--text-md", pixels(text::MD)),
             ("--text-lg", pixels(text::LG)),
+            ("--text-xl", pixels(text::FIGURE)),
+            ("--text-2xl", pixels(text::DISPLAY)),
+            ("--font-weight-regular", weight::REGULAR.0.to_string()),
+            ("--font-weight-medium", weight::MEDIUM.0.to_string()),
+            ("--font-weight-strong", weight::STRONG.0.to_string()),
+            ("--font-weight-bold", weight::BOLD.0.to_string()),
+            ("--tracking-display", format!("{}em", tracking::DISPLAY)),
             ("--tracking-tight", format!("{}em", tracking::TIGHT)),
             ("--tracking-caps", format!("{}em", tracking::CAPS)),
+            ("--leading-micro", pixels(leading::MICRO)),
+            ("--leading-caption", pixels(leading::CAPTION)),
             ("--leading-ui", pixels(leading::UI)),
-            (
-                "--opacity-muted",
-                format!("{}%", (opacity::MUTED * 100.).round()),
-            ),
+            ("--leading-reading", pixels(leading::READING)),
+            ("--leading-figure", pixels(leading::FIGURE)),
+            ("--leading-display", pixels(leading::DISPLAY)),
+            // Opacity.
+            ("--opacity-area-fill", opacity_percent(opacity::AREA_FILL)),
+            ("--opacity-disabled", opacity_percent(opacity::DISABLED)),
+            ("--opacity-muted", opacity_percent(opacity::MUTED)),
+            // Layout widths.
             ("--breakpoint-desktop", pixels(size::BREAKPOINT_DESKTOP)),
             ("--container-panel", pixels(size::PANEL)),
+            ("--container-inspector", pixels(size::INSPECTOR)),
+            ("--container-field-label", pixels(size::FIELD_LABEL)),
+            ("--container-column-amount", pixels(size::COLUMN_AMOUNT)),
+            ("--container-column-account", pixels(size::COLUMN_ACCOUNT)),
+            ("--container-column-category", pixels(size::COLUMN_CATEGORY)),
+            ("--container-command-bar", pixels(size::COMMAND_BAR)),
+            // Spacing.
+            ("--spacing-0_5", pixels(spacing::S0_5)),
             ("--spacing-1", pixels(spacing::S1)),
+            ("--spacing-1_5", pixels(spacing::S1_5)),
             ("--spacing-2", pixels(spacing::S2)),
+            ("--spacing-2_5", pixels(spacing::S2_5)),
             ("--spacing-3", pixels(spacing::S3)),
+            ("--spacing-3_5", pixels(spacing::S3_5)),
             ("--spacing-4", pixels(spacing::S4)),
+            ("--spacing-5", pixels(spacing::S5)),
+            ("--spacing-6", pixels(spacing::S6)),
+            // Sizes stored as spacing tokens.
+            ("--spacing-progress", pixels(size::PROGRESS)),
+            ("--spacing-dot", pixels(size::DOT)),
+            ("--spacing-handle", pixels(size::HANDLE)),
+            ("--spacing-marker", pixels(size::MARKER)),
+            ("--spacing-icon-xs", pixels(size::ICON_XS)),
+            ("--spacing-icon-sm", pixels(size::ICON_SM)),
+            ("--spacing-toggle-knob", pixels(size::TOGGLE_KNOB)),
+            ("--spacing-icon-md", pixels(size::ICON_MD)),
+            ("--spacing-icon-lg", pixels(size::ICON_LG)),
+            ("--spacing-control-xs", pixels(size::CONTROL_XS)),
+            ("--spacing-kbd", pixels(size::KBD)),
+            ("--spacing-control-sm", pixels(size::CONTROL_SM)),
+            ("--spacing-control-compact", pixels(size::CONTROL_COMPACT)),
+            ("--spacing-control", pixels(size::CONTROL)),
+            ("--spacing-status-bar", pixels(size::STATUS_BAR)),
+            ("--spacing-toggle-width", pixels(size::TOGGLE_WIDTH)),
+            ("--spacing-control-lg", pixels(size::CONTROL_LG)),
+            ("--spacing-control-xl", pixels(size::CONTROL_XL)),
+            ("--spacing-title-bar", pixels(size::TITLE_BAR)),
+            // Radius.
+            ("--radius-marker", pixels(radius::MARKER)),
+            ("--radius-label", pixels(radius::LABEL)),
             ("--radius-sm", pixels(radius::SM)),
             ("--radius-md", pixels(radius::MD)),
+            ("--radius-button", pixels(radius::BUTTON)),
+            ("--radius-surface", pixels(radius::SURFACE)),
             ("--radius-lg", pixels(radius::LG)),
+            ("--radius-card", pixels(radius::CARD)),
+            ("--radius-pill", pixels(radius::PILL)),
         ])
     }
 
+    /// Exported values as written, aliases (`var(--other)`) included.
     fn json_tokens() -> BTreeMap<String, String> {
-        let export: serde_json::Value =
-            serde_json::from_str(TOKENS_JSON).expect("design/tokens.json is valid JSON");
-        export["tokens"]
+        export()["tokens"]
             .as_array()
             .expect("design/tokens.json has a tokens array")
             .iter()
@@ -718,6 +842,22 @@ mod tests {
             .collect()
     }
 
+    /// Follows `var(--other)` aliases to a literal value.
+    fn resolve<'a>(tokens: &'a BTreeMap<String, String>, name: &str) -> &'a str {
+        let mut value = tokens[name].as_str();
+        for _ in 0..tokens.len() {
+            match value.strip_prefix("var(").and_then(|v| v.strip_suffix(')')) {
+                Some(target) => {
+                    value = tokens
+                        .get(target)
+                        .unwrap_or_else(|| panic!("{name} aliases unknown token {target}"))
+                }
+                None => return value,
+            }
+        }
+        panic!("{name} is part of an alias cycle")
+    }
+
     fn css_tokens() -> BTreeMap<String, String> {
         TOKENS_CSS
             .lines()
@@ -730,31 +870,30 @@ mod tests {
     fn code_matches_token_export() {
         let exported = json_tokens();
         let code = code_tokens();
-        let superseded = BTreeMap::from_iter(SUPERSEDED.iter().copied());
 
-        for (name, exported_value) in &exported {
-            if let Some(expected) = superseded.get(name.as_str()) {
-                assert_eq!(
-                    exported_value, expected,
-                    "The export changed {name}, which the code overrides; adopt the exported value \
-                     in tokens.rs and drop it from SUPERSEDED"
-                );
-            } else {
-                let code_value = code.get(name.as_str()).unwrap_or_else(|| {
-                    panic!("Exported token {name} has no constant in src/theme/tokens.rs")
-                });
-                assert_eq!(
-                    code_value, exported_value,
-                    "{name} drifted from design/tokens.json"
-                );
-            }
+        for name in exported.keys() {
+            let code_value = code
+                .get(name.as_str())
+                .unwrap_or_else(|| panic!("Exported token {name} has no constant in tokens.rs"));
+            assert_eq!(
+                code_value,
+                resolve(&exported, name),
+                "{name} drifted from design/tokens.json"
+            );
         }
-        for name in code.keys().chain(superseded.keys()) {
+        for name in code.keys() {
             assert!(
                 exported.contains_key(*name),
                 "{name} is mapped in tokens.rs but missing from design/tokens.json"
             );
         }
+    }
+
+    #[test]
+    fn export_comes_from_the_coffer_file() {
+        let source = &export()["source"];
+        assert_eq!(source["fileName"], "Coffer");
+        assert_eq!(source["fileId"], "01M6YH440YAX6H5H322ZX4JYC9");
     }
 
     #[test]

@@ -22,27 +22,34 @@ Each milestone ends with something usable, and has explicit exit criteria.
 
 ---
 
-## Design track — runs alongside M1–M2 ⬜
+## Design track — runs alongside M1–M2 🚧
 
 Prove the visual system in Paper and in GPUI before the GUI milestones depend on it.
-Specs live in [`DESIGN.md`](DESIGN.md). Coffer has no Paper file yet: "Festive comet" is
-a reference file only, so D1 starts a fresh one and D3–D6 are designed in it. D1 and D2
-are independent and can run in parallel. D2 needs M1.1 (the Cargo workspace)
-so the theme lands in `crates/app`. D3 and D4 need D1; D5 needs D2 and D3.
+Specs live in [`DESIGN.md`](DESIGN.md). Coffer's Paper file ("Coffer", created in D1.1) is
+separate from "Festive comet", which is a reference file only; D1–D6 are designed in
+Coffer's file. D1 and D2 are independent and can run in parallel. D2 needs M1.1 (the
+Cargo workspace) so the theme lands in `crates/app`. D3 and D4 need D1; D5 needs D2 and D3.
 
 **D1 — Coffer Paper file: tokens and components**
 
-- ⬜ D1.1 Create the Coffer file in Paper (via the Paper MCP); record its URL in `DESIGN.md` →
+- ✅ D1.1 Create the Coffer file in Paper (via the Paper MCP); record its URL in `DESIGN.md` →
   "Source of truth"
-- ⬜ D1.2 Create every token in `DESIGN.md`: the reference set plus the "Proposed" colour,
-  font-weight and opacity tokens, with weights at 400/500/600/700
-- ⬜ D1.3 Foundations artboard: colour swatches, type scale, spacing and radii, built from tokens
-  only (no literal values)
-- ⬜ D1.4 Components artboard: the components `DESIGN.md` uses as specified (buttons in every
+- ✅ D1.2 Create every token in `DESIGN.md`: the reference set plus the "Proposed" colour,
+  font-weight and opacity tokens, with weights at 400/500/600/700. Also names the
+  type-scale, spacing, radius and state values the theme already used (96 tokens in all)
+- ✅ D1.3 Foundations artboard: colour swatches, type scale, spacing and radii, built from tokens
+  only (no literal values). Exception: 1px swatch ring and outline (Paper has no shadow or
+  border-width tokens)
+- ✅ D1.4 Components artboard: the components `DESIGN.md` uses as specified (buttons in every
   state, list row, transaction row with mono amounts, field, select, toggle, segmented
-  control, badge, chip, agent card, …), every node bound to tokens
-- ⬜ D1.5 Export `design/tokens.json` / `design/tokens.css` from the new file; drop the "Proposed"
-  marks; update the D2 drift test, which pins the reference file's 450/550/650 weights
+  control, badge, chip, agent card, …), every node bound to tokens. Added 24 size tokens
+  (control heights, geometry, column widths) to make that possible, plus `danger-hover`
+  and `danger-pressed` for the solid danger button. Exceptions: border, ring and shadow
+  geometry, icon paths, data-driven bar lengths
+- ✅ D1.5 Export `design/tokens.json` / `design/tokens.css` from the new file; drop the "Proposed"
+  marks; update the D2 drift test, which pins the reference file's 450/550/650 weights.
+  122 tokens (hash `572f3e11`); the drift test maps every one, following `var()` aliases.
+  "Proposed" now marks only designs not yet drawn in Paper (finance screens, charts)
 
 **D2 — GPUI theme + token showcase (fidelity spike, part 1)**
 
