@@ -342,6 +342,10 @@ presets/   <region>/<bank>.toml  — CSV column mappings (data, not code)
 fixtures/  redacted sample files; every importer and preset has one
 ```
 
+Packages are named `coffer-core`, `coffer-import`, `coffer-mcp` and `coffer-app`. The
+binary is built from `coffer-app`, which depends on the other three; shared files stay at the
+repository root (`assets/` for fonts and brand marks, `design/` for the exported tokens).
+
 Single binary: `coffer` (GUI), `coffer mcp` (stdio MCP server),
 `coffer import <file>` (headless import, used from M1), `coffer backup` / `coffer restore`,
 `coffer export`.

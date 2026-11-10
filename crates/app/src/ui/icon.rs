@@ -232,8 +232,8 @@ mod tests {
         let mark = path_data(Glyph::Mark.markup());
         assert_eq!(mark.len(), 2, "lid and body");
         for asset in [
-            include_str!("../../assets/brand/coffer-mark.svg"),
-            include_str!("../../assets/brand/coffer-icon.svg"),
+            include_str!("../../../../assets/brand/coffer-mark.svg"),
+            include_str!("../../../../assets/brand/coffer-icon.svg"),
         ] {
             assert_eq!(path_data(asset), mark);
         }

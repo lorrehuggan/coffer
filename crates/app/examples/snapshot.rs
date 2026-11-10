@@ -20,8 +20,8 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result};
 use gpui_kit::{AnyView, AppContext as _, HeadlessAppContext, size};
 
-use coffer::showcase::Showcase;
-use coffer::transactions::TransactionsView;
+use coffer_app::showcase::Showcase;
+use coffer_app::transactions::TransactionsView;
 
 const WIDTH: f32 = 1440.;
 const HEIGHT: f32 = 900.;
@@ -42,9 +42,9 @@ fn main() -> Result<()> {
     );
     cx.update(|cx| {
         gpui_kit::init(cx);
-        coffer::theme::install(cx).expect("theme installs");
-        coffer::showcase::init(cx);
-        coffer::transactions::init(cx);
+        coffer_app::theme::install(cx).expect("theme installs");
+        coffer_app::showcase::init(cx);
+        coffer_app::transactions::init(cx);
     });
 
     snapshot(&mut cx, &out, "transactions", |window, cx| {

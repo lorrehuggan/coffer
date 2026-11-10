@@ -1,0 +1,17 @@
+[package]
+name = "coffer-mcp"
+description = "Coffer's MCP stdio server over the core API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+coffer-core.workspace = true
+coffer-import.workspace = true
+rmcp.workspace = true
+tokio.workspace = true
+schemars.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

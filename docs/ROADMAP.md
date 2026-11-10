@@ -61,20 +61,21 @@ Cargo workspace) so the theme lands in `crates/app`. D3 and D4 need D1; D5 needs
 - ✅ D2.1 Theme module in `crates/app` holding every `DESIGN.md` token as typed values (no
   strings, no literals outside the module)
 - ✅ D2.2 Test that checks the Paper-sourced values against `design/tokens.json`, so drift fails
-  the build. Both live in `src/theme/tokens.rs` until the M1 workspace split moves them
-  to `crates/app`
+  the build. Both live in `crates/app/src/theme/tokens.rs`
 - ✅ D2.3 Bundle fonts: Inter 400/500/600/700 and Geist Mono 400/600 (static instances, SIL OFL,
   licence files included). Files in `assets/fonts/`, loaded and set on the theme by
-  `src/theme/fonts.rs`
+  `crates/app/src/theme/fonts.rs`
 - ✅ D2.4 Map `gpui-component`'s theme onto the tokens; list the components that need a custom
-  build instead (likely: toggle, segmented control, agent card). `src/theme/component.rs`
+  build instead (likely: toggle, segmented control, agent card).
+  `crates/app/src/theme/component.rs`
   maps every stock colour field to a token (a sentinel test fails on any unmapped or
   non-token field), plus radius, rem base, shadows and motion. The component list (custom:
   toggle, segmented control, view tabs, badge, tooltip, progress bar, agent card and the
   other compositions) is in `DESIGN.md` → "Implementing in GPUI"
 - ✅ D2.5 Showcase window (`coffer --showcase`): colour swatches, type scale, buttons in every
   state, list row (default/hover/selected/focus), transaction rows with mono amounts,
-  agent card. Built (`src/showcase.rs`, components in `src/ui/`), plus a stock components
+  agent card. Built (`crates/app/src/showcase.rs`, components in `crates/app/src/ui/`), plus a
+  stock components
   board (input, select, popover, menu, dialog, title bar, underline tabs, stock focus).
   Visually compared against the Paper artboards; no discrepancies
 - ✅ D2.6 Record findings in `DESIGN.md` → "Implementing in GPUI": alpha colours, 1px hairlines,
@@ -119,9 +120,9 @@ unsigned (`DESIGN.md` → "Money", "Chart chrome")
 **D5 — Transactions in GPUI (fidelity spike, part 2)**
 
 - ✅ D5.1 Build the D3 screen in GPUI with fixture data; compare it against the Paper screenshot
-  at 1x and 2x. `src/transactions.rs` (title bar, left panel, toolbar, virtualised
+  at 1x and 2x. `crates/app/src/transactions.rs` (title bar, left panel, toolbar, virtualised
   day-grouped table, inspector for one or several transactions, bulk-action bar, status
-  bar), now the window `coffer` opens; `examples/snapshot.rs` renders it headlessly.
+  bar), now the window `coffer` opens; `crates/app/examples/snapshot.rs` renders it headlessly.
   Colour exact once Paper's Display P3 export is colour-managed, layout exact at 2x,
   baselines within half a pixel. Letter spacing now applied (`ui::tracked`). Four GPUI
   pitfalls found and fixed. Findings in `DESIGN.md` → "Implementing in GPUI" → "Fidelity
@@ -383,11 +384,15 @@ is decided in `ARCHITECTURE.md`. The choices marked "review" in this track and i
 
 ---
 
-## M1 — Core + import (headless) ⬜
+## M1 — Core + import (headless) 🚧
 
 Import real statements into a local database from the command line.
 
-- ⬜ M1.1 Convert to a Cargo workspace: `crates/core`, `crates/import`, `crates/mcp`, `crates/app`
+- ✅ M1.1 Convert to a Cargo workspace: `crates/core`, `crates/import`, `crates/mcp`, `crates/app`.
+  Packages `coffer-core`, `coffer-import`, `coffer-mcp` (stubs for now) and `coffer-app`
+  (lib `coffer_app` plus the `coffer` binary); `assets/` and `design/` stay at the root.
+  Versions, edition and licence come from the root `[workspace.package]` and
+  `[workspace.dependencies]`; each crate declares the dependencies of its role
 - ✅ M1.2 Add `LICENSE-MIT`, `LICENSE-APACHE`; set `license = "MIT OR Apache-2.0"`
 - ⬜ M1.3 SQLite setup: platform data dir, WAL mode, 0600 permissions, versioned migrations
 - ⬜ M1.4 Schema: accounts, import batches, transactions, balance snapshots, categories,

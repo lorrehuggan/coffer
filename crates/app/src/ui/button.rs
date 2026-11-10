@@ -365,7 +365,7 @@ impl Disabled {
 /// button keeps its own focus handle, keyed by its id.
 ///
 /// ```
-/// use coffer::ui::button::{Button, ButtonVariant};
+/// use coffer_app::ui::button::{Button, ButtonVariant};
 ///
 /// let share = Button::new("share", "Share")
 ///     .with_variant(ButtonVariant::Primary)

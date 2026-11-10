@@ -1,0 +1,42 @@
+[package]
+name = "coffer-app"
+description = "Coffer: the GPUI dashboard and the `coffer` binary (GUI, MCP server and CLI commands)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+default-run = "coffer"
+
+[[bin]]
+name = "coffer"
+path = "src/main.rs"
+
+[dependencies]
+coffer-core.workspace = true
+coffer-import.workspace = true
+coffer-mcp.workspace = true
+gpui-kit.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+# `#[gpui_kit::test]` and the headless test platform, for the theme startup
+# test. Same version as the normal dependency, as gpui-kit requires.
+#
+# Trade-off: `test-support` enables `gpui-fast?/test-support`, and Cargo puts
+# weak-feature optional deps in Cargo.lock even when they're never built. So
+# the gpui-fast family is locked though unused (the `gpui-fast` feature is off;
+# `cargo tree -i gpui-fast` finds it in no build), and its exact pins hold two
+# crates the app does build one patch back: taffy =0.15.0 (was 0.15.1) and
+# unicode-properties =0.1.3 (was 0.1.5). They stay there until gpui-fast
+# loosens its pins or gpui-kit drops the weak feature.
+gpui-kit = { workspace = true, features = ["test-support"] }
+# Reads design/tokens.json in the token drift test.
+serde_json.workspace = true
+# Writes the offscreen renders of `examples/snapshot.rs` (D5 fidelity check)
+# as PNG, with the png feature GPUI already enables.
+image.workspace = true
+# Reads the bundled fonts' name and OS/2 tables in the font tests.
+ttf-parser.workspace = true

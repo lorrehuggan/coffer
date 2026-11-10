@@ -48,7 +48,7 @@ strongbox, sits before the wordmark in the title bar (see "Logo").
    source.
 3. Code references tokens by name, never raw hex or px literals outside the theme module.
 4. New or changed Paper tokens: re-run the Paper MCP `get_tokens` export (json + css) from
-   the Coffer file into `design/`, and update the tables below and `src/theme/tokens.rs` in
+   the Coffer file into `design/`, and update the tables below and `crates/app/src/theme/tokens.rs` in
    the same change. The drift test fails until the theme module matches the export.
 
 ## Character
@@ -494,7 +494,7 @@ centred. Checked at 128, 64 and 32.
 
 **Files.** `assets/brand/coffer-mark.svg` (the mark, 16px, molten) and
 `assets/brand/coffer-icon.svg` (the app icon, 128px) are exports for use outside the app,
-so their colours are literal hex. In the app the mark is `Glyph::Mark` (`src/ui/icon.rs`),
+so their colours are literal hex. In the app the mark is `Glyph::Mark` (`crates/app/src/ui/icon.rs`),
 tinted by `text_color`. A test checks that both files draw the same paths as the glyph.
 
 ## Applying the system to Coffer
@@ -2118,7 +2118,7 @@ reference file except the values recorded here.
 - **Fonts:** bundle Inter and Geist Mono with the app (both SIL OFL 1.1, compatible with
   `MIT OR Apache-2.0` distribution; include their licence files). Fraunces is not used.
   Implemented: the files (Inter 4.1, Geist 1.9.2) and their `OFL.txt` are in
-  `assets/fonts/`; `src/theme/fonts.rs` compiles them into the binary, registers them at
+  `assets/fonts/`; `crates/app/src/theme/fonts.rs` compiles them into the binary, registers them at
   startup, and sets them as `gpui-component`'s UI and mono families. Startup fails if a
   face doesn't resolve to itself, so a missing weight can't silently fall back.
 - **Weights:** 400/500/600/700, so the app bundles the static Inter instances for those
@@ -2218,8 +2218,8 @@ reference file except the values recorded here.
        agent ghost label `#526557` (`#536556`). Every difference is 1 level, from P3
        rounding. Tests: `disabled_buttons_keep_papers_label_contrast`,
        `only_content_on_a_fill_is_composited`,
-       `stock_focus_style_is_off_and_disabled_fades_as_a_group` (`src/ui/button.rs`) and
-       `faded_colours_are_the_css_group_composite` (`src/ui.rs`).
+       `stock_focus_style_is_off_and_disabled_fades_as_a_group` (`crates/app/src/ui/button.rs`) and
+       `faded_colours_are_the_css_group_composite` (`crates/app/src/ui.rs`).
     2. *Reduced motion: 0ms for everything.* "Motion" now says every animation, opacity
        fades included, is 0ms under reduced motion. GPUI has no per-animation opt-out, and an
        instant change is acceptable for reduced motion. That is what `App::reduce_motion`
@@ -2236,8 +2236,8 @@ reference file except the values recorded here.
        Swap in the Transfer icon there when convenient. A ⇄ inside text (the showcase's
        "Savings ⇄ Current" detail, which is Paper's copy, or anything an agent writes) still
        comes from a fallback font.
-- **Fidelity findings (D5).** The Transactions screen (`src/transactions.rs`, fixture data)
-  rendered headlessly by `examples/snapshot.rs` (GPUI's headless platform with the real
+- **Fidelity findings (D5).** The Transactions screen (`crates/app/src/transactions.rs`, fixture data)
+  rendered headlessly by `crates/app/examples/snapshot.rs` (GPUI's headless platform with the real
   text system and the wgpu renderer, 1440×900 at 1x and 2x) and diffed pixel by pixel
   against Paper's PNG exports of `18E-0` and `1NP-0`. Linux only; macOS's Metal renderer
   and Core Text aren't checked.
@@ -2271,7 +2271,7 @@ reference file except the values recorded here.
 - **Theme module:** one Rust module in `crates/app` maps every token above to a constant
   or theme field, generated from or checked against `design/tokens.json`. Components
   never contain raw colour or size literals.
-  Implemented in `src/theme/tokens.rs` (moves to `crates/app` in M1). Its drift test maps
+  Implemented in `crates/app/src/theme/tokens.rs`. Its drift test maps
   every token in `design/tokens.json` to a constant (following `var()` aliases such as
   `--color-on-light`), so the build fails when the export adds, removes or changes a token
   until the theme module follows. A second test checks the snapshot came from the Coffer
@@ -2287,8 +2287,8 @@ reference file except the values recorded here.
   truncation or selection, and no accessibility node, so long text in a tracked role is
   clipped (the inspector title for a long merchant). Plain-text roles (tracking 0) stay
   ordinary text.
-- **gpui-component theme:** mapped onto the tokens by `src/theme/component.rs` (D2.4);
-  `coffer::theme::install` runs it at startup, then loads the fonts. It switches the
+- **gpui-component theme:** mapped onto the tokens by `crates/app/src/theme/component.rs` (D2.4);
+  `coffer_app::theme::install` runs it at startup, then loads the fonts. It switches the
   stock theme to dark and assigns every one of its colour fields a token, plus radius
   (`radius-md`; `radius-lg` for dialogs and other floating surfaces), fonts, shadows (off:
   Coffer is flat) and motion (`motion::FAST`/`BASE`/`SLOW`, the enter and exit curves,
@@ -2315,7 +2315,7 @@ reference file except the values recorded here.
   `opacity-muted`), scrollbar thumb (`border-strong`, hover `tooltip-border`), text caret
   (`text`). Warning has no hover/pressed states (Coffer has no warning button).
 - **Focus ring:** Coffer's own components draw the spec ring with
-  `FocusRingExt::focus_visible_ring` (`src/theme/focus.rs`): a `size::FOCUS_RING` (1.5px)
+  `FocusRingExt::focus_visible_ring` (`crates/app/src/theme/focus.rs`): a `size::FOCUS_RING` (1.5px)
   `molten` line, drawn only while the element has keyboard focus (focused, and the last
   input was a key press, as GPUI's `focus_visible`). `Outside` puts it
   `size::FOCUS_RING_OFFSET` (2px) out, concentric with the element's corners (radius there
@@ -2333,7 +2333,7 @@ reference file except the values recorded here.
   ghost buttons and other borderless controls draw a 1px `molten` line on their edge;
   link and text buttons draw it 0.125rem (1.75px) outside. That's solid `molten`, 0.5px
   thinner than the spec with less or no gap, and nothing clips it, so it's the closer of
-  the two. Coffer's buttons (`src/ui/button.rs`, see "Stock components") close the stock
+  the two. Coffer's buttons (`crates/app/src/ui/button.rs`, see "Stock components") close the stock
   button's gaps: they set the stock `.focus_ring(false)` and draw the spec ring from a
   tracked handle, on a wrapper with the button's radius, so it shows on keyboard focus only;
   headless tests check that, and that a click leaves no ring. Remaining gaps: stock buttons
@@ -2352,15 +2352,15 @@ reference file except the values recorded here.
 
   | Component | Treatment | Why |
   |---|---|---|
-  | Button: neutral primary, outline, outline compact, destructive outline, destructive solid, icon (28px; 36px dock) | Stock, wrapped: **built**, `coffer::ui::button` (`Button`, `IconButton`) | The stock button keeps pointer and Enter/Space activation, Tab order, disabled handling and the accessible name (the label; an icon button takes one). Height, padding, radius, border, fill and label colour are set per instance from the tokens. The label is a child with its type role, because the stock label's size follows the stock `Size` (12.25px at the rem base). Hover and pressed go through `ButtonVariant::Custom` with token colours, because the stock variants also set the border on hover and pressed (the outline's `border-strong` would turn `hairline`, the destructive outline's `danger` a 40% tint). Disabled is the resting look faded to `opacity-disabled` as one group: element opacity where nothing sits under the label, opaque composites over `Button::with_surface` where a fill does (see "Rendering findings (D2.6)" → "Closed"). Focus: see "Focus ring". Not built: the active icon button (`control-active`; white icon in the dock), tooltips (Coffer's tooltip is custom and not built yet), and hover/pressed transitions (`motion-fast`; the stock button changes instantly). Read, not specified, and accepted in the D2.5 visual review: icon colour `text-muted` (the token for default icons) and icon size `icon-md` (14px, from the table's 12–16px) |
+  | Button: neutral primary, outline, outline compact, destructive outline, destructive solid, icon (28px; 36px dock) | Stock, wrapped: **built**, `coffer_app::ui::button` (`Button`, `IconButton`) | The stock button keeps pointer and Enter/Space activation, Tab order, disabled handling and the accessible name (the label; an icon button takes one). Height, padding, radius, border, fill and label colour are set per instance from the tokens. The label is a child with its type role, because the stock label's size follows the stock `Size` (12.25px at the rem base). Hover and pressed go through `ButtonVariant::Custom` with token colours, because the stock variants also set the border on hover and pressed (the outline's `border-strong` would turn `hairline`, the destructive outline's `danger` a 40% tint). Disabled is the resting look faded to `opacity-disabled` as one group: element opacity where nothing sits under the label, opaque composites over `Button::with_surface` where a fill does (see "Rendering findings (D2.6)" → "Closed"). Focus: see "Focus ring". Not built: the active icon button (`control-active`; white icon in the dock), tooltips (Coffer's tooltip is custom and not built yet), and hover/pressed transitions (`motion-fast`; the stock button changes instantly). Read, not specified, and accepted in the D2.5 visual review: icon colour `text-muted` (the token for default icons) and icon size `icon-md` (14px, from the table's 12–16px) |
   | Agent outline | Stock, wrapped: **built**, `ButtonVariant::AgentOutline` | As above: `moldavite-border-strong` border, `moldavite-text` label, hover `moldavite-surface-raised`, pressed `moldavite-well`. It confirms the `Custom` path: its resting fill (20% of its colour) is replaced per instance, and the hover and pressed fills still apply over that |
   | Agent primary, agent ghost | Stock, wrapped; not built | Same `Custom` path; the solid agent primary sets `.bg(moldavite)` per instance. Needs Paper first: the table gives no horizontal padding for either. Agent primary's optional trailing kbd needs the Kbd wrapper; agent ghost needs a leading icon (sparkle) |
   | Input, field, select, command bar | Stock, wrapped | In dark mode the stock fill is the *border* colour (`input`) at 30% alpha, so no theme value gives `field` fill with a `hairline` border; the wrapper sets `.bg(field)`. Height is 28px from the rem base |
   | Data table | Not used for Transactions (D5): a GPUI `list` with Coffer's rows, which interleaves day headers of their own height | Colours map (no stripes, no row dividers, `hover`/`molten-soft` rows, `canvas` sticky header) and row height takes `Size::Size(size::CONTROL)`. These colours apply if a stock data table is used elsewhere. The in-place category select isn't built yet |
   | Popover, menu, dialog, sheet, notification | Stock; on the showcase's stock board, unwrapped | Fill and text map (`float`, `text`). Popovers use a hard-coded shadcn ring and shadow at `radius`; Coffer's floating spec is a 1px `border`, `radius-lg` and the toolbar shadow, set per instance |
   | Title bar | Stock; on the showcase's stock board, unwrapped | Keeps platform window controls and dragging. Height is a constant 34px; Coffer's is 40px |
-  | List row | Stock, wrapped: **built**, `coffer::ui::list_row` (`ListRow`) | Wraps the stock `ListItem` (pointer, accessible row). 28px, radius 6, 8px inline padding, 16px icon slot, `text-secondary` label lifting to `text` on hover, `molten-soft` fill with white label when selected, trailing mono count. The owning list holds focus and passes `focus_visible`; the row draws the `Inset` ring on a wrapper, because `ListItem` lays children out in an inner box and scrolling lists clip an outside ring. Nesting is a 20px left indent on the wrapper. No pressed look (rows select on click) |
-  | Transaction row, table header, day header | **Custom: built**, `coffer::ui::transaction_row` | Columns from `column-category`/`column-account`/`column-amount`; amounts in `mono-amount`, sign never carried by colour. Category cell: assigned (marker), uncategorised (dashed marker), suggested (sparkle, `moldavite-text`), transfer (row dimmed, transfer glyph). Selection and focus as the list row. D5 kept these rows, in a virtualised GPUI `list` (`src/transactions.rs`) |
+  | List row | Stock, wrapped: **built**, `coffer_app::ui::list_row` (`ListRow`) | Wraps the stock `ListItem` (pointer, accessible row). 28px, radius 6, 8px inline padding, 16px icon slot, `text-secondary` label lifting to `text` on hover, `molten-soft` fill with white label when selected, trailing mono count. The owning list holds focus and passes `focus_visible`; the row draws the `Inset` ring on a wrapper, because `ListItem` lays children out in an inner box and scrolling lists clip an outside ring. Nesting is a 20px left indent on the wrapper. No pressed look (rows select on click) |
+  | Transaction row, table header, day header | **Custom: built**, `coffer_app::ui::transaction_row` | Columns from `column-category`/`column-account`/`column-amount`; amounts in `mono-amount`, sign never carried by colour. Category cell: assigned (marker), uncategorised (dashed marker), suggested (sparkle, `moldavite-text`), transfer (row dimmed, transfer glyph). Selection and focus as the list row. D5 kept these rows, in a virtualised GPUI `list` (`crates/app/src/transactions.rs`) |
   | Status bar, tree row | Stock; not yet compared | Colours map (`float` status bar with `hairline`; `hover` and `molten-soft` rows) |
   | Scrollbar | Stock | Colours provisional (above) |
   | Kbd | Stock, wrapped | Fill and font differ (`hover`, Geist Mono 11/14, 18px); set per instance |
@@ -2368,14 +2368,14 @@ reference file except the values recorded here.
   | Segmented control | **Custom** | Stock segmented tabs are 24 or 32px (segments 18/24); Coffer needs 30px panel / 28px inspector with 2px inset, and an inset highlight on the active segment |
   | View tabs (title bar) | **Custom** | Stock tab heights are 20/24/32/36px; Coffer's tab is 28px with a `hover` active fill and hairline separators |
   | Underline tabs | Stock; on the showcase's stock board, unwrapped | Stock underline tab heights are 26/30/36/44px; the spec gives no height |
-  | Badge | **Custom: built**, `coffer::ui::badge` | Stock `Badge` is a dot or count overlaid on another element; Coffer's badge is an inline 16px count pill |
+  | Badge | **Custom: built**, `coffer_app::ui::badge` | Stock `Badge` is a dot or count overlaid on another element; Coffer's badge is an inline 16px count pill |
   | Tooltip | **Custom** | Stock tooltip uses the popover fill (`float`) and `text_sm`; Coffer's is `hover` fill, `tooltip-border`, tooltip shadow, title + kbd + body. Rendered through GPUI's `.tooltip(...)` |
   | Progress bar | **Custom** | Stock heights are 4/6/8/10px; Coffer's is 3px, radius 2 |
-  | Agent card | **Custom: built**, `coffer::ui::agent_card` | Change rows are 26px tab stops with a `moldavite-well` glyph well and the detail in `moldavite-text-muted`; on hover or keyboard focus the row fills `moldavite-surface-raised` and swaps its age for approve/reject icon buttons, so both are reachable by keyboard. "Approve all" is a full-width agent outline (`Button::with_full_width`) |
-  | Chip | **Custom: built**, `coffer::ui::button::Chip` | Pill with optional mono count |
+  | Agent card | **Custom: built**, `coffer_app::ui::agent_card` | Change rows are 26px tab stops with a `moldavite-well` glyph well and the detail in `moldavite-text-muted`; on hover or keyboard focus the row fills `moldavite-surface-raised` and swaps its age for approve/reject icon buttons, so both are reachable by keyboard. "Approve all" is a full-width agent outline (`Button::with_full_width`) |
+  | Chip | **Custom: built**, `coffer_app::ui::button::Chip` | Pill with optional mono count |
   | Card, status dot, empty state, bulk-action bar, section label row, inspector field row | **Custom** | No stock component with the same structure; built from `div` and the tokens. Not built yet |
   | Charts | **Custom** (decided in D4.1), on the `gpui_component::plot` primitives | Stock `BarChart` plots one value per band, so grouped spending/income bars would need two charts stacked; `LineChart` hard-codes a 2px stroke (spec 1.5px) and has no halo option; neither has a selected-band state for the molten selection overlay. Reuse the plot scales and tooltip; draw bars, the haloed line and the selection with the tokens |
-- **Showcase** (`coffer --showcase`, `src/showcase.rs`): three boards. *Design tokens*
+- **Showcase** (`coffer --showcase`, `crates/app/src/showcase.rs`): three boards. *Design tokens*
   (every colour token once, checked by a test against `design/tokens.json`; the type
   scale), *Components* (each Coffer component as a static state matrix next to a live,
   interactive row; the matrix forces states with `ui::PreviewState`, which is for the

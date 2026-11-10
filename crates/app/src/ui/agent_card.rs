@@ -95,7 +95,7 @@ fn mark_icon(glyph: Glyph) -> Svg {
 /// without a pointer.
 ///
 /// ```
-/// use coffer::ui::agent_card::{AgentChange, ChangeKind};
+/// use coffer_app::ui::agent_card::{AgentChange, ChangeKind};
 ///
 /// let change = AgentChange::new("s-01", ChangeKind::Categorise, "Amazon Marketplace")
 ///     .detail("Shopping")
@@ -320,9 +320,9 @@ impl RenderOnce for AgentChange {
 /// A card of changes an agent proposed.
 ///
 /// ```
-/// use coffer::theme::tokens::color;
-/// use coffer::ui::agent_card::{AgentCard, AgentChange, ChangeKind};
-/// use coffer::ui::button::{Button, ButtonVariant};
+/// use coffer_app::theme::tokens::color;
+/// use coffer_app::ui::agent_card::{AgentCard, AgentChange, ChangeKind};
+/// use coffer_app::ui::button::{Button, ButtonVariant};
 ///
 /// let card = AgentCard::new("Claude")
 ///     .context("Claude Code · 2h ago")

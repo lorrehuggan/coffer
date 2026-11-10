@@ -1058,33 +1058,65 @@ dependencies = [
 ]
 
 [[package]]
-name = "coffer"
+name = "coffer-app"
 version = "0.1.0"
 dependencies = [
- "aho-corasick",
  "anyhow",
- "chrono",
  "clap",
- "csv",
- "directories",
- "encoding_rs",
+ "coffer-core",
+ "coffer-import",
+ "coffer-mcp",
  "gpui-kit",
  "image",
- "ofx-kit",
- "refinery",
- "regex",
- "rmcp",
- "rusqlite",
- "schemars",
- "serde",
  "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "toml 1.2.1+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "ttf-parser",
+]
+
+[[package]]
+name = "coffer-core"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "chrono",
+ "directories",
+ "refinery",
+ "regex",
+ "rusqlite",
+ "serde",
+ "thiserror 2.0.21",
+ "tracing",
  "uuid",
+]
+
+[[package]]
+name = "coffer-import"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "coffer-core",
+ "csv",
+ "encoding_rs",
+ "ofx-kit",
+ "serde",
+ "thiserror 2.0.21",
+ "toml 1.2.1+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "coffer-mcp"
+version = "0.1.0"
+dependencies = [
+ "coffer-core",
+ "coffer-import",
+ "rmcp",
+ "schemars",
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

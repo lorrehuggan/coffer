@@ -668,8 +668,8 @@ pub(crate) mod tests {
 
     use super::*;
 
-    const TOKENS_JSON: &str = include_str!("../../design/tokens.json");
-    const TOKENS_CSS: &str = include_str!("../../design/tokens.css");
+    const TOKENS_JSON: &str = include_str!("../../../../design/tokens.json");
+    const TOKENS_CSS: &str = include_str!("../../../../design/tokens.css");
 
     fn export() -> serde_json::Value {
         serde_json::from_str(TOKENS_JSON).expect("design/tokens.json is valid JSON")

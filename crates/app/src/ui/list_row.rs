@@ -74,8 +74,8 @@ impl TrailingTone {
 /// name. The row is as wide as its column.
 ///
 /// ```
-/// use coffer::ui::icon::Glyph;
-/// use coffer::ui::list_row::ListRow;
+/// use coffer_app::ui::icon::Glyph;
+/// use coffer_app::ui::list_row::ListRow;
 ///
 /// let row = ListRow::new("account-current", "Current account")
 ///     .icon(Glyph::Account)

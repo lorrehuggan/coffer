@@ -1,0 +1,20 @@
+[package]
+name = "coffer-core"
+description = "Coffer's domain types, SQLite schema and migrations, rules, matching and reporting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# No GPUI, MCP, or network/AI crates here (AGENTS.md → Architecture).
+[dependencies]
+rusqlite.workspace = true
+refinery.workspace = true
+serde.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+directories.workspace = true
+uuid.workspace = true
+regex.workspace = true
+aho-corasick.workspace = true

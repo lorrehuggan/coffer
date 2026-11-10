@@ -36,32 +36,32 @@ const FACES: [Face; 6] = [
     Face {
         family: font::UI,
         weight: weight::REGULAR,
-        data: include_bytes!("../../assets/fonts/inter/Inter-Regular.ttf"),
+        data: include_bytes!("../../../../assets/fonts/inter/Inter-Regular.ttf"),
     },
     Face {
         family: font::UI,
         weight: weight::MEDIUM,
-        data: include_bytes!("../../assets/fonts/inter/Inter-Medium.ttf"),
+        data: include_bytes!("../../../../assets/fonts/inter/Inter-Medium.ttf"),
     },
     Face {
         family: font::UI,
         weight: weight::STRONG,
-        data: include_bytes!("../../assets/fonts/inter/Inter-SemiBold.ttf"),
+        data: include_bytes!("../../../../assets/fonts/inter/Inter-SemiBold.ttf"),
     },
     Face {
         family: font::UI,
         weight: weight::BOLD,
-        data: include_bytes!("../../assets/fonts/inter/Inter-Bold.ttf"),
+        data: include_bytes!("../../../../assets/fonts/inter/Inter-Bold.ttf"),
     },
     Face {
         family: font::MONO,
         weight: weight::REGULAR,
-        data: include_bytes!("../../assets/fonts/geist-mono/GeistMono-Regular.ttf"),
+        data: include_bytes!("../../../../assets/fonts/geist-mono/GeistMono-Regular.ttf"),
     },
     Face {
         family: font::MONO,
         weight: weight::STRONG,
-        data: include_bytes!("../../assets/fonts/geist-mono/GeistMono-SemiBold.ttf"),
+        data: include_bytes!("../../../../assets/fonts/geist-mono/GeistMono-SemiBold.ttf"),
     },
 ];
 

@@ -387,8 +387,8 @@ impl RowColors {
 /// accessible name reads the merchant, category and amount.
 ///
 /// ```
-/// use coffer::theme::tokens::color;
-/// use coffer::ui::transaction_row::{CategoryCell, TransactionRow};
+/// use coffer_app::theme::tokens::color;
+/// use coffer_app::ui::transaction_row::{CategoryCell, TransactionRow};
 ///
 /// let row = TransactionRow::new(
 ///     "txn-01",

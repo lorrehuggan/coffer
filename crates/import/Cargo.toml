@@ -1,0 +1,19 @@
+[package]
+name = "coffer-import"
+description = "Coffer's statement importers: the Importer trait, CSV (generic and presets) and OFX/QFX"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Deterministic: no model or network calls in the import path.
+[dependencies]
+coffer-core.workspace = true
+csv.workspace = true
+serde.workspace = true
+encoding_rs.workspace = true
+ofx-kit.workspace = true
+chrono.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

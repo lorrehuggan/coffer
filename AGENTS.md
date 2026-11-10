@@ -16,12 +16,14 @@ charts, and exposes the data to AI clients through an MCP server.
 
 ## Current state
 
-M0 and the design track (D1–D6) are done and signed off; M1 is next. The repository is
-still a single crate. `coffer` opens the Transactions screen on fixture data
-(`src/transactions.rs`), and `coffer --showcase` opens the component showcase.
+M0 and the design track (D1–D6) are done and signed off; M1 is in progress. The Cargo
+workspace below exists (M1.1): `crates/core`, `crates/import` and `crates/mcp` are still
+stubs, and all working code is in `crates/app` (package `coffer-app`, lib `coffer_app`,
+binary `coffer`). `coffer` opens the Transactions screen on fixture data
+(`crates/app/src/transactions.rs`), and `coffer --showcase` opens the component showcase.
 `cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with
-Paper. The Cargo workspace described below is the target layout from M1 onward.
-Check the tree before assuming a crate exists.
+Paper. Shared files stay at the root: `assets/` (fonts, brand) and `design/` (tokens).
+Check the tree before assuming a module exists.
 
 ## Environment
 
@@ -41,8 +43,8 @@ Check the tree before assuming a crate exists.
 
 ```sh
 cargo build
-cargo test                                        # all tests
-cargo test -p <crate> <name>                      # one crate / test (workspace)
+cargo test                                        # all tests (whole workspace)
+cargo test -p <package> <name>                    # one package / test, e.g. -p coffer-core
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 devenv test                                       # environment check (cargo check)
@@ -59,7 +61,7 @@ Only `pre-push` is used: data guard (no statements/databases outside `fixtures/`
 `RUSTDOCFLAGS=-D warnings`. There is no CI yet, so this hook is the gate; don't bypass
 it with `--no-verify`.
 
-## Architecture (target layout)
+## Architecture
 
 ```
 crates/core    domain types, SQLite schema + migrations, rules, transfer matching,
