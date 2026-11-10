@@ -27,7 +27,7 @@ beyond the inbox, AI in import) are deliberately not on this roadmap.
 
 ---
 
-## Design track — runs alongside M1–M2 🚧
+## Design track — runs alongside M1–M2 ✅
 
 Prove the visual system in Paper and in GPUI before the GUI milestones depend on it.
 Specs live in [`DESIGN.md`](DESIGN.md). Coffer's Paper file ("Coffer", created in D1.1) is
@@ -133,8 +133,30 @@ unsigned (`DESIGN.md` → "Money", "Chart chrome")
 
 **D6 — Remaining screens**
 
-- ⬜ D6.1 Import, Inbox, Trends, Budgets, Net worth, Reviews, accounts panel
-- ⬜ D6.2 Coffer logo / wordmark
+- ✅ D6.1 Import, Inbox, Trends, Budgets, Net worth, Reviews, accounts panel. Six
+  1440×900 artboards in the Coffer file, built from the Transactions and Overview shells:
+  Inbox (`564-0`), Import · map columns (`5ZQ-0`), Budgets (`6OE-0`), Trends (`781-0`),
+  Net worth (`7LH-0`), Reviews (`7YM-0`); plus two states boards: Import · steps (`6J4-0`:
+  File and Review, and the reconciled / mismatch / locked-period results) and Accounts
+  panel · states (`8D8-0`: row states, the account inspector, the new-account dialog). All
+  token-bound. Two new tokens, `--container-dialog-wide` (760px, Import) and
+  `--container-reading` (560px, a review's measure), re-exported (hash `6a126241`) with
+  `size::DIALOG_WIDE` and `size::READING_MEASURE`. Spec in `DESIGN.md` → "Finance
+  screens". Decided while drawing (review):
+  - Inbox groups are table sections with lane headers, not one agent card per group; row
+    approve/reject show on hover and selection only;
+  - a parse failure in the Import preview is imported as flagged, and a balance mismatch
+    can be imported only as "Import and flag the mismatch";
+  - Budgets is a table with inline bars so the budgets' ends line up;
+  - the Net worth area runs to a £0 baseline;
+  - an account with transactions can be closed (hidden, history kept), not deleted.
+- ✅ D6.2 Coffer logo / wordmark. The strongbox: lid, seam, body and a hasp, filled
+  `molten`, on a 16-unit grid so the 16px title-bar size is pixel-aligned. Logo artboard
+  (`8MT-0`): construction, title-bar and display lockups, mono variant, app icon (molten
+  tile, chrome mark); the three directions explored stay on Logo · concepts (`8JS-0`).
+  Every screen's title bar now shows the mark before the wordmark (6px gap), and so does
+  the GPUI title bar (`Glyph::Mark`). Exports in `assets/brand/`. Spec in `DESIGN.md` →
+  "Logo"
 - ✅ D6.3 Transactions additions: split editor (lines, auto-filled remainder, total
   locked), tags, user note beside the read-only imported note, excluded state and
   filter, manual-transaction form, "Create a rule from this edit?" (M3.9, M3.10, M3.13).
@@ -153,27 +175,211 @@ unsigned (`DESIGN.md` → "Money", "Chart chrome")
   - exclusion reason key, note and date, where only duplicates leave the balance;
   - `created_at` on every transaction;
   - the rule prompt needs at least one earlier match.
-- ⬜ D6.4 Review queues: possible duplicates (side-by-side pair, why flagged,
+- ✅ D6.4 Review queues: possible duplicates (side-by-side pair, why flagged,
   merge/dismiss) and reconciliation (assertion results per account, failing window,
-  lock/unlock) (M3.12)
-- ⬜ D6.5 Refund, reimbursement and settlement linking; outstanding-claims and owed-to-me
-  lists (M3.11)
-- ⬜ D6.6 Inbox impact preview and the new suggestion kinds (merchant alias, refund link)
-  in the agent card; designed with the D6.1 Inbox (M3.14, M2.14)
-- ⬜ D6.7 Rules editor: rule actions, apply-to-history preview, merchant alias editor
-  (M3.13)
-- ⬜ D6.8 Settings: AI access (clients, access levels, kill switch, access log), backups
-  (list, create, restore), export dialog (M3.15, M3.16)
-- ⬜ D6.9 Accounts: cash accounts and manual asset/liability accounts with valuations;
-  designed with the D6.1 accounts panel (M3.10, M3.17)
-- ⬜ D6.10 Upcoming payments and balance forecast; budget rollover, groups and pace line,
-  designed with the D6.1 Budgets screen (M4.8, M4.9)
-- ⬜ D6.11 Safe report rendering (markdown subset, inert links, `ai_authored` marker) and
-  the withheld-text indicator, designed with the D6.1 Reviews screen (M4.10, M2.13)
+  lock/unlock) (M3.12). Two 1440×900 artboards from the Inbox shell, Review · possible
+  duplicates (`8SE-0`) and Review · balance checks (`98K-0`), plus a states board,
+  Review queues · states (`9MQ-0`: lock and unlock dialogs, the merge undo bar, a merge
+  into a locked period, the empty queue). All token-bound, no new tokens. Spec in
+  `DESIGN.md` → "Review queues". Decided while drawing (review):
+  - both queues sit under a new CHECKS section in the Inbox's left panel, neutral (not
+    moldavite), and outside the Inbox tab's suggestion count;
+  - the selected pair opens in place side by side; shared values are muted so the
+    differences stand out;
+  - the inspector cross-links the two queues: a pair names the check it fixes, and a
+    failing check names the pair that explains it.
+
+  Its five data-model questions were decided on 2026-11-10 (`ARCHITECTURE.md` → "Decision
+  record: review queues"):
+  - the oldest balance is the starting point, not a check;
+  - a period locks only through a passing check, with no partial unlock;
+  - a merge keeps the row with a source ID, then an imported row, then the oldest;
+  - the near-duplicate window is 3 days (a default);
+  - a dismissed pair stays dismissed for good.
+- ✅ D6.5 Refund, reimbursement and settlement linking; outstanding-claims and owed-to-me
+  lists (M3.11). Three 1440×900 artboards: Transactions · refund link (`9WS-0`),
+  Transactions · shared cost (`BAT-0`) and Review · owed to you (`CCF-0`, Inbox shell);
+  plus a states board, Links and shares · states (`EB0-0`: the link dialog, the
+  inspectors after linking, claim back partly repaid, the new row kinds, the empty
+  queue). All token-bound, no new tokens. Spec in `DESIGN.md` → "Refunds,
+  reimbursements and shared costs". Decided while drawing (review):
+  - every transaction gets a Links section, and every outflow a Share section ("Just
+    me" / "Shared" / "Claim back"), so links and shares are always in the same place;
+  - Coffer's own link suggestions are neutral cards in the inspector and strips on Owed
+    to you, not Inbox items; the AI's `refund_link` suggestions stay in the Inbox (D6.6);
+  - the table keeps the bank's amounts and says how a row counts in the category cell
+    ("Shopping · refund", "· shared", "· to claim");
+  - Owed to you is a third CHECKS row in the Inbox, with expense claims and people in
+    one list.
+
+  Its five questions were decided on 2026-11-10 (`ARCHITECTURE.md` → "Decision record:
+  refunds, reimbursements and shared costs"):
+  - a refund counts on its own date, in the purchase's category;
+  - link suggestions are deterministic (90 days for refunds, 60 days to the penny for
+    reimbursements) and live in the inspector, not the Inbox;
+  - spending, budgets and MCP reads use your share; balances and net worth stay gross;
+  - an overpayment is capped, and the rest stays unlinked;
+  - a link needs both sides in one currency in v1.
+- ✅ D6.6 Inbox impact preview and the new suggestion kinds (merchant alias, refund link)
+  in the agent card; designed with the D6.1 Inbox (M3.14, M2.14). Two 1440×900 artboards
+  from the Inbox with the D6.4 CHECKS panel, Inbox · rule impact (`ABK-0`) and Inbox ·
+  merchant name impact (`DL8-0`), plus a states board, Inbox · D6.6 states (`EWZ-0`: the
+  refund link, transfer pair and categorisation inspectors, Coffer's own suggestion card,
+  a wide rule, the undo bar). All token-bound, no new tokens. Spec in `DESIGN.md` →
+  "Inbox impact preview". Decided while drawing (review):
+  - the selected suggestion opens in place and lists the transactions it would change on
+    the group's own lanes, with rows it leaves alone marked "Stays, you set it"; the
+    inspector sums it up under "If you approve", like D6.4's "If you merge";
+  - groups are ordered by reach (rules, merchant names, transfer pairs, refund links,
+    categorisations), and a rule's lane counts the rows it changes, not the ones it
+    matches;
+  - a wide rule (more than 5 merchants) gets a warning, a by-merchant summary, and is left
+    out of Approve all;
+  - Coffer's own `rule` suggestions use the same card, neutral, outside the moldavite
+    badge.
+
+  Its six questions were decided on 2026-11-10 (`ARCHITECTURE.md` → "Decision record:
+  Inbox impact preview"):
+  - approving an agent's rule never changes a category you set;
+  - a rule is wide past 5 merchants or when it moves income (a default);
+  - Approve all always skips wide rules;
+  - a rule's approval settles the categorisations it covers;
+  - merchant names don't change which rules match;
+  - the impact is computed when shown.
+- ✅ D6.7 Rules editor: rule actions, apply-to-history preview, merchant alias editor
+  (M3.13). Four 1440×900 artboards from the Review · possible duplicates shell: Rules
+  (`B1J-0`), Rules · apply to past transactions (`EFT-0`), Rules · merchant names
+  (`G2O-0`) and Rules · change history (`GZT-0`), plus a states board, Rules · states
+  (`HFH-0`: delete and undo dialogs, the undo bar, no rules yet, several actions, the
+  add-action menu, a pattern that can't be used, a rule that's never reached). All
+  token-bound, no new tokens. Spec in `DESIGN.md` → "Rules". Decided while drawing
+  (review):
+  - Rules is an eighth view tab after Reviews (decided by the user, 2026-11-10), with
+    Rules, Merchant names and Change history in its left panel;
+  - the rule editor is the inspector (When, Then, Past transactions), and rules are
+    reordered by dragging rows; a rule that always loses to one above is flagged "Never
+    reached";
+  - applying a rule to history previews it on the canvas in two sections, "Will change"
+    and "Category you set", which are left out unless "Change these too" is on;
+  - merchant names apply at once, without a preview or undo batch, because the display
+    name is derived;
+  - a menu pattern (for "+ Add action") is drawn for the first time.
+
+  Its eight questions were decided on 2026-11-10 (`ARCHITECTURE.md` → "Decision record:
+  rules"):
+  - rules win field by field;
+  - a new rule goes first;
+  - a rule overwrites a category you set only with "Change these too";
+  - rule edits don't re-run on history; only Apply does;
+  - merchant names resolve Is, then the longest Starts with, then Pattern;
+  - undo skips rows changed since, and counts them;
+  - deleting a rule leaves its values and clears `rule_id`;
+  - locked periods guard balances only.
+
+  The tab isn't yet on the artboards drawn before D6.7, or in the GPUI title bar
+- ✅ D6.8 Settings: AI access (clients, access levels, kill switch, access log), backups
+  (list, create, restore), export dialog (M3.15, M3.16). Three 1440×900 artboards from
+  the Inbox shell: Settings · AI clients (`AQ2-0`), Settings · access log (`DC6-0`) and
+  Settings · backups (`F63-0`); plus a states board, Settings · D6.8 states (`GQA-0`: AI
+  access off, the enable dialog, restore with checks passed and failed, the export
+  dialog, the "Back up now" notification). All token-bound, no new tokens. Spec in
+  `DESIGN.md` → "Settings". Decided while drawing (review):
+  - Settings isn't an eighth view tab: a settings icon button in the title bar (⌘,)
+    opens it, with AI ACCESS and DATA sections in the left panel;
+  - a client name that isn't enabled is refused and listed under "Asked to connect",
+    and enabling it starts at Aggregate, the least shared level;
+  - the kill switch is a toggle in the AI clients toolbar; off is neutral (a banner, the
+    clients dimmed, "AI access off" in the status bar), not a warning;
+  - the access log shows the client's purpose as quoted, untrusted text, refused calls
+    as neutral rows, and free-text arguments as their length only;
+  - restoring is a neutral primary action, because a backup of the current state is
+    taken first; a backup that fails a check can't be restored.
+
+  Its six questions were decided on 2026-11-10 (`ARCHITECTURE.md` → "Decision record:
+  Settings, AI access and backups"):
+  - the kill switch is read on every call; `mcp_access_log` gains `outcome` (new
+    migration);
+  - unknown clients are recorded as `requested` and refused;
+  - a lower level applies at once, with `tools/list_changed`;
+  - argument redaction keeps the structure, and free text as type and length;
+  - the access log is kept for 12 months (a default);
+  - backup metadata lives in the file name; older schemas migrate, newer are refused.
+- ✅ D6.9 Accounts: cash accounts and manual asset/liability accounts with valuations;
+  designed with the D6.1 accounts panel (M3.10, M3.17). One 1440×900 artboard,
+  Accounts · asset (valuations) (`BSI-0`: House selected, step-line value chart,
+  valuations table, account inspector), and a states board, Accounts · D6.9 states
+  (`EPF-0`: liability and cash inspectors, New account set to Asset, the Kind menu, the
+  cash count, a liability balance, closing an asset). All token-bound, no new tokens.
+  Spec in `DESIGN.md` → "Accounts you keep yourself". Decided while drawing (review):
+  - an ASSETS AND LIABILITIES section in the left panel; Stocks ISA moves there, cash
+    stays under ACCOUNTS;
+  - a liability's negative balance isn't `danger` ("Money" now says which negatives
+    are);
+  - with a valuation account selected, its valuations replace the transaction table,
+    and ⌘N adds a valuation;
+  - a step line with no area fill, so its y axis needn't start at £0;
+  - a short cash count offers to add the difference as a transaction, and never does
+    it on its own.
+
+  Its five data-model questions were decided on 2026-11-10 (`ARCHITECTURE.md` →
+  "Decision record: accounts you keep yourself"):
+  - a valuation can carry a private `note` (new migration);
+  - valuation accounts hold valuations only;
+  - `account.closed_on` for every kind, plus a £0 valuation when closing one;
+  - only an account without transactions can be deleted;
+  - a cash count is a checked `manual` balance, and Coffer never posts the difference.
+- ✅ D6.10 Upcoming payments and balance forecast; budget rollover, groups and pace line,
+  designed with the D6.1 Budgets screen (M4.8, M4.9). Two 1440×900 artboards from the
+  D6.1 Budgets screen: Budgets · groups, rollover and pace (`CXU-0`) and Budgets ·
+  upcoming (`GD5-0`). Plus a states board, Budgets and upcoming · states (`HNB-0`): the
+  non-monthly inspector, rollover rows, the schedule dialog, the "Review 2 found"
+  popover, a missed payment, an overdrawn forecast, and the empty Upcoming. All
+  token-bound, no new tokens. Spec in `DESIGN.md` → "Budgets: groups, rollover, pace and
+  upcoming". Decided while drawing (review):
+  - Upcoming is the second half of the Budgets tab (Budgets | Upcoming), not a ninth tab;
+  - groups are table sections (Fixed, Non-monthly, Flex), and rollover is a signed,
+    muted column, so LEFT = Budget + Rollover − Spent;
+  - Left to spend counts Flex only, and non-monthly money shows as Set aside;
+  - the pace line is one dashed line across the Flex bars; bars aren't coloured by pace;
+  - a missed payment stays in the forecast until it's matched or skipped.
+
+  Its six data-model questions were decided on 2026-11-10 (`ARCHITECTURE.md` → "Decision
+  record: budgets and the forecast"):
+  - Flex spending leaves accounts in proportion to the last 3 months;
+  - a payment is missed only once imports cover its date;
+  - rollover carries both ways and is derived from history;
+  - pace is linear by day;
+  - a non-monthly amount is seeded once from yearly schedules, then belongs to the user;
+  - without scheduled income, the horizon is 30 days.
+- ✅ D6.11 Safe report rendering (markdown subset, inert links, `ai_authored` marker) and
+  the withheld-text indicator, designed with the D6.1 Reviews screen (M4.10, M2.13).
+  Reviews · safe rendering (`C6D-0`, 1440×900, "Subscription check" with a table, an
+  inert link and a blocked image) and a states board, Reviews · D6.11 states (`E43-0`:
+  the subset as source and rendering, each case shown as text, the withheld-text
+  markers). All token-bound, no new tokens. Spec in `DESIGN.md` → "Safe report
+  rendering". Decided while drawing:
+  - links render as their text followed by the address in mono `text-muted`, never
+    clickable; a link whose text looks like an address shows both;
+  - images become a dashed "Image not loaded" block that shows the address; HTML shows
+    as written; anything outside the subset keeps its markdown characters;
+  - "AI-written" agent badge in the byline, and a "Read back · `ai_authored`" row;
+  - the inspector counts what was shown as text, and "What it read" counts withheld
+    descriptions (`warning` shield), linking to a new "Withheld from AI" filter.
+
+  Its four questions were decided on 2026-11-10 (`ARCHITECTURE.md` → "Decision record:
+  safe report rendering and withheld text"):
+  - emphasis renders as weight 500, with no italic face;
+  - `withheld_count` on `mcp_access_log` (new migration), no transaction IDs logged;
+  - the marker reads `[withheld: N characters that read like instructions]`;
+  - `list_reports` strips hidden characters and sets `ai_authored`, without withholding.
 
 **Exit criteria:** tokens live in Paper and in the GPUI theme with a drift test;
 Transactions and Overview are designed; the GPUI build of Transactions matches the Paper
 screen closely enough that the designer signs off.
+
+**Signed off** by the user on 2026-11-10. Every D item is done and every design question
+is decided in `ARCHITECTURE.md`. The choices marked "review" in this track and in
+`DESIGN.md` (decided while drawing, or while the user was away) are accepted as drawn.
 
 ---
 

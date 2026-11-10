@@ -107,6 +107,228 @@ answered on the designer's recommendation at the user's request:
      The passive route stays: after repeated identical recategorisations, the app files
      a `rule` suggestion to the Inbox (source `coffer`; see "Categorization").
 
+### Decision record: budgets and the forecast (2026-11-10)
+
+The open questions from the D6.10 designs (`DESIGN.md` → "Budgets: groups, rollover,
+pace and upcoming"), decided by the user on the designer's recommendation:
+
+1. **Flex spending leaves accounts in proportion to history.** The forecast spreads each
+   Flex budget's remainder evenly over the rest of the month. It splits that remainder
+   across accounts by where the category was spent over the last 3 months. An account
+   with no Flex spending in that window (savings, pots, Joint in the fixture) gets none.
+   Later months spend their full Flex budget the same way. Every step is integer minor
+   units, with remainders spread so each day's amounts sum exactly. Fixed and
+   non-monthly budgets add nothing to the forecast beyond their schedules, which avoids
+   counting them twice.
+2. **A payment is missed only once imports cover its date.** A schedule occurrence is
+   *missed* when its date plus `tolerance_days` has passed, nothing matched it, and the
+   account's latest imported transaction is on or after that date. Until then it is only
+   *not imported yet*, and nothing is flagged. A missed occurrence stays in the forecast,
+   counted from tomorrow, until the user matches it to a transaction or skips it.
+   Missed is derived, not stored. A skip is stored (`schedule_skip(schedule_id,
+   occurrence_date, skipped_at)`), and so is a user's match (`schedule_match(schedule_id,
+   occurrence_date, transaction_id)`). A series the user marks "Not recurring" is not suggested again.
+3. **Rollover carries both ways, derived from history.** With rollover on, a month's
+   carry-in is the previous month's LEFT, positive or negative, so it accumulates.
+   Nothing about it is stored: it's recomputed from `ledger_line` and the budgets, so
+   editing or recategorising a past transaction flows into later months. Turning
+   rollover off starts the budget fresh from the next month; turning it on starts
+   carrying from the current month. Fixed budgets don't offer rollover, and non-monthly
+   budgets always roll over.
+4. **Pace is linear by day of the month in v1.** On day *d* of an *n*-day month, pace is
+   *d*/*n* of the month's amount (budget plus rollover). Pace weighted by past months'
+   daily pattern can come later; it's a reporting choice, not a schema one.
+5. **A non-monthly amount is seeded once, then belongs to the user.** A new non-monthly
+   budget's yearly amount starts as the total of the category's active yearly
+   schedules. After that it's the user's number and doesn't follow schedule changes.
+   A new yearly schedule in that category asks before adding its amount (the schedule
+   dialog's "Set aside" toggle). The set-aside amount accrues from the month the budget
+   is created. It starts at £0 unless the user enters what's already saved, which is
+   stored as an opening set-aside. The 1/12 accrual stays a default (decision record of
+   2026-11-09, point 4).
+6. **Without scheduled income, the horizon is 30 days.** "Lowest before payday" uses the
+   account's next scheduled income as the horizon. An account with none shows "Lowest in
+   the next 30 days", and the Payday figure is left out. `cash_flow_forecast` (M4.8)
+   reports the same horizon and says which one it used.
+
+### Decision record: safe report rendering and withheld text (2026-11-10)
+
+The open questions from the D6.11 designs (`DESIGN.md` → "Safe report rendering"),
+decided by the user on the designer's recommendation:
+
+1. **Emphasis renders as weight 500.** `*emphasis*` in a saved review is 500 in
+   `text-strong`. Coffer doesn't bundle an italic face for reviews alone.
+2. **The withheld count lives on the access log.** `mcp_access_log` gains
+   `withheld_count` (a new migration): how many descriptions that call withheld. The
+   Reviews inspector sums it over a review's calls. The app's "Withheld from AI" filter
+   re-runs the same deterministic check over raw descriptions, so the log never records
+   which transactions were withheld, in keeping with "never stores returned data".
+3. **The marker is a string with a count.** A withheld `description_untrusted` reads
+   `[withheld: N characters that read like instructions]`. The field stays a string, and
+   a client can't mistake the marker for bank text.
+4. **Reports read back are stripped and marked, not withheld.** `list_reports` returns
+   `body_markdown` with control, zero-width and bidi characters removed and
+   `ai_authored: true`. Nothing inside a report is withheld: the marker covers the whole
+   body. The stored body is never changed; the app strips the same characters when it
+   renders a review and counts them.
+
+### Decision record: review queues (2026-11-10)
+
+The open questions from the D6.4 designs (`DESIGN.md` → "Review queues"), decided by the
+user on the designer's recommendation:
+
+1. **The oldest balance is the starting point, not a check.** An account's first
+   `balance_snapshot` is where Coffer starts counting, and every later one is checked
+   against it plus the transactions between them. A `valuation` snapshot sets the
+   balance and is never a check.
+2. **A period is locked only through a passing check.** `reconciled_through` can be set
+   only to the date of a passing check, and only when every check up to that date
+   passes. Unlocking clears it entirely; there's no partial unlock.
+3. **A merge keeps the best-sourced row.** By default it keeps the row with a source ID,
+   then an imported row over a manual one, then the one imported first. The user can
+   swap the rows before merging.
+4. **The near-duplicate window is 3 days.** It's a default, not an invariant (see
+   "Defaults, not invariants").
+5. **A dismissed pair stays dismissed.** A `duplicate_candidate` with `status =
+   dismissed` is never raised again for those two transactions. A later import that
+   brings a third match creates a new pair.
+
+### Decision record: refunds, reimbursements and shared costs (2026-11-10)
+
+The open questions from the D6.5 designs (`DESIGN.md` → "Refunds, reimbursements and
+shared costs"), decided by the user on the designer's recommendation:
+
+1. **A refund counts on its own date.** It's negative spending in the purchase's category
+   (`ledger_line`), in the month the money came back. The purchase's month doesn't
+   change, so a closed month stays as it was when a late refund arrives.
+2. **Link suggestions are deterministic and live in the inspector.** Coffer suggests:
+   - a *refund* when money comes in on the same account under the same
+     `merchant_display` as a purchase in the previous 90 days that has at least that
+     much left to refund;
+   - a *reimbursement* when money comes in that equals one outstanding claim, or a set
+     of them, to the penny, within 60 days of the newest.
+
+   Suggestions are `transaction_link` rows with `status = suggested`, shown in the
+   inspector and on Owed to you, not in the Inbox. A rejected pair is never suggested
+   again. The AI's `refund_link` suggestions stay in the Inbox (D6.6).
+3. **Spending is your share by default.** Spending, budgets, Overview, Trends and MCP
+   reads use `my_share_minor`. A purchase being claimed back counts as £0 while it's
+   outstanding, and switching it to "Just me" counts it in full again. Balances, net
+   worth and the Transactions table are always gross. A gross toggle on reports can come
+   later.
+4. **An overpayment is capped.** A link's `amount_minor` is at most what the purchase can
+   still take or what the person owes. The rest of the incoming money stays unlinked and
+   counts by its own category.
+5. **A link needs one currency in v1.** Both sides must be in the same currency;
+   cross-currency refunds wait for L.28.
+
+### Decision record: Inbox impact preview (2026-11-10)
+
+The open questions from the D6.6 designs (`DESIGN.md` → "Inbox impact preview"), decided
+by the user on the designer's recommendation:
+
+1. **Approving an agent's rule never changes a category the user set.** From the Inbox
+   it applies only to uncategorised rows and rows with `category_source = rule`. Including
+   the user's own rows is a choice made only in D6.7's apply-to-past preview ("Change
+   these too"). The Inbox has no such toggle.
+2. **A rule is wide when it spans more than 5 merchants or moves income.** That means its
+   matches span more than 5 distinct `merchant_display` values, or any match would move
+   income into a spending category. This is a default, not an invariant.
+3. **Approve all always skips wide rules.** A wide rule needs its own approval with the
+   preview open.
+4. **A rule's approval settles the categorisations it covers.** Pending `categorization`
+   suggestions for rows the rule changes are marked approved under the rule's
+   `change_batch`, so the Inbox doesn't ask twice.
+5. **Merchant names don't change which rules match.** Rules match the cleaned bank text
+   before names apply (D6.7), so a name suggestion is cosmetic, and its preview says so.
+6. **The impact is computed when shown.** It runs against today's data each time a
+   suggestion is opened, so a later import or edit can't make a stale preview look
+   smaller than the real change.
+
+### Decision record: rules (2026-11-10)
+
+The open questions from the D6.7 designs (`DESIGN.md` → "Rules"), decided by the user on
+the designer's recommendation:
+
+1. **Rules win field by field.** In priority order, the first matching rule sets a field,
+   and a later rule can still set a different field (a tag rule below a category rule
+   both apply). A rule is "never reached" when every transaction it matches already has
+   all its fields set by rules above.
+2. **A new rule goes first.** A rule from an edit or from the Inbox is usually narrower
+   than the rules it corrects. The Position select moves it.
+3. **A rule never overwrites a category the user set unless asked.** Never on import.
+   On Apply, only rows with `category_source = user` that the user includes with "Change
+   these too". The same applies to agent rules (Inbox impact preview, point 1).
+4. **Rule edits don't re-run on history.** Rules run on import. History changes only
+   through Apply, which records one `change_batch` (`rule_apply`) per apply.
+5. **Merchant names resolve Is, then Starts with, then Pattern.** An `exact` match wins,
+   then the longest `prefix`, then `regex` in list order. Names apply at once with no
+   batch, because the display name is derived.
+6. **Undo skips rows changed since.** Undoing a batch restores a field only where it
+   still holds the batch's `new_value`. Rows changed since keep the later value, and the
+   undo dialog counts them.
+7. **Deleting a rule leaves its values.** Its transactions keep what it set, and their
+   `rule_id` is cleared. The inspector's "Set by" reads "A deleted rule", and a later
+   rule or Apply may change them.
+8. **Locked periods guard balances only.** `reconciled_through` doesn't cover categories,
+   tags, notes or names, which don't change a balance, so Apply and Undo inside a locked
+   period aren't flagged. An Exclude action with reason `duplicate` does change a
+   balance, and is flagged like any other change there.
+
+### Decision record: Settings, AI access and backups (2026-11-10)
+
+The open questions from the D6.8 designs (`DESIGN.md` → "Settings"), decided by the user
+on the designer's recommendation:
+
+1. **The kill switch is read on every call.** It's a `setting` that the server reads on
+   every call, not only at start, so turning it off refuses the next call from a client
+   that is already connected. Refused calls are logged: `mcp_access_log` gains `outcome
+   [ok|refused_off|refused_not_enabled|refused_level]` (a new migration).
+2. **Unknown clients are recorded as requested.** The first `coffer mcp --client X` with
+   an unknown name creates an `mcp_client` row that isn't enabled and is marked
+   `requested` (a new migration), and the call is refused. "Ignore" hides the row without
+   enabling it. Only the app or CLI enables a client, never the server, and enabling one
+   starts it at `aggregate`.
+3. **A lower level applies at once.** The server checks the client's level on every call
+   and refuses tools above it. It also sends `notifications/tools/list_changed`, so the
+   client drops those tools from its list.
+4. **Argument redaction keeps the structure.** `args_redacted_json` keeps keys, dates,
+   enum values, numbers and IDs. Free-text values are stored only as their type and
+   length.
+5. **The access log is kept for 12 months.** That's a default, not an invariant; the rows
+   are small, one per call.
+6. **Backup metadata lives in the file name.**
+   - A backup is also taken before every restore and on "Back up now". The reason and
+     time live in the file name, so the list needs no table that a restore would roll
+     back.
+   - A backup with an older schema is restored and then migrated; a newer one is refused.
+   - While a restore swaps the files, running MCP servers refuse calls. They reopen the
+     database afterwards.
+
+### Decision record: accounts you keep yourself (2026-11-10)
+
+The open questions from the D6.9 designs (`DESIGN.md` → "Accounts you keep yourself"),
+decided by the user on the designer's recommendation:
+
+1. **A valuation can carry a private note.** `balance_snapshot` gains an optional `note`
+   (a new migration). It's user text, treated like `user_note`, and isn't sent over MCP
+   by default.
+2. **Valuation accounts hold valuations only.** `asset` and `liability` accounts hold
+   `valuation` snapshots and no transactions. A payment toward one stays on the account
+   that paid it, as spending or a transfer the user categorises, and net worth catches
+   up at the next valuation. Linking payments to a loan balance can come later.
+3. **Closing sets `closed_on`.** `account.closed_on` (a date; a new migration) applies to
+   every kind of account. Closing a valuation account also writes a £0 `valuation`
+   snapshot on that date, which reopening removes. An account with transactions keeps
+   D6.1's close-only rule.
+4. **Only an account without transactions can be deleted.** A valuation account or a
+   new empty one can be deleted together with its snapshots. Deleting can't be undone,
+   so the confirmation says how many values go with it.
+5. **A cash count is a checked balance.** A count is a `balance_snapshot` with source
+   `manual`, checked like any other balance (the first is the starting point; Review
+   queues, point 1). "Add and save" writes the snapshot and the difference transaction
+   in one DB transaction. Coffer never posts a difference on its own.
+
 ## Architecture
 
 ```
@@ -217,7 +439,8 @@ kind = "pot"
 
 - `account(id, parent_id?, name, institution, kind [current|savings|credit_card|pot|cash|
   asset|liability|...], currency, opening_balance_minor?, opening_date?,
-  reconciled_through?)` — pots are child accounts of their parent
+  reconciled_through?, closed_on?)` — pots are child accounts of their parent;
+  `asset` and `liability` accounts hold `valuation` snapshots only, no transactions
 - `import_batch(id, account_id, source_file, format, preset_id?, imported_at, status)`
 - `change_batch(id, kind [rule_apply|duplicate_merge|bulk_edit], created_at,
   status [applied|undone])` and `change_item(batch_id, transaction_id, field, old_value,
@@ -246,25 +469,35 @@ kind = "pot"
 - `duplicate_candidate(id, transaction_a, transaction_b, reason,
   status [pending|merged|dismissed], change_batch_id?)`
 - `balance_snapshot(account_id, date, balance_minor,
-  source [ofx|csv|statement|manual|valuation])` — each one is an assertion
+  source [ofx|csv|statement|manual|valuation], note?)` — each one is an assertion; an
+  account's first is its starting point and every later one is a check; `note` is user
+  text, not sent over MCP by default
 - `category(id, parent_id?, key, label)` — two levels, stable keys, translatable labels
 - `rule(id, priority, match_kind, pattern, amount_min?, amount_max?, account_id?)` and
   `rule_action(rule_id, kind [set_category|set_merchant|add_tag|set_note|exclude|
   split_template|my_share], value_json)` — an `exclude` action's value is a reason key
 - `transfer_group(id, status [suggested|confirmed|rejected])`
 - `schedule(id, account_id, merchant_display, category_id?, cadence, next_date,
-  amount_minor, currency, tolerance_minor, tolerance_days, status [active|paused|ended])`
+  amount_minor, currency, tolerance_minor, tolerance_days, status [active|paused|ended])`,
+  `schedule_skip(schedule_id, occurrence_date, skipped_at)` and
+  `schedule_match(schedule_id, occurrence_date, transaction_id)` — a missed occurrence is
+  derived, not stored
 - `budget(id, category_id, month?, amount_minor, currency, rollover,
-  group_kind [fixed|non_monthly|flex])`
+  group_kind [fixed|non_monthly|flex], opening_set_aside_minor?, created_at)` — rollover
+  is derived from `ledger_line`, never stored; `opening_set_aside_minor` is what a
+  non-monthly budget had already saved when it was created
 - `fx_rate(date, base, quote, rate, source)`
 - `suggestion(id, kind [categorization|rule|transfer_pair|merchant_alias|refund_link],
   payload_json, rationale, source_client, created_at, status [pending|approved|rejected])`
   — `source_client = coffer` for suggestions the app files itself
 - `report(id, period, title, body_markdown, source_client, created_at)`
 - `mcp_client(id, name, access_level [aggregate|pseudonymous|standard], enabled,
-  created_at, last_seen_at?)`
+  status [requested|known|ignored], created_at, last_seen_at?)` — an unknown name creates
+  a `requested` row that isn't enabled
 - `mcp_access_log(id, client_id, at, tool, args_redacted_json, purpose?, row_count,
-  result_hash, access_level)` — never stores returned data
+  withheld_count, result_hash, access_level,
+  outcome [ok|refused_off|refused_not_enabled|refused_level])` — never stores returned data;
+  `withheld_count` is how many descriptions the call withheld
 - `setting(key, value)` — includes the per-database key for merchant pseudonyms, which is
   never exposed
 
@@ -307,14 +540,16 @@ writes are the containment. In addition:
 - **Text envelope.** Tools return `merchant_display` by default. Raw text appears only as
   `description_untrusted`: length-capped, with control, zero-width and bidi characters
   stripped and URLs made inert. Text matching injection patterns ("ignore previous…",
-  base64 blobs, URLs) is withheld and replaced by a marker, and the app counts what was
-  withheld.
+  base64 blobs, URLs) is withheld and replaced by the marker
+  `[withheld: N characters that read like instructions]`, and the app counts what was
+  withheld (`mcp_access_log.withheld_count`).
 - **Impact preview.** The inbox shows what approving each suggestion would change (e.g. how
   many past transactions a rule would recategorise), so an overly broad rule or a fake
   transfer pair planted by injected text is visible before approval.
 - **Reports.** Saved reports render as a markdown subset: no HTML, no images, links shown as
   plain text, so a report can't trigger a network request. `list_reports` marks them
-  `ai_authored`, since stored AI text is untrusted when read back.
+  `ai_authored`, since stored AI text is untrusted when read back, and strips control,
+  zero-width and bidi characters from the body (decision record, 2026-11-10).
 - **Client setup.** Setup docs recommend a client profile with Coffer as the only data
   source and no web or fetch tools.
 
@@ -332,6 +567,8 @@ writes are the containment. In addition:
   balances/net worth over time (from OFX `LEDGERBAL`, CSV balance column, manual opening
   balance, or asset/liability valuations).
 - **Reviews**: saved MCP reports, safely rendered.
+- **Rules**: rules in priority order with their actions, apply-to-history preview, merchant
+  names, and the history of changes to existing transactions (undo).
 - **Settings**: AI access (clients, access levels, access log, kill switch), backups and
   export.
 

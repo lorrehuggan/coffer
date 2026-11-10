@@ -1,6 +1,6 @@
 //! The title bar (`docs/DESIGN.md` → "Components" → **Title bar**, Paper
-//! `OU-0`; on the Transactions artboard `18F-0`): the "Coffer" wordmark, the
-//! view tabs, the command bar and the window controls.
+//! `OU-0`; on the Transactions artboard `18F-0`): Coffer's mark and wordmark,
+//! the view tabs, the command bar and the window controls.
 //!
 //! Custom rather than the stock `TitleBar`, which is a fixed 34px (Coffer's
 //! is 40) and draws its own window controls. The window behaviour is the
@@ -11,7 +11,7 @@
 //!
 //! The window controls are drawn on Linux only, where the window is
 //! client-decorated. macOS draws its own traffic lights into the bar
-//! (not yet laid out: the wordmark would need to move clear of them).
+//! (not yet laid out: the mark and wordmark would need to move clear of them).
 
 use gpui_kit::base::InteractiveElementExt as _;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -33,7 +33,7 @@ use crate::ui::tracked::Tracked;
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
-/// The wordmark: title type in `text`, until Coffer has a mark.
+/// The wordmark: title type in `text`, after the mark (`DESIGN.md` → "Logo").
 const WORDMARK: TextRole = typography::TITLE;
 
 /// A view tab's label: body type at medium weight.
@@ -206,8 +206,8 @@ struct DragState {
 
 /// The title bar: 40px, `chrome`, bottom `hairline`.
 ///
-/// Takes the wordmark-and-tabs group, the command bar and the window
-/// controls. The tabs group and the controls share the width either side of
+/// Takes the brand-and-tabs group (mark, wordmark, view tabs), the command
+/// bar and the window controls. The tabs group and the controls share the width either side of
 /// the command bar, which is centred when the tabs leave room. At 1440 the
 /// seven tabs don't, so it follows them (`DESIGN.md` → "Transactions").
 #[derive(IntoElement)]
@@ -246,9 +246,16 @@ impl RenderOnce for TitleBar {
             .gap(spacing::S1)
             .child(
                 div()
+                    .flex()
                     .flex_none()
-                    .text_color(color::TEXT)
-                    .child(Tracked::new(WORDMARK, "Coffer")),
+                    .items_center()
+                    .gap(spacing::S1_5)
+                    .child(Glyph::Mark.render().text_color(color::MOLTEN))
+                    .child(
+                        div()
+                            .text_color(color::TEXT)
+                            .child(Tracked::new(WORDMARK, "Coffer")),
+                    ),
             )
             .child(div().flex_none().w(spacing::S3));
         for (index, tab) in self.tabs.into_iter().enumerate() {

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Coffer app icon (docs/DESIGN.md → "Logo"; Paper "Logo" artboard).
+       Tile is --color-molten, radius 28; the mark is --color-chrome at 4.5x, centred. -->
+  <rect width="128" height="128" rx="28" fill="#FF6B1A"/>
+  <g transform="translate(28 28) scale(4.5)" fill="#0F0F10">
+    <path d="M2.5 2H13.5A1.5 1.5 0 0 1 15 3.5V6H1V3.5A1.5 1.5 0 0 1 2.5 2Z"/>
+    <path d="M1 7H7V9A1 1 0 0 0 9 9V7H15V12.5A1.5 1.5 0 0 1 13.5 14H2.5A1.5 1.5 0 0 1 1 12.5Z"/>
+  </g>
+</svg>

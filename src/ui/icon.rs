@@ -2,7 +2,8 @@
 //!
 //! The paths are copied from the Paper Components artboard, so they keep its
 //! outline style: 1.2–1.3px strokes with round caps and joins, drawn at the
-//! size of their `viewBox`. Only the agent's sparkle is filled. GPUI draws an
+//! size of their `viewBox`. Only the agent's sparkle and Coffer's mark are
+//! filled. GPUI draws an
 //! SVG as a mask in the element's text colour, so the colour inside the
 //! markup is irrelevant (`currentColor`) and the caller sets it with
 //! `text_color`.
@@ -43,6 +44,9 @@ pub enum Glyph {
     Minimize,
     /// Maximise or restore the window. 10px.
     Maximize,
+    /// Coffer's mark, the strongbox (`DESIGN.md` → "Logo"). Filled, drawn
+    /// in `molten` beside the wordmark. 16px.
+    Mark,
 }
 
 impl Glyph {
@@ -59,7 +63,7 @@ impl Glyph {
             | Self::Search => size::ICON_SM,
             Self::Close | Self::Minimize | Self::Maximize => size::ICON_XS,
             Self::ChevronDown => size::MARKER,
-            Self::Panel => size::ICON_LG,
+            Self::Panel | Self::Mark => size::ICON_LG,
         }
     }
 
@@ -114,6 +118,11 @@ impl Glyph {
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
                 r#"<rect x="2" y="2" width="6" height="6" rx="1"/></svg>"#
             ),
+            Self::Mark => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">"#,
+                r#"<path d="M2.5 2H13.5A1.5 1.5 0 0 1 15 3.5V6H1V3.5A1.5 1.5 0 0 1 2.5 2Z"/>"#,
+                r#"<path d="M1 7H7V9A1 1 0 0 0 9 9V7H15V12.5A1.5 1.5 0 0 1 13.5 14H2.5A1.5 1.5 0 0 1 1 12.5Z"/></svg>"#
+            ),
         }
     }
 
@@ -141,7 +150,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Glyph; 12] = [
+    const ALL: [Glyph; 13] = [
         Glyph::Account,
         Glyph::Pot,
         Glyph::Plus,
@@ -154,6 +163,7 @@ mod tests {
         Glyph::Search,
         Glyph::Minimize,
         Glyph::Maximize,
+        Glyph::Mark,
     ];
 
     /// The `viewBox` side in the markup, which `size` must match so strokes
@@ -198,10 +208,34 @@ mod tests {
     }
 
     #[test]
-    fn only_the_sparkle_is_filled() {
+    fn only_the_sparkle_and_the_mark_are_filled() {
         for glyph in ALL {
             let filled = glyph.markup().contains("fill=\"currentColor\"");
-            assert_eq!(filled, glyph == Glyph::Sparkle, "{glyph:?}");
+            let solid = matches!(glyph, Glyph::Sparkle | Glyph::Mark);
+            assert_eq!(filled, solid, "{glyph:?}");
+        }
+    }
+
+    /// The `d` attributes of every path in `markup`, in order.
+    fn path_data(markup: &str) -> Vec<&str> {
+        markup
+            .split(" d=\"")
+            .skip(1)
+            .map(|rest| &rest[..rest.find('"').expect("closed")])
+            .collect()
+    }
+
+    #[test]
+    fn the_mark_matches_the_brand_assets() {
+        // The SVGs in `assets/brand/` are the mark outside the app (app icon,
+        // README); they must draw the same strongbox as the title bar.
+        let mark = path_data(Glyph::Mark.markup());
+        assert_eq!(mark.len(), 2, "lid and body");
+        for asset in [
+            include_str!("../../assets/brand/coffer-mark.svg"),
+            include_str!("../../assets/brand/coffer-icon.svg"),
+        ] {
+            assert_eq!(path_data(asset), mark);
         }
     }
 }

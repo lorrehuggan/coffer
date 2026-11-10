@@ -16,11 +16,12 @@ charts, and exposes the data to AI clients through an MCP server.
 
 ## Current state
 
-The repository is at milestone M0 (design track D1–D5): a single crate. `coffer` opens the
-Transactions screen on fixture data (`src/transactions.rs`), and `coffer --showcase` opens
-the component showcase. `cargo run --example snapshot -- <dir>` renders both headlessly to
-PNG for comparison with Paper. The Cargo workspace described below is the target layout
-from M1 onward. Check the tree before assuming a crate exists.
+M0 and the design track (D1–D6) are done and signed off; M1 is next. The repository is
+still a single crate. `coffer` opens the Transactions screen on fixture data
+(`src/transactions.rs`), and `coffer --showcase` opens the component showcase.
+`cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with
+Paper. The Cargo workspace described below is the target layout from M1 onward.
+Check the tree before assuming a crate exists.
 
 ## Environment
 

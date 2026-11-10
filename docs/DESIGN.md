@@ -14,12 +14,12 @@ this file covers how the app looks and feels.
 | Tool | [Paper](https://paper.design), read and written via the Paper MCP server |
 | Coffer file | **Coffer** — <https://app.paper.design/file/01M6YH440YAX6H5H322ZX4JYC9> (file ID `01M6YH440YAX6H5H322ZX4JYC9`, in the team's `Projects` folder). Created in D1.1; all Coffer design work happens here |
 | Coffer page | `Page 1` (`p-1-0`) |
-| Coffer artboards | Foundations (`1-0`), 1920 wide: colour, type scale, spacing, radii (D1.3). Components (`CJ-0`), 1920 wide: every component below in its states (D1.4). Transactions (`18E-0`) and Transactions · multi-select (`1NP-0`), 1440×900: the Transactions screen (D3.1). Overview (`22V-0`), 1440×900: the Overview screen (D4.1). D6.3, Transactions additions: Transactions · split and tags (`2Q3-0`), Transactions · excluded (`3FE-0`), Transactions · rule from an edit (`3WT-0`), Transactions · manual (cash account) (`4D7-0`), 1440×900, and Transactions · D6.3 states (`4X9-0`), 1440 wide |
-| Coffer tokens | 124: 96 created in D1.2, 24 size tokens and 2 danger-state colours added in D1.4, `--container-search-field` added in D3.1, `--container-dialog` added in D6.3; content hash `b442a048` (see "Tokens") |
+| Coffer artboards | Foundations (`1-0`), 1920 wide: colour, type scale, spacing, radii (D1.3). Components (`CJ-0`), 1920 wide: every component below in its states (D1.4). Transactions (`18E-0`) and Transactions · multi-select (`1NP-0`), 1440×900: the Transactions screen (D3.1). Overview (`22V-0`), 1440×900: the Overview screen (D4.1). D6.3, Transactions additions: Transactions · split and tags (`2Q3-0`), Transactions · excluded (`3FE-0`), Transactions · rule from an edit (`3WT-0`), Transactions · manual (cash account) (`4D7-0`), 1440×900, and Transactions · D6.3 states (`4X9-0`), 1440 wide. D6.1, remaining screens: Inbox (`564-0`), Import · map columns (`5ZQ-0`), Budgets (`6OE-0`), Trends (`781-0`), Net worth (`7LH-0`), Reviews (`7YM-0`), 1440×900; Import · steps (`6J4-0`) and Accounts panel · states (`8D8-0`), 1440 wide. D6.2: Logo (`8MT-0`), 1440 wide: the mark, its construction, lockups and app icon; Logo · concepts (`8JS-0`): the three directions explored (record only). D6.4, review queues: Review · possible duplicates (`8SE-0`) and Review · balance checks (`98K-0`), 1440×900; Review queues · states (`9MQ-0`), 1440 wide. D6.5, refunds and shared costs: Transactions · refund link (`9WS-0`), Transactions · shared cost (`BAT-0`) and Review · owed to you (`CCF-0`), 1440×900; Links and shares · states (`EB0-0`), 1440 wide. D6.11, safe report rendering: Reviews · safe rendering (`C6D-0`), 1440×900; Reviews · D6.11 states (`E43-0`), 1440 wide. D6.9, accounts you keep yourself: Accounts · asset (valuations) (`BSI-0`), 1440×900; Accounts · D6.9 states (`EPF-0`), 1440 wide. D6.6, Inbox impact preview: Inbox · rule impact (`ABK-0`) and Inbox · merchant name impact (`DL8-0`), 1440×900; Inbox · D6.6 states (`EWZ-0`), 1440 wide. D6.8, Settings: Settings · AI clients (`AQ2-0`), Settings · access log (`DC6-0`) and Settings · backups (`F63-0`), 1440×900; Settings · D6.8 states (`GQA-0`), 1440 wide. D6.7, Rules: Rules (`B1J-0`), Rules · apply to past transactions (`EFT-0`), Rules · merchant names (`G2O-0`) and Rules · change history (`GZT-0`), 1440×900; Rules · states (`HFH-0`), 1440 wide. D6.10, budgets and upcoming: Budgets · groups, rollover and pace (`CXU-0`) and Budgets · upcoming (`GD5-0`), 1440×900; Budgets and upcoming · states (`HNB-0`), 1440 wide |
+| Coffer tokens | 126: 96 created in D1.2, 24 size tokens and 2 danger-state colours added in D1.4, `--container-search-field` added in D3.1, `--container-dialog` added in D6.3, `--container-dialog-wide` and `--container-reading` added in D6.1; content hash `6a126241` (see "Tokens") |
 | Reference file | **Festive comet** — <https://app.paper.design/file/01M6GNHMB1RVVHY51G5W61H75N/p-1-0>. Not Coffer's file: a design-editor app this system was extracted from. Read it for detail; never edit it |
 | Reference page | `Editor — v1` (`p-1-0`) |
 | Reference artboards | Editor (`1-0`), Empty file (`JK-0`), 1920×1080 |
-| Token snapshot | [`design/tokens.json`](../design/tokens.json), [`design/tokens.css`](../design/tokens.css) — exported from the **Coffer** file in D1.5 and re-exported in D3.1 and D6.3, content hash `b442a048`, extracted 2026-11-09. `tokens.json` keeps each token's Paper description |
+| Token snapshot | [`design/tokens.json`](../design/tokens.json), [`design/tokens.css`](../design/tokens.css) — exported from the **Coffer** file in D1.5 and re-exported in D3.1, D6.3 and D6.1, content hash `6a126241`, extracted 2026-11-10. `tokens.json` keeps each token's Paper description |
 
 The reference artboards show a design-editor app. What carries over to Coffer is the
 **system** (tokens, chrome, components, interaction states, the AI-agent colour role), not
@@ -34,9 +34,8 @@ content; its serif (Fraunces) and cream palette are **not** part of the system.
 | Repurposed | Floating toolbar → bulk-action bar for multi-selected transactions. Selection overlay → selection language for charts. Agent buttons → inbox actions ("Review 12 suggestions", "Approve all", "Reject all"). Avatar → agent avatar only |
 | Not used | Tool dock; prompt composer (Coffer has no in-app chat: the AI lives in the external MCP client); collaborator avatars and "Share"; the editor's brand mark |
 
-The editor's molten gem is that product's mark, not ours. Until Coffer has its own
-mark, the title bar shows a wordmark: "Coffer", Inter 13/16 600, `--color-text`,
-−0.01em.
+The editor's molten gem is that product's mark, not ours. Coffer's own mark, the
+strongbox, sits before the wordmark in the title bar (see "Logo").
 
 **Rules**
 
@@ -69,10 +68,10 @@ mark, the title bar shows a wordmark: "Coffer", Inter 13/16 600, `--color-text`,
 
 ## Tokens
 
-The Coffer file holds 124 tokens (content hash `b442a048`), exported to
+The Coffer file holds 126 tokens (content hash `6a126241`), exported to
 [`design/tokens.json`](../design/tokens.json) and [`design/tokens.css`](../design/tokens.css)
 and checked against the theme module by its drift test. Every node on the Foundations,
-Components, Transactions (D3, D6) and Overview artboards is bound to them. Motion durations, shadows and border widths have
+Components, Transactions (D3, D6), Overview and D6.1 artboards is bound to them. Motion durations, shadows and border widths have
 no Paper token type and stay in this file.
 
 How the set was built: the first three tables are the 35 tokens of the reference file
@@ -235,6 +234,8 @@ type for widths and heights); layout widths are `container` tokens, like `--cont
 | `--container-command-bar` | `340px` | Command bar | `size::COMMAND_BAR` |
 | `--container-search-field` | `240px` | Transactions toolbar search field (added in D3.1) | `size::SEARCH_FIELD` |
 | `--container-dialog` | `440px` | Short dialogs: a confirmation or a form of a few fields (added in D6.3) | `size::DIALOG` |
+| `--container-dialog-wide` | `760px` | Wide dialogs that pair a form with a preview: Import (added in D6.1) | `size::DIALOG_WIDE` |
+| `--container-reading` | `560px` | Measure of reading text: a saved review, about 75 characters of 13px body (added in D6.1) | `size::READING_MEASURE` |
 
 Paper drops a token used as a border width or a shadow offset, so 1px and 1.5px borders,
 rings and shadow geometry stay typed. `calc()` over tokens works and is used where a size
@@ -346,7 +347,8 @@ the artboard snaps it to the nearest token, as the weights snap 550 → 500:
   distinct from the solid-outlined "Other" marker.
 
 **Title bar** (`OU-0`) — 40px, `chrome`, bottom hairline, 12px left / 8px right padding, 4px gap.
-"Coffer" wordmark and the view tabs at left, command bar centred, window controls right.
+Brand group (the 16px mark and the "Coffer" wordmark, see "Logo") and the view tabs at
+left, command bar centred, window controls right.
 
 **Tab** (`QE-0`, `QM-0`) — 28px, radius 6, 10px padding, 6px icon gap, 12/16 weight 500,
 `text-muted`. Hover: `hover` background, label stays `text-muted`. Active: `hover` background,
@@ -448,7 +450,52 @@ Inline SVG, outline style: stroke 1.1–1.3px, round caps and joins, no fills ex
 sparkle (agent) and the brand mark. Sizes 10, 12, 14, 16. Colours: `text-muted` default,
 `#B4B4B9` secondary, `text`/white active, `#6E6E73` chevrons, `#4A4A4F` disabled.
 The four-point **sparkle** (`M6 0.5L7.3 4.7L11.5 6L7.3 7.3L6 11.5L4.7 7.3L0.5 6L4.7 4.7Z`)
-is reserved for the AI agent.
+is reserved for the AI agent. The other filled icon is Coffer's mark (see "Logo").
+
+## Logo
+
+Designed in D6.2 on the **Logo** artboard (`8MT-0`); the three directions explored
+(strongbox, coin-stack C, keyhole tile) stay on **Logo · concepts** (`8JS-0`) as a record.
+
+**Mark: the strongbox.** A coffer seen front-on: a lid, a 1-unit seam where the lid lifts
+off, a body, and a hasp dropping from the seam. Filled, no strokes. Drawn on a 16-unit
+grid so the title-bar size (16px) lands on whole pixels:
+
+| Part | Geometry (16-unit grid) |
+|---|---|
+| Lid | 14 × 4, top corners r1.5 |
+| Seam | 1 unit, full width |
+| Body | 14 × 7, bottom corners r1.5 |
+| Hasp | notch 2 wide, 3 deep from the seam, round end r1 |
+| Bounds | 14 × 12, inset 1 unit at the sides and 2 at the top and bottom |
+
+Path data (`viewBox="0 0 16 16"`):
+`M2.5 2H13.5A1.5 1.5 0 0 1 15 3.5V6H1V3.5A1.5 1.5 0 0 1 2.5 2Z` (lid),
+`M1 7H7V9A1 1 0 0 0 9 9V7H15V12.5A1.5 1.5 0 0 1 13.5 14H2.5A1.5 1.5 0 0 1 1 12.5Z` (body).
+
+**Colour.** `molten`: the mark is the one place molten means *brand* rather than
+selection or focus. `text` where a surface allows one colour only. Never `moldavite`
+(green belongs to the agent). On a molten surface only as the app icon, where it turns
+`chrome`.
+
+**Lockups**
+
+| Use | Mark | Gap | Wordmark |
+|---|---|---|---|
+| Title bar | 16px (`icon-lg`) | 6px (`spacing-1_5`) | "Coffer", Inter 13/16 600, `text`, −0.01em (`tracking-tight`) |
+| Display (README, about) | 32px | 12px (`spacing-3`) | "Coffer", Inter 32/38 600, `text`, −0.025em (`tracking-display`) |
+
+At display size the mark's 24px ink matches the wordmark's cap height. The mark alone is
+for icons; the wordmark never appears without it. Clear space: one lid height (4 units)
+on every side.
+
+**App icon.** A `molten` tile, radius 28 on 128, with the mark in `chrome` at 4.5× (72px),
+centred. Checked at 128, 64 and 32.
+
+**Files.** `assets/brand/coffer-mark.svg` (the mark, 16px, molten) and
+`assets/brand/coffer-icon.svg` (the app icon, 128px) are exports for use outside the app,
+so their colours are literal hex. In the app the mark is `Glyph::Mark` (`src/ui/icon.rs`),
+tinted by `text_color`. A test checks that both files draw the same paths as the glyph.
 
 ## Applying the system to Coffer
 
@@ -480,6 +527,10 @@ is reserved for the AI agent.
   totals, and the dimming says so.
 - Colour appears on money only when it means something beyond the sign: `danger` for a
   negative balance or an over-budget figure, `warning` for a budget at 85% or more.
+  "Negative balance" means an overdrawn account: a current, savings, cash or pot account
+  below zero. A liability is negative by nature and keeps the normal colour (decided in
+  D6.9, for review). Credit cards follow the same reasoning, but no credit-card balance
+  is drawn yet.
 - Thousands separators and decimal marks follow the user's locale; the currency's minor
   units decide the decimals (JPY shows none).
 
@@ -487,7 +538,7 @@ is reserved for the AI agent.
 
 | Reference design | Coffer |
 |---|---|
-| Title bar tabs | Views (Overview, Transactions, Trends, Budgets, Net worth, Inbox, Reviews) |
+| Title bar tabs | Views (Overview, Transactions, Trends, Budgets, Net worth, Inbox, Reviews, Rules) |
 | Command bar (⌘K) | Search transactions, run commands (import, jump to month) |
 | Left panel: pages + layer tree | Accounts tree with pots nested under their parent; categories |
 | Canvas | Charts and tables |
@@ -648,16 +699,14 @@ the theme module's (`motion::FAST` …), not Paper tokens.
   is acceptable for reduced motion. Delays aren't motion: tooltips still wait 500ms.
   (Decided in the D2.6 closure while the user was away; review.)
 
-## Proposed: finance screens
+## Finance screens
 
 Window minimum 1280×800, designed at 1440×900. Shell: title bar with view tabs
-(Overview, Transactions, Trends, Budgets, Net worth, Inbox, Reviews; Inbox carries a
+(Overview, Transactions, Trends, Budgets, Net worth, Inbox, Reviews, Rules; Inbox carries a
 moldavite count badge when suggestions are pending) and the ⌘K command bar; left panel
 272px; inspector 296px (collapsible); status bar 28px.
 
-**Left panel.** ACCOUNTS section: one row per account with its mono balance right-aligned;
-pots nested 20px under their parent with a pot icon. Net worth total at the top as a
-mono 13/16 600 figure. CATEGORIES section below, used as a filter.
+**Left panel.** Drawn in D6.1: see "Accounts panel" below.
 
 **Overview** — drawn in D4.1 (no longer Proposed): artboard Overview (`22V-0`), October
 2026 with "All accounts" (no account selected in the left panel). The shell is the
@@ -731,7 +780,9 @@ and flagged rows.
   Category select ("Choose a category", dashed marker) that sets all of them, and a
   "Selected" list (mono date, merchant truncating, mono amount; 28px rows).
 - Title bar at 1440: the seven view tabs take about 640px, so the command bar can't be
-  centred. It follows the tabs, and the window controls stay right.
+  centred. It follows the tabs, and the window controls stay right. D6.7 adds an eighth
+  tab, Rules (about 60px more); the command bar moves right with it and still fits
+  beside D6.8's Settings button. The artboards drawn before D6.7 still show seven tabs.
 
 **Transactions additions** — drawn in D6.3. Four 1440×900 artboards duplicated from
 Transactions (`18E-0`), plus a states board. Same shell, fixture data and inspector
@@ -861,33 +912,1158 @@ token, `--container-dialog`.
   2. *Every transaction has `created_at`.*
   3. *The rule prompt needs at least one earlier match.*
 
-**Import (dialog, 760px).** Steps in a segmented control: File → Map → Review.
-- Map: left column of field rows (detected preset "Monzo" as a select at the top, then date
-  column + format, amount, merchant, description, ...); right column, a live preview of the
-  first 10 parsed rows. Rows that fail to parse get the flagged style.
-- Review: "312 new · 16 already imported · 0 flagged" in mono, reconciliation result, and a
-  neutral primary button "Import 312 transactions".
+**Remaining screens** — drawn in D6.1 (no longer Proposed). Six 1440×900 artboards and two
+states boards, built from the existing shells (Transactions with an inspector, Overview
+without) and Components clones. Every colour, size, gap, radius and type value is a bound
+token. Typed values as on D3/D4: 1px borders, the Dock shadow on dialogs, SVG icon paths,
+data-driven bar and point positions, the 50% radius of a chart point. Two new tokens,
+`--container-dialog-wide` and `--container-reading`. Fixture data continues the
+Transactions and Overview fixtures (November 2026, the same accounts, categories and
+merchants).
 
-**Trends.** A category or merchant picker at the top (select + search). Below it: the
-pick's monthly spending over 12 months (bars, `text-secondary`, average as a dashed
-`text-muted` line); top merchants as a ranked bar list; and recurring payments as list
-rows (merchant, cadence, mono amount, next expected date), where an increase since the
-last payment is flagged with `warning`.
+**Accounts panel** (states board `8D8-0`). The left panel is the same on every view that
+filters by account (Overview, Transactions, Trends, Budgets, Net worth); Inbox and Reviews
+replace it with their own lists.
+- Net worth figure at the top (mono 13/16 600), then ACCOUNTS (section label row with a `+`
+  that opens "New account"), one list row per account with its mono balance; pots nested
+  20px under their parent with the pot icon. CATEGORIES below, used as a filter.
+- Row states: selected (`molten-soft`, white label), hover, **flagged** (a 6px `danger`
+  dot before the balance: a balance assertion failed; the tooltip names the window), **no
+  balance** (the value reads "No balance" in UI type, `text-muted`; the account is left out
+  of net worth until a balance is entered). A negative balance is `danger` (see "Money").
+- **Account inspector** (an account selected, no transaction selected). Header: name,
+  balance as display figure, caption "Balance on 9 Nov · pots not included". Details: Name,
+  Bank (fields), Kind (select), Currency (read-only with a 10px lock once the account has
+  transactions), Preset (select, used by the next import). Balances: the anchors the user
+  entered, each "date · Entered by you · amount", outline "Add balance…", and a caption
+  that the balances are checked against the transactions. Pots: each pot with its
+  balance, total in the title row. Imports: file name and "count · date" per batch. Footer:
+  outline "Close account…" (hides the account and keeps its history; there's no delete for
+  an account with transactions).
+- **New account dialog** (`--container-dialog`): Name, Bank, Kind (select), Currency
+  (select), Balance (`£` prefix, optional, with its date beside it in a 96px field). Caption:
+  a credit card owes money as a negative balance; skip the balance when the export has
+  one; pots come from imports. Cancel / "Add account" (neutral primary).
+- Cash, asset and liability accounts: drawn in D6.9, see "Accounts you keep yourself".
 
-**Inbox.** Agent cards grouped by kind (Categorisations, Rules, Transfer pairs), each with
-its source ("Claude Code · 2h ago"). Each item has approve ✓ / reject ✕ icon buttons; each
-group has "Approve all (12)" (agent primary) and "Reject all" (agent outline).
+**Inbox** (`564-0`). Transactions shell with the Inbox tab active and the left panel
+replaced by filters:
+- Left panel: INBOX (Pending 12 selected, Approved 148, Rejected 23, with check / cross
+  icons), KIND (Categorisations 9, Rules 2, Transfer pairs 1), SOURCE (Claude Code 12 with a
+  moldavite connected dot, Codex 0, "Coffer from your edits" 0: the app's own `rule`
+  suggestions). D6.4 adds a CHECKS section between INBOX and KIND: see "Review queues".
+- Toolbar (52px, bottom hairline): "Pending" in title type, caption "12 suggestions ·
+  nothing changes until you approve", and kbd hints on the right: A Approve, R Reject, ↑↓
+  Move.
+- **Groups are table sections, not agent cards** (changed from the proposal). With a dozen
+  rows a moldavite card per group was heavy, and the table language lines up with
+  Transactions. Each group: a 28px header with the group name (11/14 600
+  `text-secondary`, like a day header) and mono count, plus the lane labels for that kind;
+  28px rows; a footer with "Approve all (9)" (agent primary), "Reject all" (agent outline),
+  and the source right-aligned ("✦ Claude Code · 2h ago", the client name in
+  `moldavite-text`). A group of one says "Approve" / "Reject". Groups are divided by a
+  hairline.
+- Lanes (row content 840px): item (flex) · NOW (140, `column-account`) · SUGGESTED (180,
+  `column-category`) · DATE (48, mono 11/14 right) · AMOUNT (96, mono 12/16 right) · 52px
+  action lane (two 24px icon buttons, 4px apart). Suggested is the table's AI-suggested
+  style (10px sparkle, `moldavite-text`). Now shows the current category (marker +
+  label; dashed "Uncategorised"); a category set by a rule is shown plainly and the
+  inspector says which rule. Rules use NOW for the rule that decides today ("No rule",
+  "Rule UBER") and MATCHES (mono count) in the amount lane. Transfer pairs show "Savings →
+  Current account", "Income and spending" under NOW, and the unsigned amount (a pair has
+  no direction).
+- Approve ✓ (`moldavite-text`) and reject ✕ (`text-secondary`) appear on hover and on the
+  selected row only; at rest the lane is empty, so twelve rows don't repeat 24 icons.
+- Inspector (a categorisation selected, UBER *EATS, which a rule filed as Transport): the
+  transaction header; the agent suggestion card ("Change Transport to Eating out", the
+  agent's reason, Approve / Reject); Details read-only (Category, Set by "Rule Merchant
+  contains UBER", Account, Date) with a caption that approving changes only this
+  transaction; Raw description; "One transaction" + outline "Show in Transactions". D6.6
+  replaces the caption with an "If you approve" section: see "Inbox impact preview".
 
-**Budgets.** One row per category: name, "£212 of £300" in mono, a 3px bar (fill
-`text-secondary`; `warning` at 85% or more; `danger` over 100%, with the overage drawn
-past the end), remaining amount right-aligned.
+**Import** (`5ZQ-0` map step over Transactions; states board `6J4-0`). A dialog
+(`--container-dialog-wide`, 760px) over the window, backdrop `chrome` at `opacity-muted`
+(still provisional, see "Implementing in GPUI"). Header: title, caption (format,
+encoding, row count), the panel segmented control (File / Map / Review, 272px) and a 28px
+close button. Footer: a caption on the left, actions right-aligned, above a hairline.
+- **File**: steps not yet reachable are at `opacity-disabled`. A dashed drop zone
+  (`border-strong`, `radius-surface`, 168px: `spacing-6` × 7) with a download icon well,
+  "Drop a statement here" and outline "Choose file…"; RECENT IMPORTS below (file, account,
+  preset, mono date). Caption: importing the same file twice duplicates nothing.
+- **Map**: left column `container-panel` wide: Preset and Account selects, a caption
+  ("Detected from the header row…"), then COLUMNS: Date, Format (mono `DD/MM/YYYY`), Time,
+  Amount ("Amount · signed"), Merchant, Details, ID, Balance ("None in this file", muted).
+  Right column, 24px away: "Preview · First 10 of 312 rows", a table (DATE 48, MERCHANT,
+  AMOUNT 96), pot transfers muted with the transfer icon. A row that can't be parsed gets
+  `danger-soft` fill, the 6px `danger` dot and its raw value in `danger`; a note under the
+  table explains it ("Row 8: “8,99” isn't an amount with a decimal point. It will be
+  imported as flagged, not skipped.") and says pot transfers pair automatically. Footer:
+  "Nothing is saved until you import. A backup is taken first." Back / "Review 312 rows".
+- **Review**: figures (New 295, Already imported 16 in `text-muted`, Flagged 1 with a
+  `danger` dot; mono 20/24), AFTER IMPORT rows (categorised by rules, from Monzo's
+  categories, left uncategorised, pot transfers paired, possible duplicates with a
+  `warning` dot), then the reconciliation block, then Back / "Import 296 transactions".
+  Flagged rows are imported (and flagged), so they're in the count.
+- **Reconciliation block**, a 12px-padded box (`radius-surface`): *not reconciled*
+  (hairline border, info icon, `text-strong` title: the export has no balances; neutral,
+  because that's expected for Monzo), *reconciled* (hairline, check icon in `text`, the
+  closing balance it matched), *mismatch* (`danger-soft` fill, `danger` icon and title,
+  both balances, the gap and the window since the last passing balance; the primary
+  button becomes "Import and flag the mismatch"), *locked period* (`warning-soft`, lock
+  icon, the rows dated on or before `reconciled_through` stay out unless the user unlocks,
+  outline "Unlock…").
 
-**Net worth.** Line chart (`text` line, 8% area) over 12 or 24 months, then account
-balances with their change for the period. Accounts with no balance data (e.g. Monzo
-exports) show a neutral card: "Enter today's balance to include this account".
+**Budgets** (`6OE-0`). Transactions shell (left panel, inspector) with the Overview canvas
+padding (16px top, 24px inline).
+- Month switcher ("November 2026"), then figures: Left to spend (display figure) with
+  "£16.02 a day for 21 days", Spent with "78% of budget, 30% of the month", Budgeted with
+  the category count.
+- A table, not a ranked list (the bars need the budget's end to line up): CATEGORY (180,
+  marker + name) · bar (flex) · SPENT · BUDGET (`text-muted`) · LEFT (96 each, mono). The
+  bar is the component's budget bar: 3px, `border` track, fill `text-secondary`, `warning`
+  at 85% or more, `danger` over 100% with the overage after a 2px gap. LEFT takes the same
+  colour (`warning` / `danger`, negative signed). A Total row (600) under a hairline.
+- "Spending without a budget": Uncategorised with its amount and outline "Categorise 6".
+- Inspector for the selected budget (Eating out): name, spent as display figure, "of
+  £300.00 · 89% used with 21 days to go"; the Budget field (`£` prefix, "/ month" unit) with
+  a caption; "Last 6 months" as a small bar list scaled to the largest month, with a 1px
+  dashed `text-muted` budget line through it and the part of a bar over budget in
+  `danger`; "Largest in November" (date, merchant, amount) and outline "Show all in
+  Transactions". Rollover, groups, the pace line and Upcoming: drawn in D6.10, see
+  "Budgets: groups, rollover, pace and upcoming".
 
-**Reviews.** List of saved AI reviews (period, title, source client) on the left; the
-selected review in reading type (13/20 body, 15/20 headings) on the right.
+**Trends** (`781-0`). Overview shell.
+- Picker row: a category select (`container-search-field`, marker + name), "or", and a
+  "Search merchants" field. Picking a category also selects its row in the left panel.
+- Figures: Average a month (display figure), Last 12 months with the change on the year
+  before, the selected month with its change and "highest this year".
+- "{Category} by month": the Overview chart with one bar per month (`text-secondary`,
+  monochrome: one series), y axis to the next round step, an average line (1px dashed
+  `text-muted`, labelled "Avg £312.67" in mono micro on a `canvas` patch at its left end),
+  legend "Spending" / "--- Average", the selected month with the selection overlay and
+  molten label.
+- Lower row: "Top merchants · {category} · last 12 months" as a ranked bar list without
+  markers (bars `text-secondary`; "64 other merchants" last, drawn as Other) and
+  "Recurring · {category}" with the monthly total; a price rise is flagged as on Overview.
+
+**Net worth** (`7LH-0`). Overview shell.
+- Figures: Net worth (display figure, "On 31 Oct, across 6 accounts"), Change (12 months,
+  signed), the latest month's change.
+- Chart: month-end net worth as a 1.5px `text` line with an `opacity-area-fill` area to
+  the £0 baseline (the area must start at zero), the y axis £0 to the next round step, the
+  last point selected (6px dot, 2px `canvas` ring, molten label). The range is an
+  inspector-size segmented control in the chart header: 12 months, 24 months, All.
+- Accounts table: ACCOUNT (icon, pots indented 20px) · BALANCE FROM (180: "Your balance on 1
+  Sep", "Pot transfers", "Statement (OFX)", "Your valuation on 31 Oct") · CHANGE (signed,
+  `text-secondary`) · BALANCE (96). Changes sum to the figure.
+- An account without balances gets a neutral card under the table (`float`, hairline,
+  `radius-surface`, icon well): "Amex isn't in your net worth yet", why, and outline
+  "Enter balance…". Its left-panel row reads "No balance".
+
+**Reviews** (`7YM-0`). Transactions shell; the left panel lists the reviews.
+- Left panel: SAVED REVIEWS with a count, one row per review (10px moldavite sparkle,
+  title, mono save date); the selected one `molten-soft`. A caption under the list: reviews
+  are written by the AI client with `monthly_review`; Coffer never runs a model.
+- Canvas: one column `--container-reading` (560px) wide, 24px top and 48px inline padding.
+  Byline as the agent card header (sparkle, "Claude", "Claude Code · saved 1 Nov, 09:12"),
+  the title in display type (32/38 600), a caption with the kind and period, then the body
+  in reading type: 13/20 paragraphs, 15/20 600 headings 8px above their text, "–" lists in
+  a 12px lane; figures inside text in mono.
+- Inspector "About this review": a caption that it was written by an AI client (read it
+  as advice); Period, Client ("Claude Code · standard access"), Prompt (mono), Saved;
+  "What it read" — the tool calls from the access log with counts, "11 tool calls returned
+  214 transaction rows", outline "Open access log" (D6.8); destructive outline "Delete
+  review…". Safe rendering, the `ai_authored` marker and withheld text: see "Safe report
+  rendering" below (D6.11).
+
+**Safe report rendering** — drawn in D6.11 (M4.10, M2.13). A 1440×900 artboard,
+Reviews · safe rendering (`C6D-0`), duplicated from Reviews with "Subscription check"
+(24 Oct) selected, plus a states board, Reviews · D6.11 states (`E43-0`, 1440 wide). Every
+value is a bound token; typed values as on D6.1 (1px borders, SVG icon paths). No new
+tokens (hash still `6a126241`). A review is AI text, so the renderer treats it as
+untrusted: a small markdown subset renders, everything else shows as the text it is, and
+nothing in a review can load, open or run anything. The stored `body_markdown` is never
+changed; all of this happens at render time.
+- **The subset** (states board, "What renders"). `#` and `##` are reading headings
+  (15/20 600, `tracking-tight`, 8px above); `###` and deeper are 13/20 600. The review's
+  title comes from the report's `title`, not the body. `**strong**` is 600;
+  `*emphasis*` is 500 in `text-strong`, because Coffer bundles no italic face (open
+  question 1). `` `code` `` is mono 12px `text-secondary`; a fenced block sits on `field`,
+  `radius-md`, 8×12 padding, mono 12/20 `text-strong`, no highlighting. Lists: "–" in a
+  12px lane, numbers in mono 12px `text-muted` in a 16px lane, both 10px from the text;
+  one nested level (indented by the lane and gap, its "–" `text-faint`), deeper items join
+  it. A quote: 12px inset behind a 2px `border-strong` rule, `text-secondary`. `---` is a
+  hairline with 4px above and below. GFM tables use the data-table language: caps header
+  (11/14 600 +0.06em `text-muted`), 28px rows, hairlines, 12px column gaps, 12/16 cells;
+  a cell holding only a figure is mono; alignment comes from the `--:` row; a table wider
+  than the measure scrolls inside itself. Figures in running text are mono, as in every
+  review (D6.1).
+- **Links** are inert. `[text](url)` renders the text, a space, then the address in mono
+  12px `text-muted`: no underline, no pointer, no hover, not clickable, but selectable
+  and copyable. A link whose text looks like an address shows both, so a mismatch
+  (`spotify.com` → `spotify-billing.example`) can't hide. A bare URL or `<autolink>`
+  shows once, the same way. Long addresses wrap anywhere.
+- **Images** are never fetched. `![alt](url)` becomes a block: 1px dashed `border-strong`,
+  `radius-surface`, 10×12 padding; a 14px `image` icon, "Image not loaded" (12/16 500
+  `text-secondary`) and the alt text in quotes (`text-muted`), then the address in mono
+  11/14 `text-muted` aligned under the label. The address is shown because an image URL
+  is the usual way to carry data out (`…&d=38.00,30.00,…`).
+- **HTML** is never parsed as HTML. Inline HTML shows as written, tags and all, in mono
+  12px `text-muted`. An HTML block (`<details>`, `<script>`, `<iframe>`, `<style>`, …)
+  shows in a code block headed by a 24px row: a 12px `code` icon (`‹ ›`) and "HTML, shown
+  as text" (caption `text-muted`), above a hairline. Entities (`&amp;`) are decoded;
+  nothing else is.
+- **Anything outside the subset** (task lists, strikethrough, footnotes, maths) keeps its
+  markdown characters and reads as plain text: `[ ] ~~Cancel the free trial~~ done[^1]`.
+- **Hidden characters.** Control, zero-width and bidi characters are removed at render
+  time (they can hide or reorder words) and counted in the inspector.
+- **The `ai_authored` marker.** In the app: an agent badge, "AI-written", at the right
+  end of the byline (`moldavite-soft`, `moldavite` 10/12 700, radius 8, 16px high; 6px
+  inline padding where count badges have 4px, because it holds a word). In the
+  inspector's details, a "Read back" row with `ai_authored` in mono and a caption: an AI
+  client reading the review back gets it marked as written by AI, an opinion and not the
+  user's data. Over MCP: `list_reports` returns `"ai_authored": true` on every report
+  (states board, "What the AI client gets").
+- **Inspector "Shown as text"**, a section between the details and "What it read", only
+  when the review has something to show as text. One 24px row per kind, in this order,
+  each a 12px icon, a mono count and the kind (12/16 `text-secondary`) and a caption on
+  the right (`text-muted`): `link` "3 links · Never opened", `image` "1 image · Never
+  loaded", `code` "2 HTML snippets · Never run", `hidden` (an eye, struck through)
+  "3 hidden characters · Removed". A kind with nothing is left out. Caption: links, images
+  and HTML appear as text, so opening a review never reaches the internet.
+- **Withheld text** (M2.13). When the review's tool calls withheld any descriptions, "What
+  it read" gains a block after the call summary: a 12px `shield` in `warning` and "2
+  descriptions withheld" (12/16 500 `text-strong`, mono count), then a caption: their bank
+  text read like instructions to an AI, so the client got a marker instead; check where
+  they came from. Outline "Show in Transactions" sits beside "Open access log". Warning,
+  not danger: nothing went wrong, but text like that in a bank export is worth a look.
+  - **Transactions**: "Show in Transactions" turns on a **"Withheld from AI"** filter chip
+    (the Excluded chip's on state, with the `warning` `shield` before the label and a mono
+    count). It lists every transaction whose text Coffer withholds, not only the ones
+    this review's calls returned.
+  - **Transactions inspector**: under "Raw description" (the full text, unchanged, mono),
+    a 24px marker row, `warning` `shield` + "Withheld from AI clients" (12/16 500
+    `text-strong`), and a caption: AI clients get a marker in its place and still see the
+    merchant, amount and date; nothing here changes the transaction.
+  - **Over MCP** the field keeps its type: `"description_untrusted": "[withheld: 74
+    characters that read like instructions]"`.
+- **New icons** (12px, 1.2 stroke, round caps and joins; paths on the states board):
+  `link`, `image`, `code`, `shield`, `hidden`.
+- **Decided** (2026-11-10, `ARCHITECTURE.md` → "Decision record: safe report rendering
+  and withheld text"), all as the designs assume:
+  1. `*emphasis*` renders as 500 `text-strong`; no italic face is bundled.
+  2. The withheld count is a `withheld_count` column on `mcp_access_log`, summed per
+     review over its calls. The "Withheld from AI" filter re-runs the same check over raw
+     descriptions, so the log never stores which transactions were withheld.
+  3. The marker is `[withheld: N characters that read like instructions]`.
+  4. `list_reports` returns `body_markdown` with control, zero-width and bidi characters
+     stripped and `ai_authored: true`; nothing inside a report is withheld.
+
+**Review queues** — drawn in D6.4. Two 1440×900 artboards built from the Inbox shell
+(`564-0`), plus a states board. Every value is a bound token; typed values as on D6.1
+(1px borders, the Dock shadow on dialogs, SVG icon paths). No new tokens (hash still
+`6a126241`). Fixture data continues D6.1: the Joint account's balance check on 9 Nov fails
+by −£42.50, and a possible duplicate of −£42.50 on the same account explains it.
+- **Where they live.** The view tabs have room for only one more at 1440 (it went to
+  Rules in D6.7), and the Inbox is already where decisions wait. So the Inbox's left panel gains a CHECKS section between
+  INBOX and KIND: "Possible duplicates" (a two-rectangle `duplicate` icon, mono count) and
+  "Balance checks" (a `balance` scales icon; a 6px `danger` dot before the count while
+  one fails). These are Coffer's own checks, not agent suggestions, so they're neutral:
+  no moldavite, and they don't add to the Inbox tab's moldavite badge, which still
+  counts pending suggestions only. KIND and SOURCE keep filtering suggestions. A failing
+  check also replaces "Reconciled" in the status bar with a `danger` dot and "1 balance
+  check failing", and the flagged account's dot in the Accounts panel opens Balance
+  checks with that check selected. D6.5 adds a third row, "Owed to you" (see "Refunds,
+  reimbursements and shared costs").
+- **Possible duplicates** (`8SE-0`). Toolbar: "Possible duplicates", caption "3 pairs ·
+  nothing changes until you merge", kbd hints M Merge, N Not duplicates, ←→ Keep, ↑↓
+  Move. A table (header and 28px rows like the Inbox's, no action lane): PAIR (flex: the
+  two merchant names joined by a `text-muted` "and") · ACCOUNT (140) · WHY FLAGGED (180:
+  "1 day apart, text differs") · DATES (72, mono, `text-muted`) · AMOUNT (96, mono).
+  - **The selected pair opens in place** into a side-by-side comparison below its row.
+    The label lane is `column-amount` (96px) wide, then two equal columns 24px apart. Each
+    column is headed by what happens to that row: `check` + "Keep" (600, `text`) with a
+    caption saying where the row came from ("Imported, with the bank's ID"), and
+    `excluded` + "Exclude as duplicate" (600, `text-secondary`, "Added by you on 5 Nov")
+    with an outline compact "Keep this instead" (←→ does the same). Fields in 24px rows,
+    4px apart: Date, Merchant, Amount, Category, Bank text (raw description, mono), Bank
+    ID (mono). **Values that differ are `text`; values both rows share are
+    `text-muted`**, so the eye goes to the differences. A missing value reads "None" in
+    `text-muted`. Footer, aligned with the value columns: "Merge" (neutral primary:
+    merging is undoable and deletes nothing), outline "Not duplicates", and the caption
+    "The excluded row stays under the Excluded filter. Undo any time." A hairline closes
+    the pair.
+  - **Which row is kept by default:** the one with the bank's ID; if both or neither have
+    one, the one imported first. A manual row loses to an imported one.
+  - A caption under the table explains the rule: exact duplicates are skipped at import;
+    a pair is flagged when one account has the same amount twice within 3 days under
+    different text.
+  - **Inspector.** Header: merchant, the amount as display figure, "Joint account ·
+    possible duplicate". "Why it was flagged": one 24px row per criterion, a 12px icon
+    then the criterion, with its value as a caption on the right. Met criteria take a
+    `text-muted` `check` (Same account, Same amount, Within 3 days). The two that stopped
+    exact dedupe take a `warning` `differs` (≠) icon (Different text, Bank ID on one
+    only). A caption follows: an exact match is skipped at import; these two differ, so
+    Coffer asks. "If you merge" (read-only field rows): Excludes "OCADO.COM · 5 Nov",
+    Spending "Groceries £42.50 less", Balance "−£24.10 → £18.40", Check "`check` 9 Nov
+    passes". A caption names the balance check the pair explains. Then "Both
+    transactions" with outline "Show in Transactions".
+  - **After a merge** the pair leaves the queue, the next pair opens, and the D6.3 undo
+    bar reads "Merged Ocado: OCADO.COM excluded as a duplicate" with Undo (states board).
+    The excluded row gets reason Duplicate, so it also leaves the balance (ARCHITECTURE
+    "Decision record: Transactions additions"). Several merges in a row are separate
+    `change_batch`es, one per pair.
+  - **Not duplicates** dismisses the pair (`status = dismissed`). It changes no
+    transaction, and the same two rows are never flagged again.
+- **Balance checks** (`98K-0`). Toolbar: "Balance checks", caption "Every balance you
+  enter or import is checked against the transactions · 1 failing". One table section
+  per account that has balances, failing accounts first, divided by hairlines.
+  - **Group header** (28px): a 16px status lane (empty), the account name (11/14 600
+    `text-secondary`), then the lock state: a 10px `lock` and "Locked through 30 Sep"
+    (caption `text-muted`, date in mono). No lock, no text. Lane labels: DATE (72) ·
+    BALANCE · COFFER · DIFFERENCE (96 each, right-aligned).
+  - **Rows**, newest first: the status icon (`check` `text-muted` passed, `alert`
+    `danger` failed), the source ("Entered by you", "Statement (OFX)"), mono date, the
+    balance given (`text`), Coffer's computed balance and the difference (mono). Passed:
+    difference `£0.00` in `text-muted`. Failed: the difference is `danger`, 600; Coffer's
+    balance follows the Money rule (a negative balance is `danger`). The oldest balance
+    is the **starting point**, not a check: its source reads "… · starting point" in
+    `text-muted`, no icon, and "—" for Coffer and Difference.
+  - **Failing window**, under a failed row, indented to the source lane: a caption naming
+    the last balance that matched and the transaction count since ("The gap opened after
+    30 Sep, the last balance that matched: 47 transactions to look at"), and, when one
+    exists, the possible duplicate that explains the gap. Outline compact "Review pair"
+    and "Show 47 transactions" (Transactions filtered to the account and the window).
+  - **Lock prompt**, at the foot of an account whose checks all pass beyond its lock: a
+    caption and an outline compact "`lock` Lock through 31 Oct…", which opens the lock
+    dialog. **One balance only** (Current account, a Monzo export with no balances): the
+    starting point and a caption that there's nothing to check yet, with outline "Add
+    balance…" (the D6.1 balance dialog).
+  - A closing caption lists what isn't checked: accounts with no balance (Amex),
+    valuation accounts (a valuation sets the balance; D6.9), and pots (they follow their
+    transfers).
+  - **Inspector** (a failed check selected). Header: account name, the difference as
+    display figure, "Check on 9 Nov failed · Coffer is short". "This check" (read-only
+    field rows): Balance "£18.40 entered by you", Coffer "−£24.10 from transactions",
+    Matched "£512.40 on 30 Sep", Window "1 Oct – 9 Nov", and a caption: Coffer starts
+    from the last balance that matched and adds every transaction since. "What could
+    explain it": a card (`float`, 1px `hairline`, `radius-surface`, 12px padding) for the
+    possible duplicate, with its amount, a caption ("Merging it closes the gap exactly.")
+    and outline "Review pair". Then a caption with the other usual causes (a transaction
+    missing from an import, one dated on the wrong side of the check, a balance typed
+    wrong) and outline "Edit balance…". "Lock": a 12px `lock`, "Locked through 30 Sep"
+    (600), outline "Unlock…", and a caption saying what the lock does and that the user
+    can lock through 9 Nov once this check passes.
+- **States board** (`9MQ-0`, 1440 wide).
+  - **Lock dialog** (`--container-dialog`): "Lock Savings through 31 Oct?", a body saying
+    what gets flagged and that nothing changes now, a Through select (passing check dates
+    only, latest first: "31 Oct 2026 · latest passing check"), Cancel / "Lock" (neutral
+    primary).
+  - **Unlock dialog**: "Unlock Joint account?", a body (changes dated on or before the lock
+    stop being flagged; the checks keep running; lock again once they pass), Cancel /
+    "Unlock" (neutral primary: unlocking is reversible and changes no data). Unlock clears
+    the lock; locking again picks a date.
+  - **The merge undo bar** (above).
+  - **Merging into a locked period**: the pair's footer gains the Import dialog's
+    `warning-soft` locked-period block ("The excluded row is in a locked period", the
+    lock date and the row's date, outline "Unlock…"). Merge is at `opacity-disabled`
+    until the account is unlocked, or until "Keep this instead" makes the excluded row
+    one outside the lock. "Not duplicates" stays enabled: it changes no transaction.
+  - **Empty queue**: centred in the canvas, a 36px `field` icon well with the 16px
+    `duplicate` icon, "No possible duplicates" (title type) and a caption: Coffer checks
+    every import, and a pair marked "Not duplicates" isn't flagged again.
+- **Data-model questions: decided** (user, 2026-11-10; `ARCHITECTURE.md` → "Decision
+  record: review queues"). Each went with the recommendation below, which the designs
+  already assume.
+  1. *Is the oldest balance a check?* Recommended: no. The first `balance_snapshot` of an
+     account is the starting point that Coffer counts from; every later one is a check.
+     A `valuation` snapshot sets the balance and is never a check.
+  2. *What can be locked?* Recommended: only through the date of a passing check, and only
+     when every check up to that date passes. Unlock clears `reconciled_through`; there's
+     no partial unlock.
+  3. *Which row does a merge keep by default?* Recommended: the row with a source ID, then
+     an imported row over a manual one, then the one imported first. The user can swap
+     before merging.
+  4. *Near-duplicate window.* The designs use 3 days. A default, not an invariant (see
+     "Defaults, not invariants").
+  5. *Does a dismissed pair stay dismissed?* Recommended: yes, for that pair of
+     transactions, for good. A new import that brings a third match is a new pair.
+
+**Refunds, reimbursements and shared costs** — drawn in D6.5. Two 1440×900 artboards
+duplicated from Transactions (`3WT-0`), one from Review · balance checks (`98K-0`), and a
+states board. Every value is a bound token; typed values as on D6.4 (1px borders, the
+Dock shadow on dialogs, SVG icon paths). No new tokens (hash still `6a126241`). Fixture
+data continues D3/D6.4: the ASOS.com refund (+£34.00, 8 Nov, Joint account) and a
+28 Oct purchase of −£68.00; Odeon (−£31.80, 7 Nov) shared with Sam; a work trip
+(Trainline, Premier Inn Leeds) and an Uber to claim back; a +£150.60 repayment from
+ACME LTD EXPENSES on 9 Nov.
+
+Three kinds of link, one per `transaction_link.kind`. A **refund** ties money in to a
+purchase; it takes the purchase's category, so it nets against it and never counts as
+income. A **reimbursement** ties money in to a purchase marked to claim back, and clears
+the claim. A **settlement** ties money in to a person (a share label) and reduces what
+they owe. All three are made by the user or confirmed from a suggestion. Coffer's own
+suggestions are neutral (no moldavite); the AI's `refund_link` suggestions are Inbox items
+(D6.6).
+
+- **Two new inspector sections** on every transaction, so they're always in the same
+  place.
+  - **Share** (outflows only), between Details and Links: an inspector-size segmented
+    control with "Just me" (the default; nothing else shows), "Shared" and "Claim back".
+  - **Links** (every transaction), between Share and Split: title "Links", outline
+    "Link…", then one 28px row per link: a 12px `link` icon, what it is ("Refund", "Refund
+    of ASOS.com", "Reimbursed") with its date in mono caption `text-muted`, the mono
+    amount, and a 24px ✕ icon button that unlinks. Unlinking needs no dialog: the D6.3
+    undo bar offers Undo. With no links, a caption says what can be linked.
+- **Refund link** (`9WS-0`). The ASOS.com refund is selected. Its Links section holds
+  Coffer's suggestion as a card (`float`, 1px `hairline`, `radius-surface`, 12px
+  padding, like D6.3's rule prompt):
+  - "Is this a refund?" and why ("Same merchant and account, 11 days earlier, for more
+    than this amount");
+  - the purchase as a 28px `field` strip (mono date, merchant, mono amount);
+  - what linking changes ("it takes the purchase's category, so it's £34.00 less
+    Shopping and never income. The purchase shows £34.00 of £68.00 refunded");
+  - outline "Link as refund", ghost "Not a refund". "Not a refund" rejects the
+    suggestion for good (`status = rejected`).
+- **After linking** (states board `FDC-0`). The refund's Category row turns read-only:
+  marker and name in `text-secondary`, a 10px `link` icon in `icon-faint` where the
+  lock goes, and a caption saying the purchase sets it ("Unlink to set it yourself").
+  The purchase's Links row reads "Refund · 8 Nov +£34.00" with the caption "£34.00 of
+  £68.00 refunded, so Shopping counts £34.00".
+- **Link dialog** (states board `EUY-0`, `--container-dialog`): "Link ASOS.com +£34.00",
+  a Kind segmented control (Refund / Reimbursement / Settlement), a search field
+  prefilled with the merchant, then candidates in 28px rows (mono date, merchant ·
+  account, mono amount): same merchant first, then newest. A purchase that can't take
+  more (already fully refunded) is at `opacity-disabled` with the reason. Amount (`£`
+  prefix, mono) defaults to the smaller of the money in and what the purchase can still
+  take, so one refund can be split across purchases. Cancel / "Link refund" (neutral
+  primary: linking is undoable). Reimbursement lists purchases marked to claim back;
+  Settlement lists people with what each owes.
+- **Shared cost** (`BAT-0`). Odeon is selected with Share on "Shared":
+  - Yours: a mono `£` field, "15.90", with "of £31.80" as a caption suffix
+    (`my_share_minor`);
+  - Owed by: a select with a 10px `lock` before the person's name (share labels never
+    leave the app, like private tags) and their part in mono `text-secondary`;
+  - a caption: budgets and reports count your share, the rest waits under Owed to you
+    until a payment from that person is linked, and names stay on this computer.
+  One person per transaction or split line: to share with two people, split the
+  purchase.
+- **Claim back** (states board): Still owed (mono, "£18.60 of £38.60", read-only), a
+  caption that budgets and reports leave it out while it's claimed and it stays on Owed
+  to you until repayments cover it, and the reimbursement in Links ("Reimbursed · 9 Nov
+  +£20.00"). A part payment leaves the rest owed.
+- **Table rows.** Amounts stay what the bank moved; the category cell says how a row
+  counts, with a `text-muted` suffix: "Shopping · refund", "Shopping · refunded",
+  "Entertainment · shared", "Transport · to claim", "Transport · claimed". Repayments
+  have no category: "Repays 2 claims", "Repays Sam" (`text-secondary`, the 8px marker
+  lane left empty so the text lines up). Day totals stay the bank's.
+- **Owed to you** (`CCF-0`), a third row in the Inbox's CHECKS section (a 12px `owed`
+  return-arrow icon, mono count of open items). Like the other checks it's Coffer's
+  own list: neutral, outside the Inbox badge. Toolbar: "Owed to you", caption "£225.73
+  to come back · 3 expense claims and 2 people". Two table sections:
+  - **Expense claims**, oldest first. Lanes: a 16px status lane · the purchase (flex) ·
+    PAID FROM (140) · SPENT (72, mono) · OWED (96). When an incoming payment matches some
+    claims exactly, those rows show a 12px `link` icon and a strip under the section
+    (indented to the text lane, like D6.4's failing window) names it: "+£150.60 from ACME
+    LTD EXPENSES on 9 Nov matches the two marked claims exactly. Link it and both clear."
+    with outline compact "Link as reimbursement" and ghost "Not this".
+  - **Shared costs**, one row per person: name · COSTS ("2 since 30 Oct") · LAST PAID (mono
+    date or "—") · OWED.
+  - A closing caption: how items get here, that part payments leave the rest, and that
+    people are labels on this computer, never sent to an AI client.
+  - **Inspector** (Sam selected): name, what they owe as an unsigned display figure (the
+    label gives the direction, see "Money"), "Owes you for 2 shared costs". Costs (their
+    part of each: mono date, merchant, mono amount); Payments from Sam (outline "Link a
+    payment…", each settlement, a caption with the settled date and "Paid in cash? Add it
+    to your Cash account, then link it here"); Name (a field with the `lock`, renames the
+    label everywhere) and a caption that it never goes to an AI client.
+- **Empty queue** (states board): the D6.4 empty state with the `owed` icon, "Nothing
+  owed to you", and a caption on how purchases get here.
+- **New icons**, both 12px outline: `link` (two chain links) and `owed` (a return
+  arrow). They'll be `Glyph::Link` and `Glyph::Owed` when M3.11 builds them.
+- **States board** (`EB0-0`, 1440 wide): the link dialog and its undo bar; the purchase
+  and refund inspectors after linking, and claim back partly repaid; every new row kind;
+  the empty queue.
+- **Data-model questions: decided** (user, 2026-11-10; `ARCHITECTURE.md` → "Decision
+  record: refunds, reimbursements and shared costs"). Each went with the recommendation
+  below, which the designs already assume.
+  1. *Which month does a refund count in?* Recommended: its own date, as negative spending
+     in the purchase's category. The purchase's month stays as it was, so a closed month
+     doesn't change when a late refund arrives.
+  2. *When does Coffer suggest a link?* Recommended, deterministic only: a refund when
+     money comes in on the same account under the same `merchant_display` as a purchase
+     in the previous 90 days with at least that much left to refund; a reimbursement
+     when money comes in that equals one or a set of outstanding claims to the penny,
+     within 60 days of the newest. Suggestions are `transaction_link` rows with
+     `status = suggested`, shown in the inspector and on Owed to you, not in the Inbox.
+     A rejected pair is never suggested again.
+  3. *Personal or gross by default?* Recommended: spending, budgets, Overview, Trends and
+     MCP reads use your share (personal); a purchase being claimed back counts as £0
+     while it's outstanding, and switching it to "Just me" counts it in full again
+     (for a claim that won't be paid). Balances, net worth and the Transactions table are
+     always gross. A gross toggle on reports can come later.
+  4. *Overpayment.* Recommended: a link's amount is capped at what the purchase can
+     still take or what the person owes. The rest of the incoming money stays unlinked
+     and counts by its own category.
+  5. *Currency.* Recommended: a link needs both sides in the same currency in v1; FX
+     refunds wait for L.28.
+
+**Accounts you keep yourself** — drawn in D6.9. One 1440×900 artboard, Accounts · asset
+(valuations) (`BSI-0`, duplicated from Transactions · manual (cash account)), and a states
+board, Accounts · D6.9 states (`EPF-0`, 1440 wide). Every value is a bound token; typed
+values as on D6.1 (1px borders, the Dock and Toolbar shadows, SVG icon paths, data-driven
+chart positions, the 50% radius of a chart point). No new tokens (hash still
+`6a126241`). Fixture data continues D6.3: Cash (£23.00) plus four valuation accounts,
+House £385,000.00, Workplace pension £41,820.00, Stocks ISA £7,030.55 and Mortgage
+−£212,640.00, so net worth reads £232,443.55.
+- **Accounts panel.** A second section, ASSETS AND LIABILITIES, sits between ACCOUNTS and
+  CATEGORIES, with its own `+` (opens New account with Kind set to Asset). Cash stays in
+  ACCOUNTS: it has transactions like a bank account. Stocks ISA moves here, since its
+  balance is a valuation (D6.1 already showed "Your valuation on 31 Oct"). Two new
+  12px icons, outline like the rest: `asset` (an isometric box: something you own) and
+  `liability` (a receipt with a minus). The earlier artboards' left panels still show
+  the D6.1 list with Stocks ISA under ACCOUNTS; they change when next touched.
+- **A liability isn't overdrawn.** Mortgage reads −£212,640.00 in the panel's usual
+  `text-muted`, not `danger`: a liability is negative by nature, and `danger` would sit on
+  it forever. See "Money" (changed in D6.9).
+- **Valuation account selected** (`BSI-0`, House). Transactions tab; an asset or
+  liability has no transactions, so its valuations replace the table.
+  - **Toolbar** (52px, bottom hairline, like Balance checks): "Valuations" in title type,
+    caption "5 values you entered · net worth uses the latest one on or before each date",
+    and outline "Add valuation" with kbd ⌘N on the right. ⌘N adds the record the selected
+    account takes: a transaction on a bank or cash account, a valuation here.
+  - **Chart** (16px inset, 160px plot): "Value" plus caption "Held until the next
+    valuation · Mar 2024 – today". A 1.5px `text` **step line**: the value holds flat
+    until the next valuation, which is exactly how net worth reads it, and it runs on to
+    today. No area fill, so the y axis fits the values (£340k–£390k) instead of starting at
+    £0; the bottom gridline is `hairline`, not the `border-strong` of a £0 baseline, so it
+    doesn't read as zero. Each valuation is a 6px `text-secondary` point; the latest is
+    selected (6px `text` dot with a 2px `canvas` ring, molten label "12 Oct ·
+    £385,000.00"). X labels every six months, mono 10/12 `text-muted`.
+  - **Table**: DATE (72, mono `text-muted`) · NOTE (flex, `text`) · CHANGE (96, signed,
+    `text-secondary`) · VALUE (96, mono `text`), newest first. The oldest row is the first
+    value: "Purchase price · first value", CHANGE "—". A caption under the table: a
+    valuation sets the balance, so it isn't checked; the account counts toward net worth
+    from its first value; payments toward it (a deposit) stay on the account they left.
+  - **Inspector** (account selected): header name, value as display figure, "Valued by
+    you on 12 Oct · in net worth". Details: Name, Kind (select), Currency (read-only with
+    the lock). No Bank, no Preset: nothing is imported. "Valuations" with outline "Add
+    valuation…" and a caption on how net worth uses them. Footer: outline "Close
+    account…" and destructive outline "Delete account…" (the D6.3 small danger outline),
+    with a caption: closing on the sale date adds a £0 value then; delete only an account
+    added by mistake.
+- **States board** (`EPF-0`).
+  - **Liability inspector** (Mortgage): −£212,640.00 in `text` (not `danger`), "Owed on 1
+    Oct · from your statement". For a liability the section is "Balances" / "Add
+    balance…", since "valuation" reads oddly for a debt; it's the same record. Rows: date
+    (56px lane, so "2 Oct 25" fits), note, signed amount. Caption: monthly payments stay
+    spending on the account they leave; net worth catches up at the next statement.
+  - **Cash inspector**: "Balance on 10 Nov · from your count and entries". The Balances
+    section becomes "Counts" with outline "Count cash…"; the oldest count is the
+    "starting point" (as in Balance checks). Footer: "Close account…" only, because the
+    account has transactions.
+  - **New account, Kind set to Asset**: Bank and Preset disappear; Balance becomes
+    "Value" (`£` prefix, mono, with its date) and a Note row is added. Caption: nothing is
+    imported for an asset; for a liability, enter what you owe and Coffer stores it
+    negative.
+  - **Kind menu** (`float`, 1px `border`, `radius-lg`, Toolbar shadow, 4px padding): two
+    groups under 10/12 caps labels, "Imported from your bank" (Current, Savings, Credit
+    card) and, after a hairline, "Kept by you" (Cash · notes and coins, Asset · house,
+    pension, investments, Liability · mortgage, loan), with the hint in `text-muted`. The
+    chosen item has the `hover` fill and a `check`.
+  - **Cash count** (`--container-dialog`), when the count is short: Counted (`£` field
+    and date), then read-only rows: Coffer "£23.00 from transactions since the 1 Nov
+    count" and Difference "−£5.00" in `warning` with the `alert` icon (as an unbalanced
+    split: unresolved, not yet a failure). Footer: Cancel, outline "Save count only",
+    neutral primary "Add −£5.00 and save", which also adds a manual transaction "Cash count
+    difference" in Other on the count's date so the check passes. Nothing is added unless
+    the user picks it.
+  - **Add a balance for Mortgage**: Owed (`£`, unsigned, with its date) and Note. Caption:
+    type what the statement says; Coffer stores it as −£212,640.00 and never treats it as
+    a failed check.
+  - **Close House?**: body first (it leaves the panel and counts as £0 from the date,
+    so net worth drops by its value then; earlier net worth keeps its valuations; it can be
+    reopened), then "Sold on" (96px date field), Cancel / "Close account" (neutral primary:
+    reversible).
+- **Data-model questions: decided** (user, 2026-11-10; `ARCHITECTURE.md` → "Decision
+  record: accounts you keep yourself"). Each went with the recommendation below, which the
+  designs already assume.
+  1. *A note on each valuation.* Recommended: `balance_snapshot` gains an optional
+     `note`, user text treated like `user_note` (not sent over MCP by default).
+  2. *Can a valuation account have transactions?* Recommended: no. `asset` and
+     `liability` accounts hold `valuation` snapshots only; a payment toward one stays on
+     the paying account (spending, or a transfer the user categorises), and net worth
+     catches up at the next valuation. Linking payments to a loan balance can come later.
+  3. *Closing.* Recommended: `account.closed_on` (date) for every kind. Closing a
+     valuation account also writes a £0 `valuation` snapshot on that date, which reopening
+     removes. An account with transactions keeps D6.1's close-only rule.
+  4. *Deleting.* Recommended: an account with no transactions (a valuation account, or a
+     new empty one) can be deleted with its snapshots. It isn't undoable, so the
+     confirmation says how many values go with it.
+  5. *Cash counts.* Recommended: a count is a `balance_snapshot` with source `manual`,
+     checked like any other balance (the first is the starting point, as in D6.4
+     question 1). "Add and save" writes the snapshot and the difference transaction in
+     one DB transaction; Coffer never posts a difference on its own.
+
+**Inbox impact preview** — drawn in D6.6 (M3.14, M2.14). Two 1440×900 artboards built from
+the Inbox (`564-0`) with the D6.4 CHECKS panel, Inbox · rule impact (`ABK-0`) and Inbox ·
+merchant name impact (`DL8-0`), and a states board, Inbox · D6.6 states (`EWZ-0`). Every
+value is a bound token; typed values as on D6.4. No new tokens (hash still `6a126241`).
+Fixture data continues D6.1, plus a merchant name (`LIME*RIDE` → Lime) and a refund link
+(Uniqlo +£29.90 on 7 Nov, half of a −£59.80 purchase on 24 Oct): 14 pending.
+
+The point is containment (ARCHITECTURE → "Impact preview"): text in a transaction can steer
+an agent, so every suggestion says what approving it would change, row by row, before it
+can be approved. Nothing in the preview is the agent's own words except the card's reason.
+
+- **Kinds and order.** KIND lists Rules, Merchant names, Transfer pairs, Refund links,
+  Categorisations, and the canvas groups follow that order: **widest reach first**, so
+  the suggestions that touch the most history are on screen without scrolling and one-row
+  categorisations come last. "Merchant names" is D6.7's name for `merchant_alias` (its
+  12px name-tag icon); refund links use D6.5's `link` icon.
+- **Lanes per kind** (the D6.1 lanes, relabelled): Rules: DECIDES NOW · SUGGESTED ·
+  CHANGES (how many past transactions would change category, not how many match).
+  Merchant names: SHOWS AS NOW ("9 names" when matches show several) · SUGGESTED (the new
+  name) · RENAMES. Refund links: NOW ("Income": an unlinked inflow counts as income) ·
+  SUGGESTED ("Refund of 24 Oct") · DATE · AMOUNT.
+- **The selected suggestion opens in place** (D6.4's pattern), indented 16px under its
+  row, with its own lane header in 10/12 caps `text-faint`, 24px rows on the same lanes
+  as the group so the eye runs straight down: BANK TEXT (mono, the matched part in
+  `text-strong`, the rest `text-muted`) · NOW (marker + category, or the current name) ·
+  AFTER (the table's AI-suggested style) · DATE · AMOUNT. A row the change leaves alone
+  says why in AFTER: a 10px `you-set` person icon and "Stays, you set it" / "Stays, you
+  named it" in `text-muted`, its NOW value in `text`. Footer: outline compact "Show 6 in
+  Transactions" and a one-line caption. Rules with up to 10 matches list every one; more
+  than that lists the newest 6 under "Bank text · 6 of 14 matches".
+- **Rule** (`ABK-0`, Merchant contains UBER *EATS → Eating out). Six matches: five filed as
+  Transport by Rule UBER change; one the user set to Groceries stays. Inspector: header
+  (the rule, "5 of 6" display figure with "of 6" `text-muted`, "Past matches that change
+  category · new rule"); the agent card ("File UBER *EATS under Eating out" and the
+  reason); **If you approve** (D6.4's "If you merge" rows): Changes "5 past transactions",
+  Keeps "1 category you set", Spending as two marker rows ("Transport £91.20 less",
+  "Eating out £91.20 more"), Settles "The 4 Nov suggestion below" (approving the rule
+  also settles the matching categorisation), and a caption: one change you can undo; a
+  rule from an agent never changes a category you set, open it in Rules to include
+  those. Then **The rule** (When, Then, Order "Before Rule UBER", D6.7's section names)
+  and "6 matches" + Show in Transactions.
+- **Merchant name** (`DL8-0`, Starts with LIME*RIDE → Lime). Fourteen matches; thirteen
+  rename, one the user named "Lime monthly pass" stays. If you approve: Renames "13
+  transactions", Keeps "1 name you set", Groups "9 names into one", Spending "No change",
+  Rules "No change", with the caption that rules match the bank's text, not the name (as
+  D6.7 says), so none starts or stops matching. Then **The merchant name** (Match, Shows
+  as).
+- **Refund link, transfer pair, categorisation** (states board, inspector only; the
+  canvas row doesn't expand, since there is nothing more to list):
+  - Refund: Links to "Uniqlo · 24 Oct · −£59.80", Refunded "£29.90 of £59.80", Income
+    "£29.90 less in Nov", Spending "Shopping £29.90 less in Nov", Purchase "Shopping ·
+    refunded" (D6.5's category cell), and a caption that a linked refund takes its
+    purchase's category and counts in the month the money came back (D6.5 question 1).
+  - Transfer pair: Income and Spending "£250.00 less in Nov", Balances "No change".
+  - Categorisation (replaces the D6.1 caption): Changes "This transaction only", the two
+    Spending rows, Set by "You · was Rule UBER", and a caption pointing at the rule that
+    would cover this one and 4 more.
+- **A wide rule** (states board; M3.14's "changes 143 past transactions; 12 have a
+  category you set"). A rule is *wide* when its matches span more than 5 merchants (a
+  default, not an invariant). Then:
+  - CHANGES is `warning`, 600;
+  - the open preview starts with D6.4's `warning-soft` block, `warning` triangle icon:
+    "This rule reaches 38 merchants, including your salary", "It would change 131 of 143
+    past transactions. A narrower pattern is safer…", and outline compact "Edit in
+    Rules…" (opens D6.7's editor with the rule prefilled);
+  - matches are summed **by merchant** (MERCHANT · NOW · AFTER · COUNT · AMOUNT), biggest
+    surprise first: income turning into a bill sorts above everything else, then by
+    count, then "and 35 more merchants" and "Categories you set · Stays";
+  - **Approve all leaves it out** ("Approve all (1)", with "Leaves out PAY: a wide rule
+    needs its own ✓" beside the buttons). Only the row's own ✓ or the inspector's Approve
+    approves it.
+- **Coffer's own suggestions** (M2.14, source `coffer`): the same card and preview, but
+  neutral. Card: `float` fill, 1px `hairline`, `radius-lg`, the mono mark (12px,
+  `text-secondary`) and "Coffer" 600 + "from your edits · today" `text-muted`, the
+  proposal, a reason that says it was counted ("You moved WASABI to Eating out by hand 3
+  times"), neutral primary Approve + outline Reject. Its group footer names "Coffer ·
+  from your edits" with the mono mark; its buttons are neutral; it doesn't count
+  towards the Inbox tab's moldavite badge.
+- **After approving** anything that changes existing rows (rule, name, pair, link), the
+  D6.3 undo bar: "Approved rule UBER *EATS: 5 transactions now Eating out", Undo. One
+  `change_batch` per approval; Approve all makes one per suggestion.
+- **States board** (`EWZ-0`, 1440 wide): the refund link, transfer pair and categorisation
+  inspectors, Coffer's own card, the wide rule, and the undo bar.
+- **Data-model questions: decided** (user, 2026-11-10; `ARCHITECTURE.md` → "Decision
+  record: Inbox impact preview"). Each went with the recommendation below, which the
+  designs already assume.
+  1. *Does approving an agent's rule change categories the user set?* Recommended: never
+     from the Inbox. It applies to uncategorised and rule-set rows only; including the
+     user's own rows is a choice made in D6.7's apply-to-past preview ("Change these
+     too"). The Inbox has no such toggle, so an approval can't overwrite a hand edit.
+  2. *What makes a rule wide?* Recommended: matches spanning more than 5 distinct
+     `merchant_display` values, or any match that would move income into a spending
+     category. A default, not an invariant.
+  3. *Does Approve all skip wide rules?* Recommended: yes, always. A wide rule needs its
+     own approval with the preview open.
+  4. *Does a rule's approval settle pending categorisations it covers?* Recommended: yes,
+     marked approved with the rule's `change_batch`, so the Inbox doesn't ask twice.
+  5. *Can a merchant name change which rules match?* Recommended: no. Rules match the
+     cleaned bank text before names apply (D6.7), so a name suggestion is cosmetic and
+     its preview says so.
+  6. *Is the impact computed when the suggestion is filed or when it's shown?*
+     Recommended: when shown, against today's data, so a later import or edit can't
+     make a stale preview look smaller than the real change.
+
+**Settings** — drawn in D6.8. Three 1440×900 artboards built from the Inbox shell,
+Settings · AI clients (`AQ2-0`), Settings · access log (`DC6-0`) and Settings · backups
+(`F63-0`), plus a states board, Settings · D6.8 states (`GQA-0`, 1440 wide). Every value
+is a bound token; typed values as on D6.4 (1px borders, the Dock and Toolbar shadows, SVG
+icon paths). No new tokens (hash still `6a126241`). Fixture data continues D6.1–D6.4:
+Claude Code connected at standard access, the November Monzo import, 1,312 transactions.
+- **Where it lives.** The view tabs are views of the money, plus Rules (D6.7), which
+  decides how the money is filed; Settings is neither, so it doesn't take a tab. A 28px icon button with a 14px `settings` (sliders) icon
+  sits at the right of the title bar, before the window controls and a 1×14 hairline
+  separator; ⌘, opens it too. While Settings is open no view tab is active and the
+  button takes the active icon-button look (`control-active` fill, `text` icon). The
+  status bar's "1 agent connected" opens AI clients, and the Reviews inspector's "Open
+  access log" opens the access log filtered to that review's calls.
+- **Left panel.** AI ACCESS: Clients (`plug` icon, mono count of clients), Access log
+  (`log` icon, calls in the last 7 days). DATA: Backups (`backup` icon, count), Export…
+  (`export` icon; opens the export dialog, so it never shows as selected). At the foot,
+  above a hairline, a caption and the data file's path in mono ("Everything is in one
+  file on this computer"). Home currency, exchange rates and presets will join this panel
+  in their own tasks.
+- **AI clients** (`AQ2-0`). Toolbar: "AI clients", caption "Each client sees only what
+  its access level allows · nothing is shared until you enable a client", and on the
+  right the **kill switch**: "AI access" (12/16 500 `text`) and a toggle.
+  - *Clients* table (header and 28px rows like the Inbox's): a 16px status lane (the 6px
+    moldavite dot while a client is connected, the only moldavite on these screens),
+    the client's name with its `--client` id in mono `text-muted` (flex) · ACCESS (180)
+    · LAST CONNECTED (140: "Connected now", or a mono date) · CALLS · 7 DAYS (96, mono)
+    · ON (52, a toggle per client). A client turned off keeps its row, with the name in
+    `text-secondary` and its values in `text-muted`.
+  - *Asked to connect*: a client name Coffer hasn't enabled (`coffer mcp --client
+    my-agent`) is refused before any tool runs and listed here with LAST TRIED and
+    REFUSED (count), the name in mono. Its footer explains where the name came from, with
+    outline "Ignore" and "Enable…". This is how a client gets enabled: MCP stays off
+    until the user approves one here.
+  - *What each level shares*: one row per level with CAN READ (flex) and CAN WRITE (180):
+    Aggregate (totals, budgets, net worth; reviews only), Pseudonymous (transactions with
+    merchant tokens such as `M-7f3a`; Inbox suggestions and reviews), Standard
+    (merchant names and public tags; the same writes). A caption lists what is never
+    shared at any level, and says a tool above a client's level isn't offered at all.
+  - *Inspector* (Claude Code): name, calls in 7 days as display figure, rows returned.
+    Access: Level (select) and a caption saying what it shares; a lower level takes
+    effect on the client's next call. Connect: the command in a mono field with a copy
+    icon button, and a caption that the `--client` name only tells clients apart and isn't
+    a password. Last 7 days: Read (calls · rows), Wrote (suggestions · reviews), Refused,
+    outline "Open access log". At the foot, a caption on the difference between turning
+    a client off (refused, level kept) and removing it (level forgotten; log, suggestions
+    and reviews stay), and destructive outline "Remove client…".
+- **Access log** (`DC6-0`). Toolbar: "Access log", caption "Every tool call: which client,
+  why it says it asked, and how many rows went back · never the data itself", and outline
+  compact filters "All clients ⌄" and "Last 7 days ⌄". Day groups like Transactions
+  ("Today, Tue 10 Nov" and a mono count); lanes labelled once, in the first group: time
+  (48, mono) · client (140) · TOOL (200: a 12px kind lane, then the tool name in mono
+  11/14) · PURPOSE, IN THE CLIENT'S WORDS (flex) · ROWS (96, mono).
+  - Reads have an empty kind lane; writes (`propose_*`, `save_report`) show the
+    `inbox` icon; a refused call shows a `refused` icon (circle with a slash), and the
+    row is `text-muted` with "Refused: my-agent isn't enabled" as its purpose and "—"
+    for rows. Refusal is Coffer doing its job, so it's neutral, not `danger`.
+  - Purposes are shown in quotes in `text-secondary`; a call without one reads "No
+    purpose given" in `text-muted`. The purpose is untrusted text: it's displayed, never
+    interpreted.
+  - A closing caption: the server writes one line per call, refused ones included, and
+    a client can't edit or skip it.
+  - *Inspector* (a call): the tool name in mono as the title, the row count as display
+    figure, "Rows returned · today at 10:42:07". Client (with its level), Kind ("Read ·
+    changes nothing"), Result (mono hash) and a caption that the rows aren't stored, and
+    that two calls with the same hash returned the same data. Arguments: a mono block
+    (`field` fill, `radius-md`) where dates, keys and numbers are shown and free text
+    reads "text, 24 characters". Purpose: the text and a caption to treat it as the
+    client's claim.
+- **Backups** (`F63-0`). Toolbar: "Backups", caption "Taken before every import, restore
+  and update · the last 10 and one a month are kept", outline "Restore from a file…" and
+  "Back up now".
+  - Two groups, Recent (10) and One a month (3): TAKEN (140, mono date) · REASON (flex:
+    "Before importing `monzo-november.csv`" with the file name in mono, "Backed up by
+    you", "Before updating Coffer · schema 6 → 7", "Before restoring the backup from 4
+    Oct") · TRANSACTIONS (96) · SIZE (96, mono). A caption: backups stay on this
+    computer, readable only by the user, and are full copies.
+  - *Inspector* (the 10 Nov backup): "Backup from 10 Nov, 14:02", its transaction count
+    as display figure. Taken (date · automatic), Holds (accounts, rules, settings),
+    Schema ("7 · same as this version"), Size. "Since this backup": what restoring would
+    undo, one row each with a mono count (the import of `monzo-november.csv`, 296 rows;
+    your edits, 4; Inbox suggestions, 12), a caption that a backup of the current state
+    is taken first, and neutral primary "Restore…". File: the path in mono on two
+    lines, outline "Show in folder" and "Save a copy…".
+- **States board** (`GQA-0`).
+  - *AI access off* (872px canvas): the kill switch's toggle off; a neutral banner
+    (hairline border, `radius-surface`, 12px padding, 14px `refused` icon, `text-strong`
+    title "AI access is off", what it does, outline "Turn on"); the clients table at
+    `opacity-disabled`, with no connected dot. Off is a safe state, so the banner is
+    neutral, not `warning`. The status bar replaces "1 agent connected" with a 12px
+    `refused` icon and "AI access off" in `text-muted`.
+  - *Enable dialog* (`--container-dialog`): "Enable `my-agent`?", when it asked, Name
+    (a display name, editable) and Level (select, **starting at Aggregate**, the least
+    shared) with a caption saying what that level shares. Cancel / "Enable" (neutral
+    primary).
+  - *Restore dialog*: "Restore the backup from 10 Nov, 14:02?" Two checks as 24px rows
+    with a 12px `check` and the check's name on the right in caption type ("The file is
+    intact · integrity check", "This version of Coffer can read it · schema 7"); what
+    restoring undoes; a caption that the current state is backed up first and AI clients
+    are refused until the restore is done. Cancel / "Restore" (neutral primary:
+    restoring is reversible through that backup).
+  - *A check fails* (Restore from a file): the failed check's row is `danger` with an
+    `alert` icon ("It was made by a newer Coffer · schema 9, this reads up to 7"), the
+    body says what to do and that nothing changed, and Restore is at
+    `opacity-disabled`.
+  - *Export dialog* (`--container-dialog`): title with an inspector-size segmented
+    control (CSV / JSON) on the right; Dates (two mono fields), Accounts, Categories and
+    Tags (selects); a hairline, then toggle rows "Excluded transactions · with their
+    reason" (off) and "Notes and tags · including private ones" (on); a caption with the
+    counts (transactions and rows; each split line is its own row carrying its parent's
+    ID) and where the columns are documented; footer caption "Saved where you choose.
+    Nothing is uploaded." with Cancel / "Export…" (opens the system save dialog). Opened
+    from Transactions, the selects start from the table's filters.
+  - *After "Back up now"*: the D6.3 notification bar with a `check`, "Backed up 1,312
+    transactions · 5.3 MB" and outline "Show in folder" in place of Undo.
+- **Data-model questions: decided** (user, 2026-11-10; `ARCHITECTURE.md` → "Decision
+  record: Settings, AI access and backups"). Each went with the recommendation below,
+  which the designs already assume.
+  1. *How does the kill switch reach a running server?* Recommended: it's a `setting`
+     the server reads on every call, not only at start, so turning it off refuses the
+     next call of a client that is already connected. Refused calls are logged, which
+     needs an outcome on `mcp_access_log` (`ok`, `refused_off`, `refused_not_enabled`,
+     `refused_level`).
+  2. *Where do unknown clients come from?* Recommended: the first `coffer mcp --client X`
+     for an unknown name creates an `mcp_client` row that isn't enabled (a `requested`
+     state) and is refused; "Ignore" hides the row without enabling it. Only the app or
+     CLI enables a client, never the server.
+  3. *What does a lower level do to a connected client?* Recommended: the server checks
+     the level on every call and refuses tools above it, and sends
+     `notifications/tools/list_changed` so the client drops them from its list.
+  4. *What does argument redaction keep?* Recommended: keys, dates, enum values, numbers
+     and IDs; free-text values are stored as their type and length only.
+  5. *How long is the access log kept?* Recommended: 12 months, as a default, not an
+     invariant (rows are small; one a call).
+  6. *Backups and restore.* Recommended: a backup is also taken before every restore and
+     on "Back up now", and the reason and time live in the file name, so the list needs
+     no table that a restore would roll back. A backup with an older schema is restored
+     and then migrated; a newer one is refused. Running MCP servers are refused while a
+     restore swaps the files and reopen the database afterwards.
+
+**Rules** — drawn in D6.7 (M3.13, M1.23, M1.24). Four 1440×900 artboards built from the
+Review · possible duplicates shell (`8SE-0`): Rules (`B1J-0`), Rules · apply to past
+transactions (`EFT-0`), Rules · merchant names (`G2O-0`) and Rules · change history
+(`GZT-0`), plus a states board, Rules · states (`HFH-0`, 1440 wide). Every value is a
+bound token; typed values as on D6.4 (1px borders, the Dock and Toolbar shadows, SVG icon
+paths). No new tokens (hash still `6a126241`). Fixture data continues D6.1–D6.6: the
+VINTED edit from D6.3's rule prompt, and the UBER rule that D6.6's UBER *EATS suggestion
+goes above. No rule matches a row that Transactions or the Inbox shows as uncategorised
+or AI-suggested.
+- **Where it lives.** An eighth view tab, **Rules**, after Reviews (decided by the user,
+  2026-11-10). Rules are the one thing besides the money that the user returns to, and
+  three routes already point here: D6.3's "Create rule…", the inspector's Rule section,
+  and D6.6's "Open in Rules…". The left panel has RULES: Rules (→ icon, count),
+  Merchant names (12px name-tag icon), Change history (clock-arrow icon). The second
+  section filters the selected list: ACTION for rules (Set category, Set merchant, Add
+  tag, Set note, Exclude, Split, My share, with the action icons below), MATCH for
+  merchant names (Is, Starts with, Pattern), KIND for history (Rule applied, Bulk edit,
+  Duplicate merge). Zero counts stay listed, in mono `text-faint` like the Inbox's.
+- **Rules** (`B1J-0`, rule 2 selected). Toolbar: "Rules", caption "14 rules · checked top
+  to bottom on every import", kbd ↑↓ Move and an outline "+ New rule". A table in
+  priority order (header and 28px rows like the Inbox's): # (24px, mono `text-faint`) ·
+  WHEN (flex: the field and test in `text-secondary`, the text to match in mono `text`;
+  extra conditions follow after a `text-muted` "·", e.g. "· over £1,000") · ACCOUNT (140;
+  "Any account" `text-muted`) · THEN (180: the category's marker and label; other actions
+  as a `text-muted` suffix, "+ tag", "+ name", "+ my share"; a rule without a category
+  shows its first action, "Tag Gift Aid", with the action's icon in the marker lane) ·
+  MATCHES (96, mono). **Matches** counts the transactions the rule decides today: it
+  matches them and no rule above already set the same fields. Drag a row to reorder.
+  - **Never reached**: a rule that matches transactions but always loses to a rule above
+    shows "Never reached" (caption `warning`) before a `text-muted` 0. Its inspector has a
+    card (`float`, 1px `hairline`, `radius-surface`, 12px padding; `alert` icon in
+    `warning`) naming the rule that catches them, with outline "Move above rule 2" and
+    "Show rule 2" (states board).
+  - A caption under the table: each field is set by the first rule that matches; rules
+    run on new imports; past transactions change only through Apply.
+- **Rule inspector.** Header: the rule as title ("Merchant contains `UBER`", the text in
+  mono), the Matches count as display figure, caption "transactions match · last on 4 Nov
+  · rule 2 of 14". Sections, divided by hairlines:
+  - **When**: field rows, Field (select: Merchant, Bank text, Bank category, Bank type),
+    Test (select: is, starts with, contains, matches pattern), Text (mono field), Account
+    (select, "Any account"), Amount (select: Any amount, Over, Under, Between). Caption:
+    matching ignores case; Merchant is the cleaned bank name, before any merchant name
+    is applied (so a name never changes which rules match, as D6.6 assumes).
+  - **Then**: one action row per action: the kind as the field label (64px), its control,
+    and a 24px remove icon button (the split editor's line layout). Controls: Category
+    (select with marker), Merchant (field), Tag (tag pills, as D6.3), Note (field), My
+    share (mono field with a `%` unit), Exclude (reason select, as D6.3's dialog), Split
+    (a template of category lines, edited like D6.3's split). Ghost "+ Add action"
+    (pulled 8px left so its icon lines up with the labels, like "+ Add line") opens a
+    menu of the kinds not yet used (below). Each kind at most once; Category and Split
+    exclude each other, since a split sets a category per line.
+  - **Past transactions**: caption (edits apply to new imports; to change past
+    transactions, apply the rule and see every change first), outline "Apply to past
+    transactions…" and "Show 31" (Transactions filtered to the matches). When an agent
+    suggestion in the Inbox touches this rule, a sparkle line in `moldavite-text-muted`
+    says so, with "Review in the Inbox" in `moldavite-text` (the only moldavite here).
+  - **Footer**: "Created from an edit on 12 Mar" (caption, date in mono) and the small
+    destructive outline "Delete rule…" (D6.3's "Delete transaction…" size).
+- **Apply to past transactions** (`EFT-0`). The canvas swaps the table for a preview,
+  with a 24px back button before the title; the left panel keeps Rules selected. Drawn as
+  D6.3's "Create rule…" lands: a new rule, Merchant contains `VINTED` → Shopping, not saved
+  yet. Toolbar: "Apply to past transactions", caption "New rule: … · nothing changes
+  until you apply". Two table sections on one set of lanes: MERCHANT (flex) · ACCOUNT
+  (140) · NOW (140) · AFTER (140) · DATE (48) · AMOUNT (96).
+  - **Will change** (4): NOW is the current category (dashed "Uncategorised"), AFTER the
+    rule's in `text`.
+  - **Category you set** (2), under a hairline: rows the user categorised by hand. They
+    are left out by default: merchant and amount drop to `text-secondary`, AFTER reads
+    "No change" in `text-muted`. A toggle on the section header, "Change these too",
+    includes them. Rows already in the rule's category aren't listed.
+  - Footer above a hairline: neutral primary "Create rule and change 4" (for an existing
+    rule: "Apply to 4 transactions"), outline "Create rule only", caption "Saved as one
+    change. Undo it from the bar that follows, or later from Change history."
+  - The inspector is the rule being made, with an **Order** section instead of Past
+    transactions: Position (select, "First · rule 1 of 15") and a caption that a new rule
+    goes first so it wins over broader ones, and whether it overlaps another rule. The
+    preview follows the inspector as the user edits.
+  - After applying, the D6.3 undo bar: "Changed 4 transactions to Shopping", Undo.
+- **Merchant names** (`G2O-0`; `merchant_alias`). Toolbar: "Merchant names", caption "12
+  names · how a bank's merchant text is shown", outline "+ New name". Table: BANK TEXT
+  (flex: "Is", "Starts with" or "Pattern" in `text-secondary`, then the text in mono) ·
+  SHOWS AS (180) · LAST SEEN (72, mono) · MATCHES (96, mono), sorted by name. A caption
+  gives the order: Coffer cleans the bank's text (card numbers, "CONTACTLESS",
+  processor prefixes), then applies these names, and a name typed on one transaction
+  wins over both. Renaming changes only what's shown: rules still match the bank's text,
+  and the bank's text is never changed.
+  - **Inspector**: the name as title, the match count as display figure ("transactions
+    show this name · last on 9 Nov"). Match: Test (select), Text (mono field), Shows as
+    (field), caption. "Bank text it catches": up to three cleaned bank texts with their
+    last date (mono 11/14), "and 6 more", outline "Show in Transactions". Footer: "Added
+    on 3 Oct" and "Delete name…" (small destructive outline).
+  - A name applies everywhere at once, with no preview or undo batch: `merchant_display`
+    is derived and recomputed (ARCHITECTURE "Merchant names"), and changing the name back
+    restores it. D6.6 previews an agent's suggested name because it comes from outside.
+- **Change history** (`GZT-0`; `change_batch`). Toolbar: "Change history", caption "6
+  changes to existing transactions · newest first". Table: WHEN (96, mono date and time)
+  · CHANGE (flex; a rule's text in mono) · KIND (140) · TRANSACTIONS (96, mono). An
+  undone change keeps its row: the description struck through in `text-muted`, KIND
+  replaced by "Undone 28 Oct". Imports aren't listed: each account keeps its own import
+  history (D6.1 inspector), and undoing an import is there.
+  - **Inspector**: the change as title, the count as display figure, "transactions
+    changed · 9 Nov at 14:05". "What changed": one 24px row per transaction (merchant
+    `text-secondary`; "Uncategorised → Shopping", the new value in `text`), a caption,
+    outline "Undo this change…" and "Show in Transactions".
+- **Menu** (new pattern, first drawn here; states board). A list of choices that opens
+  from a button: `float` fill, 1px `border`, `radius-surface`, the Toolbar shadow, 4px
+  padding, `--container-search-field` (240px) wide. Items are 28px list rows (radius 6,
+  8px inline padding, 12px icon, 8px gap, label 12/16 `text`); hover and keyboard focus
+  take `hover`. An unavailable item is at `opacity-disabled` with its reason as a caption
+  on the right ("In use", "Not with Category"). A hairline with 4px above and below
+  separates groups. The button that opened it shows `control-active` while it's open.
+  The filter chips' menus (D3) should use it too.
+- **States board** (`HFH-0`):
+  - **Delete rule dialog** (`--container-dialog`): "Delete the rule “Merchant contains
+    UBER”?", a body saying its 31 transactions keep Transport and new Uber rows stay
+    uncategorised unless another rule matches; Cancel and **destructive solid** "Delete
+    rule" (deleting can't be undone; no transaction changes, so there's no change batch).
+  - **Undo a change dialog**: "Undo “Applied rule TFL TRAVEL → Transport”?", a body
+    counting what goes back (56 of 58) and what stays because it changed since (2);
+    Cancel and neutral primary "Undo change" (undo is itself reversible by applying
+    again).
+  - **Undo bar** after Apply (above).
+  - **No rules yet** (canvas, centred): the → icon in a 36px `field` well, "No rules yet",
+    and a caption pointing to D6.3's prompt and "New rule".
+  - **Several actions** on one rule (Category, Merchant, Tag, My share) and the caption on
+    their limits; the **add-action menu** open, with Category "In use" and Split "Not with
+    Category"; a **pattern that can't be used** (field in a 1px `danger` border with the
+    `alert` icon, a `danger` caption naming the fault, "A bracket is opened but never
+    closed."; the rule can't be saved until it's valid); **never reached** (above).
+- **Data-model questions: decided** (user, 2026-11-10; `ARCHITECTURE.md` → "Decision
+  record: rules"). Each went with the recommendation below, which the designs already
+  assume.
+  1. *Which rule wins?* Recommended: field by field. The first matching rule in priority
+     order sets a field; a later rule can still set a different field (a tag rule below
+     a category rule both apply). A rule is "never reached" when every transaction it
+     matches already has all its fields set by rules above.
+  2. *Where does a new rule go?* Recommended: first. A rule from an edit or from the Inbox
+     is usually narrower than the rules it corrects. The Position select moves it.
+  3. *Does a rule overwrite a category the user set?* Recommended: never on import, and
+     on Apply only for rows the user includes with "Change these too" (rows with
+     `category_source = user`). Matches D6.6's question 1 for agent rules.
+  4. *Do rule edits re-run on history?* Recommended: no. Rules run on import; history
+     changes only through Apply, one `change_batch` per apply.
+  5. *Which merchant name wins when several match?* Recommended: Is, then the longest
+     Starts with, then Pattern in list order. Names apply at once with no batch
+     (above).
+  6. *Undo after later edits.* Recommended: undo restores a field only where it still
+     holds the batch's new value; rows changed since keep the later value, and the
+     dialog counts them.
+  7. *Deleting a rule.* Recommended: its transactions keep their values; `rule_id` is
+     cleared, the inspector's "Set by" reads "A deleted rule", and a later rule or Apply
+     may change them.
+  8. *Do locked periods cover categories?* Recommended: no. `reconciled_through` guards
+     balances, and categories, tags, notes and names don't change one, so Apply and
+     Undo in a locked window aren't flagged. An Exclude action with reason Duplicate
+     does change a balance and is flagged like any other change there.
+- **Not drawn:** the Split action's template editor (D6.3's split lines without amounts,
+  in percentages), the Exclude action's reason row, the Amount condition's Over / Under / Between fields, New rule from
+  scratch (the inspector with empty When and Then), and the eighth tab on the artboards
+  drawn before D6.7.
+
+**Budgets: groups, rollover, pace and upcoming** — drawn in D6.10 (M4.8, M4.9). Two
+1440×900 artboards built from the D6.1 Budgets screen (`6OE-0`), plus a states board.
+Every value is a bound token. Typed values are as on D6.1: 1px borders, the Dock shadow,
+SVG icon paths, and data-driven bar, line and point positions. No new tokens (hash still
+`6a126241`). Fixture data continues D6.1: Monday 9 Nov 2026 (day 9 of 30) with the same
+November spending, plus two categories, Insurance and Gifts. They have outline markers,
+because only the six biggest categories by spending get a colour.
+- **Where Upcoming lives.** The view tabs (eight with D6.7's Rules) have no room for
+  another. Also, "what's left to spend" and "what's due before payday" are one question.
+  So the Budgets tab has two halves, switched by an inspector-size segmented control
+  (Budgets | Upcoming, `column-amount` × 2) at the right end of the canvas header. Budgets
+  keeps the month switcher. Upcoming has no month, because it looks forward from today:
+  its header is "Next 30 days" in title type, with the account and today's date as a
+  caption. Overview's "Recurring · Next 30 days" is unchanged (detected series, all
+  accounts).
+- **Budgets · groups, rollover and pace** (`CXU-0`).
+  - **Figures.** Left to spend (display figure) is the Flex group's LEFT, captioned
+    "£19.23 a day for 21 days, in Flex". Spent covers every group, captioned "Flex 66%
+    used, 30% into the month". **Set aside** is the non-monthly LEFT total, captioned
+    "For Insurance and Gifts". The budgeted total moves to the Total row.
+  - **Lanes:** CATEGORY (180) · bar (flex) · SPENT · BUDGET · ROLLOVER · LEFT (96 each).
+    LEFT = BUDGET + ROLLOVER − SPENT, and the bar ends at BUDGET + ROLLOVER. Rollover is
+    signed and `text-muted` like Budget, because it's an input, not a result. It reads
+    "—" when off. Only LEFT takes `warning` or `danger`.
+  - **Groups are table sections**, as in the Inbox: Fixed ("Bills on set dates"),
+    Non-monthly ("Yearly costs, set aside each month"), then Flex. Each has a 28px header
+    with 8px top padding: the group name (11/14 600 `text-secondary`), its caption in the
+    bar lane, and the group's subtotals in mono 11/14 `text-muted`. Hairlines divide the
+    groups. A group of one shows no subtotals, since they would repeat its row. The Total
+    row sits under a hairline: £1,258.61 · £1,640.50 · +£897.30 · £1,279.19.
+  - **Non-monthly rows.** BUDGET is the month's twelfth, ROLLOVER is what was set aside
+    before, and LEFT is what's set aside now. The bar shows the money set aside against
+    the yearly amount. It's filled `text-muted`, because it's savings, not spending. The
+    next due date sits at the right end of the category lane (mono 10/12 `text-muted`), so
+    every bar still ends on the same line.
+  - **Pace line.** One 1px dashed `text-muted` line runs down through the Flex bars, at
+    the share of the month gone (30% on 9 Nov). The Flex header labels it "Today · 30%"
+    (mono 10/12). A bar past the line is ahead of pace. Bars aren't recoloured for pace:
+    `warning` and `danger` keep meaning 85% and over budget. Fixed and non-monthly rows
+    have no pace line, because bills land on dates.
+  - **Inspector** (Groceries, rollover on). The header reads "of £324.60 · 65% used with
+    21 days to go". Below it:
+    - field rows: Budget (`£`, "/ month"), Group (a select: Fixed, Non-monthly, Flex) and
+      Rollover ("Carry over what's left" and a toggle), then a caption;
+    - the month's sum: November budget, Left from October, and To spend in November (600,
+      under a hairline);
+    - **Pace**, titled with "£115.02 ahead of pace". A 96px chart shows this month's
+      cumulative spending as a 1.5px `text` line ending in the today point. The even-spend
+      line runs 1px dashed `text-muted` from £0 to the month's amount, which is labelled
+      top-left. Today is a 1px `border-strong` vertical. X labels: 1 Nov, "Today, 9 Nov"
+      (`text`), 30 Nov. A caption gives the pace amount and the daily amount that stays
+      within budget;
+    - "Last 6 months" as on D6.1, with the dashed line at the monthly budget.
+- **Budgets · upcoming** (`GD5-0`). Current account is selected in the left panel; the
+  forecast follows that selection.
+  - **Figures.** Lowest before payday (display figure, `danger` when negative), captioned
+    "On 27 Nov, the day before Salary". Due before payday, captioned "5 payments, 1
+    missed". Payday "+£3,450.00", captioned "Salary on 28 Nov, in 19 days". Payday is the
+    account's next scheduled income.
+  - **Chart** "Balance forecast", with the caption "End of each day · 1 Nov – 9 Dec" and a
+    legend: Balance (solid) and Forecast (dashed). It has a 160px plot, and the y axis
+    runs from £0 to the next round step in five intervals. Actual balances up to today are
+    a 1.5px `text` line; the forecast is a 1.5px dashed (4 3) `text-secondary` line. One
+    area runs to £0 at `opacity-area-fill`. Marks on the chart:
+    - today: a 1px `border-strong` vertical labelled "Today" (mono micro);
+    - the lowest point before payday: a 6px point with a `canvas` ring, and "Lowest ·
+      £51.03" on a `canvas` patch with a 1px `text-muted` leader;
+    - income: a muted label at its step ("Salary +£3,450.00");
+    - the selected payment: a point with the molten selection label ("15 Nov ·
+      −£164.00").
+
+    X labels mark today (`text`), the selected date, payday and the weeks between.
+  - **Scheduled payments.** The title has the caption "Only schedules you've confirmed
+    count in the forecast" and an outline compact "Review 2 found" on the right. Table
+    lanes: DATE (48, mono) · PAYMENT (marker + name, flex) · REPEATS (96) · BALANCE (96,
+    the end-of-day forecast in mono `text-muted`, on a day's last payment only) · AMOUNT
+    (96, signed). Two sections: "Before payday", with its total, and "From payday".
+    - A missed payment reads "Missed" in `warning` under REPEATS, with a 6px `warning`
+      dot before the amount.
+    - A price rise is shown as on Overview.
+    - Transfers are muted with ⇄, and income has no marker.
+    - The selected row is `molten-soft`.
+  - **Schedule inspector.** Header: the name, the signed amount as display figure, and
+    "Monthly on the 15th · next on 15 Nov". Field rows: Account, Category, Amount (`£`,
+    "out"), Repeats, Next, and Match. Match is the schedule's tolerance: ±£ in a field, and
+    ± days in a 96px field. A caption says that a schedule never adds a transaction.
+    "Matched payments" lists each match (check, date, "On the day" or "1 day late",
+    amount) under the heading "7 since 15 Apr", with a caption saying when the user
+    confirmed it. Then outline compact "Pause" and destructive outline compact "End
+    schedule…", with a caption.
+  - **The fixture's arithmetic.** Each day's balance is the last known balance, plus the
+    schedule payments to date, minus the Flex budget left (£403.78) spread evenly over
+    the rest of the month. December then spends its whole Flex budget the same way. All
+    in integer pennies, with the remainder spread so the days sum exactly.
+- **States board** (`HNB-0`, 1440 wide).
+  - **Non-monthly inspector** (Insurance). Budget is £726.00 / year and Group is
+    Non-monthly. The Rollover toggle is on and disabled ("Always, until it's spent"), with
+    the set-aside sum below. "From yearly schedules" lists Admiral (14 Mar, −£540.00) and
+    Aviva Home (2 Jul, −£186.00), with a caption: the yearly amount started as their
+    total. "Enough by 14 Mar" closes it; when the money won't be there in time, it reads
+    "£48.50 short by 14 Mar" with a `warning` icon.
+  - **Rollover rows**: carried in, overspending carried in, and off, with notes.
+  - **Schedule dialog** (`--container-dialog`), for a series Coffer found. The body says
+    what was found and that no transaction is added. Field rows: Account, Category,
+    Amount, Repeats, Next, Match. A yearly schedule in a category with a non-monthly
+    budget adds a "Set aside" toggle, which adds it to the yearly amount. Cancel /
+    "Add schedule" (neutral primary).
+  - **"Review 2 found" popover** (440px): name, cadence and count found, amount, outline
+    compact "Schedule…", and an ✕ icon button for "Not recurring".
+  - **Missed payment inspector**: a `warning-soft` block, "Not in your imports yet", with
+    outline compact "Match a transaction…" and "Skip this one".
+  - **Overdrawn forecast** (Joint account). The display figure is `danger`, and a second
+    figure counts the days overdrawn. The line below £0 and its area are `danger`.
+  - **Empty Upcoming**: a `schedule` icon well, "No scheduled payments yet", and outline
+    "Review 2 found".
+- **Decided while drawing (review):**
+  - Upcoming is the second half of the Budgets tab, not another tab.
+  - Left to spend counts Flex only; non-monthly money shows as Set aside.
+  - Rollover is a column, signed and muted, and only LEFT carries status colour.
+  - The pace line is one line across the Flex bars, and bars aren't coloured by pace.
+  - A missed payment stays in the forecast, counted from tomorrow, until it's matched or
+    skipped.
+  - A series Coffer detects stays behind "Review N found" and out of the forecast until
+    the user schedules it, in Coffer's own UI (ARCHITECTURE "Schedules and forecast").
+- **Data-model questions: decided** (user, 2026-11-10; `ARCHITECTURE.md` → "Decision
+  record: budgets and the forecast"). Each went with the recommendation below, which the
+  designs already assume.
+  1. *Which account does Flex spending leave from?* Recommended: split each Flex
+     budget's remainder across accounts by where that category was spent over the last 3
+     months. An account with no Flex spending (Savings, or Joint in the fixture) gets none.
+  2. *When is a payment missed?* Recommended: when its date plus tolerance has passed with
+     no match and the latest import covers that date. Before an import covers it, the
+     payment is just not imported yet. A missed payment stays in the forecast from
+     tomorrow until it's matched or skipped.
+  3. *What does rollover carry?* Recommended: both ways, so unspent money adds and
+     overspending subtracts, and it accumulates month to month. Derive it from history
+     rather than storing it, so a past edit flows into later months. Turning rollover off
+     starts fresh from the next month. Fixed budgets don't offer rollover, and non-monthly
+     ones always roll over.
+  4. *Pace.* Recommended for v1: linear by day of the month, rather than weighted by past
+     months' daily pattern.
+  5. *Seeding non-monthly budgets.* Recommended: set the yearly amount once, from the
+     category's yearly schedules, and let the user change it after that. A new yearly
+     schedule asks before adding itself (the dialog's toggle). Set-aside money accrues
+     from the month the budget was created, starting at £0 unless the user enters what's
+     already saved.
+  6. *No scheduled income.* Recommended: when an account has none, "Lowest before payday"
+     becomes "Lowest in the next 30 days".
+- **Not drawn:** Upcoming with "All accounts" selected (recommended: the sum of the
+  accounts that have schedules, with each account's lowest point in the inspector), a
+  paused schedule's row, and the Group select's menu.
+
+**Not drawn in D6.1:** empty states for these screens (empty Inbox, no budgets, no
+reviews), the Approved / Rejected inbox lists, Save as preset (M3.5), and the screens
+D6.4–D6.11 add to.
 
 **Light theme.** Not in v1.
 
@@ -925,10 +2101,16 @@ reference file except the values recorded here.
    ✅ done (D6.3, artboards `2Q3-0`, `3FE-0`, `3WT-0`, `4D7-0` and the states board
    `4X9-0`): duplicated from Transactions, additions built from the specs here, every
    value a bound token, one new token (`--container-dialog`). Typed values: 1px borders,
-   the 1.5px focus ring, the Toolbar and Dock shadows, SVG icon paths.
+   the 1.5px focus ring, the Toolbar and Dock shadows, SVG icon paths. Remaining screens
+   ✅ done (D6.1, artboards `564-0`, `5ZQ-0`, `6OE-0`, `781-0`, `7LH-0`, `7YM-0` and the
+   states boards `6J4-0`, `8D8-0`): built from the Transactions and Overview shells and
+   Components clones, every value a bound token, two new tokens (`--container-dialog-wide`,
+   `--container-reading`). Typed values: 1px borders, the Dock shadow, SVG icon paths and
+   chart points, data-driven bar widths and heights.
 5. Export `design/tokens.json` and `design/tokens.css` from the Coffer file. ✅ Done (D1.5):
    122 tokens, content hash `572f3e11`. Re-exported in D3.1: 123 tokens, content hash
-   `86e4aeb1`. Re-exported in D6.3: 124 tokens, content hash `b442a048`. Re-export
+   `86e4aeb1`. Re-exported in D6.3: 124 tokens, content hash `b442a048`. Re-exported in D6.1: 126 tokens, content hash
+   `6a126241`. Re-export
    whenever a token changes (rule 4).
 
 ## Implementing in GPUI

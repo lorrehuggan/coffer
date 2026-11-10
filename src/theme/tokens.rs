@@ -366,6 +366,11 @@ pub mod size {
     /// `--container-dialog`: short dialogs (a confirmation or a form of a few
     /// fields).
     pub const DIALOG: Pixels = px(440.);
+    /// `--container-dialog-wide`: wide dialogs that pair a form with a preview
+    /// (the Import dialog).
+    pub const DIALOG_WIDE: Pixels = px(760.);
+    /// `--container-reading`: the measure of reading text (a saved review).
+    pub const READING_MEASURE: Pixels = px(560.);
     /// `--container-field-label`: inspector field-row label column.
     pub const FIELD_LABEL: Pixels = px(64.);
     /// `--container-column-category`: transactions table category column.
@@ -798,6 +803,8 @@ pub(crate) mod tests {
             ("--container-command-bar", pixels(size::COMMAND_BAR)),
             ("--container-search-field", pixels(size::SEARCH_FIELD)),
             ("--container-dialog", pixels(size::DIALOG)),
+            ("--container-dialog-wide", pixels(size::DIALOG_WIDE)),
+            ("--container-reading", pixels(size::READING_MEASURE)),
             // Spacing.
             ("--spacing-0_5", pixels(spacing::S0_5)),
             ("--spacing-1", pixels(spacing::S1)),
