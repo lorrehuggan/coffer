@@ -12,6 +12,11 @@ referenced. Numbers are stable: append new tasks rather than renumbering.
 
 Each milestone ends with something usable, and has explicit exit criteria.
 
+Tasks M1.20+, M2.10+, M3.9+, M4.8+, M5.8 and L.11+ come from the feature research in
+[`research/feature-ideas.md`](research/feature-ideas.md) (2026-11-09). Ideas rejected
+there because they conflict with the invariants (bank sync, cloud, multi-user, MCP writes
+beyond the inbox, AI in import) are deliberately not on this roadmap.
+
 ---
 
 ## M0 — Design ✅
@@ -61,35 +66,110 @@ Cargo workspace) so the theme lands in `crates/app`. D3 and D4 need D1; D5 needs
 - ✅ D2.3 Bundle fonts: Inter 400/500/600/700 and Geist Mono 400/600 (static instances, SIL OFL,
   licence files included). Files in `assets/fonts/`, loaded and set on the theme by
   `src/theme/fonts.rs`
-- ⬜ D2.4 Map `gpui-component`'s theme onto the tokens; list the components that need a custom
-  build instead (likely: toggle, segmented control, agent card)
-- ⬜ D2.5 Showcase window (`coffer --showcase`): colour swatches, type scale, buttons in every
+- ✅ D2.4 Map `gpui-component`'s theme onto the tokens; list the components that need a custom
+  build instead (likely: toggle, segmented control, agent card). `src/theme/component.rs`
+  maps every stock colour field to a token (a sentinel test fails on any unmapped or
+  non-token field), plus radius, rem base, shadows and motion. The component list (custom:
+  toggle, segmented control, view tabs, badge, tooltip, progress bar, agent card and the
+  other compositions) is in `DESIGN.md` → "Implementing in GPUI"
+- ✅ D2.5 Showcase window (`coffer --showcase`): colour swatches, type scale, buttons in every
   state, list row (default/hover/selected/focus), transaction rows with mono amounts,
-  agent card
-- ⬜ D2.6 Record findings in `DESIGN.md` → "Implementing in GPUI": alpha colours, 1px hairlines,
-  shadows, an outside focus ring, tabular mono figures, animation easing
+  agent card. Built (`src/showcase.rs`, components in `src/ui/`), plus a stock components
+  board (input, select, popover, menu, dialog, title bar, underline tabs, stock focus).
+  Visually compared against the Paper artboards; no discrepancies
+- ✅ D2.6 Record findings in `DESIGN.md` → "Implementing in GPUI": alpha colours, 1px hairlines,
+  shadows, an outside focus ring, tabular mono figures, animation easing. Recorded under
+  "Rendering findings (D2.6)", from the GPUI renderer source and the font files. Two defects
+  fixed with tests: shadow blur was passed to GPUI as CSS blur (GPUI takes σ = blur/2), and the
+  outside focus ring's gap was uneven at 1x. The three open questions are closed (decided
+  while the user was away; review): disabled buttons with a fill paint the group's composite
+  colours over their surface, so they match Paper (3.6:1 for the neutral primary; no new
+  tokens, no Paper change); reduced motion is 0ms for every animation, opacity fades
+  included ("Motion" changed; no code needed); the agent card's ⇄ is `Glyph::Transfer`
 
 **D3 — Transactions screen in Paper**
 
-- ⬜ D3.1 1440×900, realistic data: long merchant names, pot transfers, a foreign-currency
-  payment, a refund, uncategorised and AI-suggested rows, a multi-selection
+- ✅ D3.1 1440×900, realistic data: long merchant names, pot transfers, a foreign-currency
+  payment, a refund, uncategorised and AI-suggested rows, a multi-selection. Two artboards
+  in the Coffer file: Transactions (`18E-0`, an AI-suggested row selected, its inspector
+  with approve/reject) and Transactions · multi-select (`1NP-0`, three rows, bulk-action
+  bar, selection summary). Composed from Components clones, all token-bound; one new token,
+  `--container-search-field` (re-exported, hash `86e4aeb1`; `size::SEARCH_FIELD`). Fixed a
+  2px lane offset on suggested categories (sparkle gap 8 → 6px) in Paper and in
+  `ui::transaction_row`, with a layout test. Spec in `DESIGN.md` → "Transactions"
 
 **D4 — Overview screen in Paper**
 
-- ⬜ D4.1 Display figures, income-vs-spending chart, category bar list, agent card
-- ⬜ D4.2 Adjust tokens (palette, status colours, neutral amounts) if the screens show problems
+- ✅ D4.1 Display figures, income-vs-spending chart, category bar list, agent card. Artboard
+Overview (`22V-0`, 1440×900): the Transactions shell with the Overview tab active and no
+inspector; month switcher (October 2026), Spent/Income/Net figures with deltas, a compact
+agent card at the end of the figures row (moved there from the lower right column, which
+couldn't hold it and the recurring list), the 12-month chart with October selected and a
+July hover tooltip, a ranked bar list of spending by category (six palette colours,
+Other, Uncategorised), and recurring payments with a `warning` price rise. All token-bound,
+no new tokens. Charts decided: custom, on the `gpui_component::plot` primitives. Spec in
+`DESIGN.md` → "Overview", "Data visualisation"
+- ✅ D4.2 Adjust tokens if the screens show problems. No token changes: the six chart
+colours stay distinct as 3px bars and markers, `warning` and `danger` read in context, and
+neutral amounts hold. The screen changed rules instead: a line over bars gets a 1.5px
+`canvas` halo (the `text` line on `text-secondary` bars is 1.8:1), bars are a fixed 16px
+rather than "group gap 40% of bar width", and totals whose label gives the direction are
+unsigned (`DESIGN.md` → "Money", "Chart chrome")
 
 **D5 — Transactions in GPUI (fidelity spike, part 2)**
 
-- ⬜ D5.1 Build the D3 screen in GPUI with fixture data; compare it against the Paper screenshot
-  at 1x and 2x
-- ⬜ D5.2 Decision: GPUI can deliver the design → continue; otherwise reconsider the UI toolkit
-  before M3
+- ✅ D5.1 Build the D3 screen in GPUI with fixture data; compare it against the Paper screenshot
+  at 1x and 2x. `src/transactions.rs` (title bar, left panel, toolbar, virtualised
+  day-grouped table, inspector for one or several transactions, bulk-action bar, status
+  bar), now the window `coffer` opens; `examples/snapshot.rs` renders it headlessly.
+  Colour exact once Paper's Display P3 export is colour-managed, layout exact at 2x,
+  baselines within half a pixel. Letter spacing now applied (`ui::tracked`). Four GPUI
+  pitfalls found and fixed. Findings in `DESIGN.md` → "Implementing in GPUI" → "Fidelity
+  findings (D5)"
+- ✅ D5.2 Decision: GPUI can deliver the design → continue; otherwise reconsider the UI toolkit
+  before M3. **Decided (user, 2026-11-09): continue with GPUI.** Colour and layout match
+  Paper, and the gaps found were in Coffer's code, not GPUI. Still to check on a real display
+  (hover, scrolling, drag and resize, macOS, long lists) as the app grows
 
 **D6 — Remaining screens**
 
 - ⬜ D6.1 Import, Inbox, Trends, Budgets, Net worth, Reviews, accounts panel
 - ⬜ D6.2 Coffer logo / wordmark
+- ✅ D6.3 Transactions additions: split editor (lines, auto-filled remainder, total
+  locked), tags, user note beside the read-only imported note, excluded state and
+  filter, manual-transaction form, "Create a rule from this edit?" (M3.9, M3.10, M3.13).
+  Four 1440×900 artboards duplicated from Transactions:
+  - split and tags (`2Q3-0`);
+  - excluded, with the Excluded filter chip on (`3FE-0`);
+  - rule from an edit (`3WT-0`);
+  - manual (cash account) (`4D7-0`).
+
+  Plus a states board (`4X9-0`): unbalanced and balanced split states, the exclude and
+  new-transaction dialogs, the undo notification after a bulk change, and the new row
+  kinds. All token-bound. One new token, `--container-dialog` (440px), re-exported (hash
+  `b442a048`) with `size::DIALOG`. Spec in `DESIGN.md` → "Transactions additions". Its
+  three data-model questions were decided on 2026-11-10 (`ARCHITECTURE.md` → "Decision
+  record: Transactions additions"):
+  - exclusion reason key, note and date, where only duplicates leave the balance;
+  - `created_at` on every transaction;
+  - the rule prompt needs at least one earlier match.
+- ⬜ D6.4 Review queues: possible duplicates (side-by-side pair, why flagged,
+  merge/dismiss) and reconciliation (assertion results per account, failing window,
+  lock/unlock) (M3.12)
+- ⬜ D6.5 Refund, reimbursement and settlement linking; outstanding-claims and owed-to-me
+  lists (M3.11)
+- ⬜ D6.6 Inbox impact preview and the new suggestion kinds (merchant alias, refund link)
+  in the agent card; designed with the D6.1 Inbox (M3.14, M2.14)
+- ⬜ D6.7 Rules editor: rule actions, apply-to-history preview, merchant alias editor
+  (M3.13)
+- ⬜ D6.8 Settings: AI access (clients, access levels, kill switch, access log), backups
+  (list, create, restore), export dialog (M3.15, M3.16)
+- ⬜ D6.9 Accounts: cash accounts and manual asset/liability accounts with valuations;
+  designed with the D6.1 accounts panel (M3.10, M3.17)
+- ⬜ D6.10 Upcoming payments and balance forecast; budget rollover, groups and pace line,
+  designed with the D6.1 Budgets screen (M4.8, M4.9)
+- ⬜ D6.11 Safe report rendering (markdown subset, inert links, `ai_authored` marker) and
+  the withheld-text indicator, designed with the D6.1 Reviews screen (M4.10, M2.13)
 
 **Exit criteria:** tokens live in Paper and in the GPUI theme with a drift test;
 Transactions and Overview are designed; the GPUI build of Transactions matches the Paper
@@ -129,9 +209,40 @@ Import real statements into a local database from the command line.
 - ⬜ M1.18 CLI: `coffer import <file> [--account] [--preset] [--dry-run]`,
   `coffer accounts`, `coffer undo-import <batch>`
 - ⬜ M1.19 Redacted fixtures + tests for every importer path
+- ⬜ M1.20 Split transactions: `transaction_split` lines that sum exactly to the parent
+  (checked in core); reports and budgets read the `ledger_line` view, so a split purchase
+  counts in each of its categories
+- ⬜ M1.21 Tags (several per transaction, private tags never leave the app) and a
+  user-editable note beside the read-only imported one
+- ⬜ M1.22 Manual transactions and cash accounts (`origin = manual`). Imported source fields
+  stay read-only: fix a bad row by undoing its batch, or exclude it with a recorded reason
+- ⬜ M1.23 Merchant clean-up: deterministic cleaning of bank text (card references,
+  "CONTACTLESS", processor prefixes) into `merchant_display`, plus a merchant alias table.
+  Raw fields are never changed
+- ⬜ M1.24 Rule actions beyond setting a category: set merchant, add tag, set note, exclude,
+  split template, my share. Each transaction records the rule that categorised it. Applying
+  a rule to past transactions shows a preview and commits as an undoable change batch
+- ⬜ M1.25 Refunds, reimbursements and shared costs: `transaction_link`
+  (`refund`/`reimbursement`/`settlement`). A refund nets against the purchase's category
+  instead of counting as income; a reimbursable purchase stays outstanding until linked;
+  `my_share_minor` on transactions and split lines feeds an owed-to-me balance
+- ⬜ M1.26 Possible-duplicates queue: same account and amount within ±N days but different
+  text (typically overlapping CSV and OFX exports). Merging excludes the duplicate, never
+  deletes it, and can be undone
+- ⬜ M1.27 Dated balance assertions: every balance snapshot is checked against the computed
+  balance, and a failure names the window between the last passing assertion and the
+  failing one. Per-account lock date (`reconciled_through`): anything that would change
+  transactions before it is flagged and needs an explicit unlock
+- ⬜ M1.28 Local backups: rotating `VACUUM INTO` snapshots (0600) before every import commit
+  and migration; `coffer backup`, `coffer restore <file>` (integrity and schema-version
+  checks before swapping)
+- ⬜ M1.29 `coffer export --format csv|json`: documented schema, filters by date, account,
+  category and tag; split lines keep their parent ID
 
 **Exit criteria:** your own CSV/OFX exports import without duplicates on
-re-import, reconcile where balances exist, and get categorized by rules.
+re-import, reconcile where balances exist, and get categorized by rules. Splits, tags,
+manual transactions and refund links work through the core API with tests, and a backup
+exists from before every import.
 
 ---
 
@@ -152,9 +263,27 @@ Analyse real data from Claude Code or Codex before any GUI exists.
 - ⬜ M2.7 CLI inbox until the GUI exists: `coffer inbox [approve|reject]`
 - ⬜ M2.8 Setup docs for Claude Code, Claude Desktop, and Codex
 - ⬜ M2.9 MCP tool tests against fixture databases
+- ⬜ M2.10 Schedules: confirm a detected recurring series (M2.6) as a schedule with an
+  expected date, amount and tolerance; imports fulfil occurrences; missed or late payments
+  are flagged
+- ⬜ M2.11 MCP access control: MCP is off until a client is enabled (CLI until M3.15). Each
+  client has an access level: `aggregate` (totals only), `pseudonymous` (stable keyed-hash
+  merchant tokens) or `standard`. Tools above a client's level are never registered. This
+  guards against over-sharing; it is not a security boundary against local processes
+- ⬜ M2.12 AI access log: every tool call records the client, tool, redacted arguments,
+  an optional `purpose`, row count, result hash and access level, never the returned data
+- ⬜ M2.13 Untrusted-text envelope: `merchant_display` by default; raw text only as a
+  length-capped, labelled `description_untrusted`, with control, zero-width and bidi
+  characters stripped and URLs made inert. Text matching injection patterns is withheld,
+  and the app shows how much was withheld. Setup docs (M2.8) recommend a client profile
+  without web or fetch tools
+- ⬜ M2.14 MCP over the new model: reads use ledger lines (splits), tags and refund links;
+  new suggestion kinds `merchant_alias` and `refund_link`. The app files `rule`
+  suggestions itself after repeated identical manual recategorisations (source `coffer`)
 
 **Exit criteria:** ask "where did my money go last month?" in Claude Code and get
 an answer backed by visible tool calls; approve AI-suggested categories from the inbox.
+Every tool call appears in the access log.
 
 ---
 
@@ -170,8 +299,26 @@ an answer backed by visible tool calls; approve AI-suggested categories from the
 - ⬜ M3.6 Inbox: bulk approve/reject AI suggestions
 - ⬜ M3.7 Rules and categories editors
 - ⬜ M3.8 Transfer-pair confirmation
+- ⬜ M3.9 Split editor (the remaining amount fills in automatically; lines are locked to the
+  total), tags and notes in the inspector
+- ⬜ M3.10 Manual transactions and cash accounts; exclude a row with a reason, with an
+  "excluded" filter so nothing disappears
+- ⬜ M3.11 Link refunds, reimbursements and settlements; outstanding-claims and owed-to-me
+  lists
+- ⬜ M3.12 Duplicates review queue (merge or dismiss, showing why each pair was flagged) and
+  reconciliation: assertion results per account, lock and unlock
+- ⬜ M3.13 Rules: "Create a rule from this edit?", apply-to-history preview, merchant alias
+  editor
+- ⬜ M3.14 Inbox impact preview: what approving each suggestion would change (e.g. "changes
+  143 past transactions; 12 have a category you set")
+- ⬜ M3.15 AI access settings: enabled clients, access levels, revoke, kill switch, and the
+  access log
+- ⬜ M3.16 Backups (list, create, restore with the M1.28 checks) and the export dialog
+- ⬜ M3.17 Manual asset and liability accounts (house, car, pension, mortgage, loan) with
+  dated valuations
 
-**Exit criteria:** day-to-day use (import, categorize, review inbox) without the CLI.
+**Exit criteria:** day-to-day use (import, categorize, split, link refunds, review the inbox
+and duplicates) without the CLI.
 
 ---
 
@@ -184,8 +331,16 @@ an answer backed by visible tool calls; approve AI-suggested categories from the
 - ⬜ M4.5 Net worth: balances over time across accounts
 - ⬜ M4.6 Multi-currency reporting in home currency; opt-in ECB rate fetch + manual rates
 - ⬜ M4.7 Reviews: browse saved MCP reports
+- ⬜ M4.8 Upcoming payments and a daily balance forecast per account from schedules,
+  showing the lowest balance before the next income; `cash_flow_forecast` read tool
+  (cached FX only)
+- ⬜ M4.9 Budgets: per-category rollover; fixed, non-monthly and flex groups, with yearly
+  schedules seeding the non-monthly amounts; a spending-pace line
+- ⬜ M4.10 Safe report rendering: a markdown subset with no HTML or images, and links shown
+  as plain text; reports are marked `ai_authored` when read back
 
-**Exit criteria:** the dashboard answers "how am I doing?" at a glance.
+**Exit criteria:** the dashboard answers "how am I doing?" at a glance, including what's
+due before payday.
 
 ---
 
@@ -198,6 +353,9 @@ an answer backed by visible tool calls; approve AI-suggested categories from the
 - ⬜ M5.5 CI: fmt, clippy, tests; build on Linux, macOS, Windows (best-effort)
 - ⬜ M5.6 Release artifacts: Linux tarball + Nix flake (+ AppImage), macOS `.dmg`
 - ⬜ M5.7 Data location, backup, and privacy documentation
+- ⬜ M5.8 Beancount and hledger journal export: deterministic and stably sorted; fixture
+  exports are checked with `bean-check` / `hledger check` when those tools are installed
+  (external tools, not dependencies)
 
 **Exit criteria:** a stranger in the UK, US, or euro area can install it, import
 their bank's export, and connect an AI client by following the README.
@@ -219,3 +377,37 @@ Good candidates for contributors are marked 🙋.
 - L.8 Sankey view of income → categories
 - 🙋 L.9 UI translations
 - L.10 Windows as an officially supported platform
+- L.11 Attachments and receipts: local files stored by content hash, tax-bundle export;
+  never exposed over MCP
+- L.12 Savings and payoff goals: targets on pots and accounts, on-track status, avalanche vs
+  snowball for debt
+- L.13 Accounting reports (balance sheet, income statement), saved report definitions,
+  global report exclusions, CSV export of any view
+- L.14 Investments and holdings with manual or imported prices (an online price fetch would
+  need its own decision, like the ECB one)
+- L.15 Configurable month start (payday-aligned periods). Every report depends on it, so
+  decide before M4.1 ships
+- L.16 Anomaly and spike insights (median/MAD), with a read tool
+- L.17 Runway, Age of Money and an in-app weekly recap
+- L.18 Personal inflation index from your own recurring prices
+- L.19 Calendar heatmap of daily spend
+- L.20 What-if scenarios (seeded, inflation-adjusted projections)
+- L.21 Pending → posted handling (needs fixtures showing which exports include pending rows)
+- L.22 Match imported rows to manual entries
+- 🙋 L.23 Starter merchant rule packs per region (TOML, like presets)
+- 🙋 L.24 Migration presets for YNAB, Mint, Actual, Monarch and Firefly exports, including
+  multi-account files
+- 🙋 L.25 CSV hardening: UTF-16 via BOM, flag ambiguous `DD/MM`/`MM/DD` dates, footer rows,
+  statement total shown before commit
+- L.26 Statement archive: source files kept by hash and linked to their batch (pairs with L.6)
+- L.27 Transfers: a queue for one-sided transfers; cross-currency pairs with the FX difference
+- L.28 FX: bank-applied rate and fee per transaction; an FX fees report
+- L.29 Structured search syntax shared by the GUI, exports and MCP; saved queries and
+  formula cards
+- 🙋 L.30 100k-transaction performance benchmark
+- L.31 Account groups with subtotals and report include/exclude
+- L.32 More MCP: `find_duplicates`, `preview_rule`, `reconcile_preview`, `list_suggestions`,
+  `spending_pace` read tools; `duplicate_flag`, `budget_adjustment`, `recurring_review`
+  suggestion kinds; tool annotations, output schemas and resources; prompts
+  `categorize_inbox`, `rule_tuning`, `subscription_audit`, `year_end_review`, `weekly_review`
+- 🙋 L.33 Export and import rules as TOML

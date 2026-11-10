@@ -16,9 +16,11 @@ charts, and exposes the data to AI clients through an MCP server.
 
 ## Current state
 
-The repository is at milestone M0: a single crate with the `gpui-kit` hello-world in
-`src/main.rs`. The Cargo workspace described below is the target layout from M1 onward.
-Check the tree before assuming a crate exists.
+The repository is at milestone M0 (design track D1–D5): a single crate. `coffer` opens the
+Transactions screen on fixture data (`src/transactions.rs`), and `coffer --showcase` opens
+the component showcase. `cargo run --example snapshot -- <dir>` renders both headlessly to
+PNG for comparison with Paper. The Cargo workspace described below is the target layout
+from M1 onward. Check the tree before assuming a crate exists.
 
 ## Environment
 
@@ -27,6 +29,12 @@ Check the tree before assuming a crate exists.
   Outside direnv, use `devenv shell -- <command>`.
 - Rust stable, edition 2024. Toolchain components: clippy, rustfmt, rust-analyzer.
 - Add system libraries in `devenv.nix`, not with ad-hoc installs.
+- Paper (design work): the Paper MCP server is the local Paper Desktop app, configured
+  as `paper` and loaded lazily. Run `mcp_connect` with `paper` before any Paper task. Its
+  tools (`mcp_paper_*`) only appear on the next turn, so connect, then end the turn or
+  ask the user before using them. Most tools require `fileId` even where the description
+  says it's optional; Coffer's is in `docs/DESIGN.md` → "Source of truth". If the tools
+  fail, ask the user to check that Paper Desktop is running, rather than working around it.
 
 ## Commands
 
@@ -54,7 +62,7 @@ it with `--no-verify`.
 
 ```
 crates/core    domain types, SQLite schema + migrations, rules, transfer matching,
-               dedupe, reporting queries
+               dedupe, reporting queries, schedules, backups and export
 crates/import  Importer trait; csv (generic + presets), ofx
 crates/mcp     rmcp stdio server over core
 crates/app     GPUI dashboard
@@ -66,8 +74,10 @@ Dependency direction: `app` and `mcp` depend on `core` and `import`; `import` de
 `core`. `core` must not depend on GPUI, MCP, or any network/AI crate. Keep business
 logic out of `app` so it stays testable without a window.
 
-One binary, `coffer`: no subcommand opens the GUI; `mcp` runs the MCP server;
-`import`, `accounts`, `undo-import`, `inbox` are headless CLI commands.
+One binary, `coffer`: no subcommand opens the GUI; `mcp` runs the MCP server
+(`coffer mcp --client <name>` names the client, which selects its access level);
+`import`, `accounts`, `undo-import`, `inbox`, `backup`, `restore`, `export` are headless
+CLI commands.
 
 ## Invariants
 
@@ -79,17 +89,29 @@ Changing any of these needs an explicit decision recorded in `docs/ARCHITECTURE.
   are previewed, deduplicated (source ID first, fingerprint fallback), reconciled when
   balances exist, committed in one DB transaction, and recorded as an undoable batch.
 - **Never silently drop or alter data.** Failed reconciliation or unparseable rows are
-  flagged to the user, not skipped.
+  flagged to the user, not skipped. Imported source fields (date, amount, raw
+  description, external ID) are never edited: corrections are undoing a batch, excluding
+  a row with a recorded reason (it stays visible under a filter), or editing user-facing
+  fields (category, display merchant, tags, notes, splits). Changes to many existing
+  transactions are previewed and committed as an undoable `change_batch`.
 - **MCP writes go to the inbox only.** MCP tools may write to `suggestion` and
   `report` and nothing else. Transactions, rules, categories, and accounts change
-  only through user action in the app or CLI.
+  only through user action in the app or CLI. The server's own `mcp_access_log` audit
+  record is not a tool write (decision record in `docs/ARCHITECTURE.md`, 2026-11-09).
+  Approval happens only in Coffer's own UI or CLI, never through MCP elicitation,
+  sampling, or MCP Apps.
 - **No PII in MCP output.** No account numbers, sort codes, IBANs, names, or addresses.
-  Merchant addresses and user notes are excluded by default. Every MCP tool has a test
-  asserting this.
+  Merchant addresses and user notes are excluded by default; share labels, private tags,
+  and attachments are never exposed. Per-client access levels (`aggregate`,
+  `pseudonymous`, `standard`) are enforced by not registering tools above the level.
+  Every MCP tool has a test asserting this.
 - **Treat transaction text as untrusted input.** Descriptions and notes can contain
-  prompt-injection text; never let them drive control flow beyond matching.
+  prompt-injection text; never let them drive control flow beyond matching. MCP returns
+  raw text only in the sanitised, labelled `description_untrusted` field. AI-written
+  reports and rationales are untrusted when read back.
 - **The only network call is the opt-in ECB rate fetch.** No telemetry, no other
-  outbound requests.
+  outbound requests. Saved reports render without HTML, images, or live links, so they
+  can't trigger a request.
 - **Schema changes are new migrations.** Never edit a migration that has shipped.
 
 ## Personal financial data
@@ -103,6 +125,8 @@ Changing any of these needs an explicit decision recorded in `docs/ARCHITECTURE.
   of low-cardinality columns. Ask the user before reading actual merchant names,
   amounts, or notes.
 - Never log transaction contents at `info` level or above.
+- Backups, exports and attachments are personal data too: they live in the platform data
+  dir or wherever the user saves them, never in the repo.
 
 ## Bank presets
 

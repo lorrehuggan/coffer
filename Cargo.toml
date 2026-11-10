@@ -4,12 +4,83 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+# Versions live here so the M1 split into crates/{core,import,mcp,app} can
+# reference them with `<crate>.workspace = true`.
+[workspace.dependencies]
+# Storage. Pinned to 0.40: refinery and the rest of the ecosystem don't accept
+# rusqlite 0.41 / libsqlite3-sys 0.39 yet. Switch `bundled` to
+# `bundled-sqlcipher-vendored-openssl` if the DB is encrypted later.
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+# Checksums applied migrations and refuses to run if a shipped one was edited.
+refinery = { version = "0.10.0", default-features = false, features = ["rusqlite"] }
+
+# Import
+csv = "1.4"
+serde = { version = "1", features = ["derive"] }
+encoding_rs = "0.8.44"
+# Young single-maintainer crate: pinned exactly, used only behind the Importer trait.
+ofx-kit = "=0.3.1"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+toml = "1.2"
+
+# Errors, CLI, logging, paths, IDs
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4.6", features = ["derive"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+directories = "6"
+uuid = { version = "1.29", features = ["v7"] }
+
+# Rules engine
+regex = "1.13"
+aho-corasick = "1.1"
+
+# MCP server (`coffer mcp` only; core stays synchronous)
+rmcp = { version = "3.9", features = ["transport-io"] }
+tokio = { version = "1", features = ["rt", "macros", "io-std"] }
+schemars = "1"
+
 [dependencies]
 gpui-kit = "0.9.0"
+rusqlite.workspace = true
+refinery.workspace = true
+csv.workspace = true
+serde.workspace = true
+encoding_rs.workspace = true
+ofx-kit.workspace = true
+chrono.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+directories.workspace = true
+uuid.workspace = true
+regex.workspace = true
+aho-corasick.workspace = true
+rmcp.workspace = true
+tokio.workspace = true
+schemars.workspace = true
 
 [dev-dependencies]
+# `#[gpui_kit::test]` and the headless test platform, for the theme startup
+# test. Same version as the normal dependency, as gpui-kit requires.
+#
+# Trade-off: `test-support` enables `gpui-fast?/test-support`, and Cargo puts
+# weak-feature optional deps in Cargo.lock even when they're never built. So
+# the gpui-fast family is locked though unused (the `gpui-fast` feature is off;
+# `cargo tree -i gpui-fast` finds it in no build), and its exact pins hold two
+# crates the app does build one patch back: taffy =0.15.0 (was 0.15.1) and
+# unicode-properties =0.1.3 (was 0.1.5). They stay there until gpui-fast
+# loosens its pins or gpui-kit drops the weak feature.
+gpui-kit = { version = "0.9.0", features = ["test-support"] }
 # Reads design/tokens.json in the token drift test. Already in the tree via gpui-kit.
 serde_json = "1"
+# Writes the offscreen renders of `examples/snapshot.rs` (D5 fidelity check)
+# as PNG. Already in the tree via GPUI, with the png feature on.
+image = { version = "0.25", default-features = false, features = ["png"] }
 # Reads the bundled fonts' name and OS/2 tables in the font tests. Already in
 # the tree via GPUI's text stack (fontdb).
 ttf-parser = "0.25"

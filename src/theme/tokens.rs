@@ -184,6 +184,10 @@ pub mod color {
     /// The six categorical series in rank order. "Other" is not a seventh
     /// colour: draw it as a 1px [`TEXT_MUTED`] outline on [`FIELD`].
     pub const CHART: [Rgba; 6] = [CHART_1, CHART_2, CHART_3, CHART_4, CHART_5, CHART_6];
+    /// Code-only, showcase only: the 1px inset ring round a colour swatch
+    /// (Paper Foundations `9-0`), so swatches as dark as `canvas` keep an
+    /// edge. White at 12%.
+    pub const SWATCH_RING: Rgba = translucent(0xFFFFFF1F);
 }
 
 /// Font families. Both are bundled with the app (SIL OFL 1.1).
@@ -357,6 +361,11 @@ pub mod size {
     pub const STATUS_BAR: Pixels = px(28.);
     /// `--container-command-bar`: command bar width.
     pub const COMMAND_BAR: Pixels = px(340.);
+    /// `--container-search-field`: transactions toolbar search field width.
+    pub const SEARCH_FIELD: Pixels = px(240.);
+    /// `--container-dialog`: short dialogs (a confirmation or a form of a few
+    /// fields).
+    pub const DIALOG: Pixels = px(440.);
     /// `--container-field-label`: inspector field-row label column.
     pub const FIELD_LABEL: Pixels = px(64.);
     /// `--container-column-category`: transactions table category column.
@@ -417,9 +426,10 @@ pub mod opacity {
 }
 
 /// Motion. Paper has no motion token type, so these are code-only and
-/// `DESIGN.md` is their source. With the OS reduced-motion setting, everything
-/// goes to zero except opacity fades, which stay at [`FAST`](motion::FAST) or
-/// less.
+/// `DESIGN.md` is their source. With the OS reduced-motion setting, every
+/// animation, opacity fades included, goes to zero: `gpui_kit::init` reads
+/// the setting into `App::reduce_motion`, and GPUI and Base animations then
+/// jump to their end state (repeating ones hold still).
 pub mod motion {
     use super::Duration;
 
@@ -474,6 +484,8 @@ pub mod shadow {
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct Shadow {
         pub offset_y: Pixels,
+        /// The CSS blur radius. [`box_shadow`](Self::box_shadow) halves it
+        /// for GPUI.
         pub blur: Pixels,
         pub spread: Pixels,
         pub color: Rgba,
@@ -482,11 +494,15 @@ pub mod shadow {
 
     impl Shadow {
         /// The layer as a GPUI shadow, for `Styled::shadow`.
+        ///
+        /// CSS draws a blur radius `b` as a Gaussian with σ = `b`/2; GPUI's
+        /// shader takes `blur_radius` as σ itself. Passing the CSS value
+        /// through would draw the shadow twice as soft, so it's halved here.
         pub fn box_shadow(self) -> BoxShadow {
             BoxShadow {
                 color: self.color.into(),
                 offset: point(px(0.), self.offset_y),
-                blur_radius: self.blur,
+                blur_radius: self.blur / 2.,
                 spread_radius: self.spread,
                 inset: self.inset,
             }
@@ -642,7 +658,7 @@ pub mod typography {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
@@ -678,7 +694,7 @@ mod tests {
     }
 
     /// Every exported token, formatted the way the export writes it.
-    fn code_tokens() -> BTreeMap<&'static str, String> {
+    pub(crate) fn code_tokens() -> BTreeMap<&'static str, String> {
         BTreeMap::from([
             // Colour.
             ("--color-chrome", hex(color::CHROME)),
@@ -780,6 +796,8 @@ mod tests {
             ("--container-column-account", pixels(size::COLUMN_ACCOUNT)),
             ("--container-column-category", pixels(size::COLUMN_CATEGORY)),
             ("--container-command-bar", pixels(size::COMMAND_BAR)),
+            ("--container-search-field", pixels(size::SEARCH_FIELD)),
+            ("--container-dialog", pixels(size::DIALOG)),
             // Spacing.
             ("--spacing-0_5", pixels(spacing::S0_5)),
             ("--spacing-1", pixels(spacing::S1)),
@@ -912,5 +930,20 @@ mod tests {
     fn exit_motion_is_two_thirds_of_enter() {
         assert_eq!(motion::exit(motion::BASE), Duration::from_millis(100));
         assert_eq!(motion::exit(motion::SLOW), Duration::from_micros(146_666));
+    }
+
+    #[test]
+    fn shadows_convert_the_css_blur_to_gpui_sigma() {
+        // `0 6px 18px`: CSS σ is 9px, which GPUI takes as `blur_radius`.
+        let tooltip = shadow::TOOLTIP.box_shadow();
+        assert_eq!(tooltip.blur_radius, px(9.));
+        assert_eq!(tooltip.offset, point(px(0.), px(6.)));
+        assert!(!tooltip.inset);
+
+        // `inset 0 0 0 1px`: no blur, and spread passes through unchanged.
+        let ring = shadow::SWATCH_RING.box_shadow();
+        assert_eq!(ring.blur_radius, px(0.));
+        assert_eq!(ring.spread_radius, px(1.));
+        assert!(ring.inset);
     }
 }

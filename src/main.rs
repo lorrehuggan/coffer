@@ -1,36 +1,23 @@
-use gpui_kit::component::button::*;
-use gpui_kit::component::*;
-use gpui_kit::*;
-
-pub struct HelloWorld;
-
-impl Render for HelloWorld {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .v_flex()
-            .gap_2()
-            .size_full()
-            .items_center()
-            .justify_center()
-            .child("Hello, World!")
-            .child(
-                Button::new("ok")
-                    .primary()
-                    .label("Let's Go!")
-                    .on_click(|_, _, _| println!("Clicked!")),
-            )
-    }
-}
-
 fn main() {
+    // `coffer --showcase` opens the component showcase (D2.5) instead of the
+    // app. Argument parsing proper arrives with the CLI commands (M1).
+    let showcase = std::env::args().skip(1).any(|arg| arg == "--showcase");
+
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
             // Must be called before using any GPUI Kit components.
             gpui_kit::init(cx);
-            coffer::theme::fonts::install(cx).expect("Failed to load the bundled fonts");
+            coffer::theme::install(cx).expect("Failed to install the theme");
 
-            gpui_kit::open_window(WindowOptions::default(), cx, |_, cx| cx.new(|_| HelloWorld))
-                .expect("Failed to open window");
+            if showcase {
+                coffer::showcase::init(cx);
+                coffer::showcase::open(cx).expect("Failed to open the showcase");
+            } else {
+                // The Transactions screen on fixture data (D5) until the
+                // app shell arrives (M2).
+                coffer::transactions::init(cx);
+                coffer::transactions::open(cx).expect("Failed to open the window");
+            }
         });
 }

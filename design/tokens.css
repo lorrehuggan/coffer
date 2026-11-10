@@ -83,6 +83,8 @@
   --container-column-account: 140px;
   --container-column-category: 180px;
   --container-command-bar: 340px;
+  --container-search-field: 240px;
+  --container-dialog: 440px;
   --spacing-0_5: 2px;
   --spacing-1: 4px;
   --spacing-1_5: 6px;
