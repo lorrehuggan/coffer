@@ -389,7 +389,8 @@ fn import_commits_and_again_finds_nothing_new() {
     let batches = scratch.batches(1);
     assert_eq!(batches.len(), 1);
     assert_eq!(batches[0].preset_id.as_deref(), Some("uk-monzo"));
-    assert_eq!(batches[0].transactions, 14);
+    // The 14 imported rows and the 4 pot transfers mirrored onto pots.
+    assert_eq!(batches[0].transactions, 18);
 
     let out = scratch.ok(&["import", &monzo, "--account", "1"]);
     assert!(
@@ -644,6 +645,38 @@ fn import_needs_an_account_that_fits() {
     scratch.ok(&["import", &monzo, "--account", "3"]);
 }
 
+#[test]
+fn pot_transfers_show_in_the_preview_and_the_summary() {
+    let scratch = Scratch::with_accounts();
+    let monzo = fixture("presets/uk/monzo.csv");
+    let out = scratch.ok(&["import", &monzo, "--dry-run"]);
+    assert!(
+        out.contains(
+            "Pots:      4 transfers mirrored onto 2 pots as confirmed transfers\n  \
+             creates pot \"Emergency Fund\"\n  creates pot \"Holiday Fund\"\n"
+        ),
+        "{out}"
+    );
+    // The pots' IDs at the bank stay out of the output.
+    assert!(!out.contains("pot_0000"), "{out}");
+
+    let out = scratch.ok(&["import", &monzo]);
+    assert!(
+        out.contains(
+            "Pots: 4 transfers mirrored onto pots as confirmed transfers, 2 pots created.\n"
+        ),
+        "{out}"
+    );
+    assert_eq!(account::list(&scratch.open()).unwrap().len(), 4);
+
+    // The pots the import created don't make the next import ambiguous:
+    // the Monzo account is still the only one that takes the file.
+    let out = scratch.ok(&["import", &monzo]);
+    assert!(out.contains("Account:   1 Monzo (current, GBP)\n"), "{out}");
+    assert!(out.contains("0 new, 14 already imported"), "{out}");
+    assert!(!out.contains("Pots:"), "{out}");
+}
+
 // Undo -------------------------------------------------------------------------
 
 #[test]
@@ -659,7 +692,8 @@ fn undo_previews_then_undoes_with_yes() {
     );
     assert!(
         out.contains(
-            "Undoing it removes:\n  14 transactions\n  0 balances\n  0 flags recorded with it\n"
+            "Undoing it removes:\n  14 transactions\n  4 transactions it created in pots\n  \
+             0 balances\n  0 flags recorded with it\n"
         ),
         "{out}"
     );
@@ -671,7 +705,7 @@ fn undo_previews_then_undoes_with_yes() {
 
     let out = scratch.ok(&["undo-import", "1", "--yes"]);
     assert!(
-        out.ends_with("Undid import 1: removed 14 transactions, 0 balances and 0 flags.\n"),
+        out.ends_with("Undid import 1: removed 18 transactions, 0 balances and 0 flags.\n"),
         "{out}"
     );
     assert_eq!(scratch.batches(1)[0].status, BatchStatus::Undone);

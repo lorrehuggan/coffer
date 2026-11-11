@@ -1,9 +1,9 @@
-//! Planning and mirroring pot transfers against a real database, with the
-//! import commit around them as `import::commit` will run it: the batch's
-//! rows first, then [`mirror`], then transfer detection.
+//! Planning and mirroring pot transfers against a real database, through
+//! `import::preview` (which runs [`plan`]) and `import::commit` (which runs
+//! [`mirror`] after storing the batch's rows and before rules and transfer
+//! detection), and [`mirror`] directly for what the commit never asks of it.
 
 use chrono::NaiveTime;
-use rusqlite::{Transaction, TransactionBehavior};
 use tempfile::TempDir;
 
 use super::*;
@@ -11,7 +11,7 @@ use crate::account::NewAccount;
 use crate::import::{self, Committed, RowOutcome};
 use crate::money::{Currency, Money};
 use crate::statement::{SourceFormat, SourceLocation, Statement};
-use crate::transfer::{SuggestedPair, TransferStatus, TransferWindow};
+use crate::transfer::{TransferStatus, TransferWindow};
 
 const RAINY: &str = "pot_0000FAKEPOT00000000001";
 const HOLIDAY: &str = "pot_0000FAKEPOT00000000002";
@@ -21,13 +21,13 @@ struct Fixture {
     _dir: TempDir,
 }
 
-/// What one import did.
+/// What one import did, read back from the database after the commit.
 struct Imported {
     plan: MirrorPlan,
     batch: Option<BatchId>,
     mirrored: MirrorSummary,
-    /// Pairs detection suggested after mirroring.
-    detected: Vec<SuggestedPair>,
+    /// Pairs detection suggested in the commit, after mirroring.
+    transfer_pairs: usize,
 }
 
 impl Fixture {
@@ -47,59 +47,84 @@ impl Fixture {
         account::get(&self.db, id).unwrap()
     }
 
-    /// [`plan`] for the rows a preview of `statement` would commit.
+    /// What a preview of `statement` says the commit would mirror
+    /// ([`plan`], run by `import::preview`).
     fn plan(&self, account: AccountId, statement: Statement) -> Result<MirrorPlan, Error> {
-        let preview = import::preview(&self.db, account, "monzo.csv", statement).unwrap();
-        let tx = Transaction::new_unchecked(self.db.conn(), TransactionBehavior::Deferred).unwrap();
-        plan(&tx, preview.account(), new_lines(&preview))
+        let preview =
+            import::preview(&self.db, account, "monzo.csv", statement).map_err(sub_accounts)?;
+        Ok(preview.sub_accounts().clone())
     }
 
-    /// Previews, plans, commits and mirrors `statement` into `account`, the
-    /// way `import::commit` wires it: mirroring the batch's new pot rows
-    /// before transfer detection.
+    /// Previews and commits `statement` into `account` (the commit runs
+    /// [`mirror`] before rules and transfer detection), then reads back
+    /// what it mirrored.
     fn import(&mut self, account: AccountId, statement: Statement) -> Result<Imported, Error> {
-        let preview = import::preview(&self.db, account, "monzo.csv", statement).unwrap();
-        let plan = {
-            let tx =
-                Transaction::new_unchecked(self.db.conn(), TransactionBehavior::Deferred).unwrap();
-            plan(&tx, preview.account(), new_lines(&preview))?
-        };
+        let preview =
+            import::preview(&self.db, account, "monzo.csv", statement).map_err(sub_accounts)?;
+        let plan = preview.sub_accounts().clone();
+        let pots_before = self.pot_ids(account);
         let confirm = preview.needs_confirmation();
-        let batch = match import::commit(&mut self.db, &preview, confirm).unwrap() {
-            Committed::Batch(summary) => summary.batch,
+        let summary = match import::commit(&mut self.db, &preview, confirm).map_err(sub_accounts)? {
+            Committed::Batch(summary) => summary,
             Committed::NothingNew => {
                 return Ok(Imported {
                     plan,
                     batch: None,
                     mirrored: MirrorSummary::default(),
-                    detected: Vec::new(),
+                    transfer_pairs: 0,
                 });
             }
         };
+        let batch = summary.batch;
 
-        let tx = self.db.conn_mut().transaction().unwrap();
+        let created_pots: Vec<AccountId> = self
+            .pot_ids(account)
+            .into_iter()
+            .filter(|id| !pots_before.contains(id))
+            .collect();
+        let conn = self.db.conn();
         let mut rows = Vec::new();
-        for line in new_lines(&preview) {
-            if let Some(sub_account) = &line.sub_account {
-                let id: TransactionId = tx
-                    .query_row(
-                        "SELECT id FROM \"transaction\" WHERE batch_id = ?1 AND external_id = ?2",
-                        params![batch, line.external_id],
-                        |row| row.get(0),
-                    )
-                    .unwrap();
-                rows.push((id, sub_account.clone()));
-            }
+        for line in new_lines(&preview).filter(|line| line.sub_account.is_some()) {
+            let (parent_row, group): (TransactionId, TransferGroupId) = conn
+                .query_row(
+                    "SELECT id, transfer_group_id FROM \"transaction\" \
+                     WHERE batch_id = ?1 AND external_id = ?2 AND origin = 'imported'",
+                    params![batch, line.external_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            let (mirrored_row, pot): (TransactionId, AccountId) = conn
+                .query_row(
+                    "SELECT id, account_id FROM \"transaction\" \
+                     WHERE batch_id = ?1 AND external_id = ?2 AND origin = 'mirrored' \
+                     AND transfer_group_id = ?3",
+                    params![batch, line.external_id, group],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            rows.push(MirroredRow {
+                parent_row,
+                mirrored_row,
+                pot,
+                group,
+            });
         }
-        let mirrored = mirror(&tx, preview.account(), batch, &rows)?;
-        let detected = transfer::detect_for_batch(&tx, batch, TransferWindow::DEFAULT)?;
-        tx.commit().unwrap();
+        assert_eq!(summary.mirrored, rows.len());
+        assert_eq!(summary.pots_created, created_pots.len());
         Ok(Imported {
             plan,
             batch: Some(batch),
-            mirrored,
-            detected,
+            mirrored: MirrorSummary { created_pots, rows },
+            transfer_pairs: summary.transfer_pairs,
         })
+    }
+
+    fn pot_ids(&self, parent: AccountId) -> Vec<AccountId> {
+        pots(&self.db, parent)
+            .unwrap()
+            .into_iter()
+            .map(|pot| pot.account.id)
+            .collect()
     }
 
     fn pot_keyed(&self, parent: AccountId, key: &str) -> Option<Account> {
@@ -116,6 +141,14 @@ impl Fixture {
 
     fn sql(&self, sql: &str) {
         self.db.conn().execute_batch(sql).unwrap();
+    }
+}
+
+/// The sub-account error behind a failed preview or commit.
+fn sub_accounts(error: import::Error) -> Error {
+    match error {
+        import::Error::SubAccounts(error) => error,
+        other => panic!("not a sub-account error: {other}"),
     }
 }
 
@@ -329,7 +362,7 @@ fn pots_are_created_once_per_key_and_each_row_is_mirrored() {
     assert_eq!(pot_amounts, [20_000, -5_000, 7_500, 2_500]);
 
     // Detection after mirroring leaves the confirmed pairs alone.
-    assert_eq!(imported.detected, []);
+    assert_eq!(imported.transfer_pairs, 0);
 }
 
 #[test]
@@ -387,7 +420,9 @@ fn undo_removes_the_mirrored_rows_and_keeps_the_pots() {
 
     let preview = import::undo_preview(&fixture.db, batch).unwrap();
     assert_eq!((preview.transactions, preview.mirrored), (5, 4));
-    assert_eq!(preview.transfers, 4);
+    // Both sides of each pot pair are the batch's, so nothing is left to
+    // dissolve into an ordinary transaction.
+    assert_eq!(preview.transfers, 0);
     let undone = import::undo(&mut fixture.db, batch).unwrap();
     assert_eq!(undone.mirrored, 4);
     assert_eq!(fixture.count("SELECT COUNT(*) FROM \"transaction\""), 0);
