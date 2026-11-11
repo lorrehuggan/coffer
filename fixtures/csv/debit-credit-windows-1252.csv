@@ -1,0 +1,9 @@
+Account name:,Example Current Account
+Account number:,00000000
+Statement period:,01/11/2026 - 30/11/2026
+Date,Description,Paid out,Paid in,Balance
+01/11/2026,Opening transfer,,"1,000.00","1,000.00"
+02/11/2026,Café Rouge £5 deal,12.40,,987.60
+03/11/2026,Refund Café Rouge,0.00,2.40,990.00
+03/11/2026,Both columns filled,1.00,2.00,991.00
+04/11/2026,Negative money out,-5.00,,996.00

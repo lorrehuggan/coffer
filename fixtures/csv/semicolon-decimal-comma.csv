@@ -1,0 +1,5 @@
+﻿Buchungstag;Auftraggeber;Verwendungszweck;Betrag;Währung
+01.11.2026;Muster GmbH;Gehalt November;2.500,00;EUR
+02.11.2026;Bäckerei Beispiel;Kartenzahlung;-4,50;EUR
+03.11.2026;Vermietung Beispiel;Miete, November;-1.234,56;EUR
+04.11.2026;Hotel Beispiel;Reise;-100,00;USD

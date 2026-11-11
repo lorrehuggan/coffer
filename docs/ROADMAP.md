@@ -438,10 +438,18 @@ Import real statements into a local database from the command line.
   (never dropped, no transaction text), `normalize_description`. Exercised with a toy
   importer in tests; CSV and OFX are M1.7 and M1.10 (`ARCHITECTURE.md` → "The
   `Importer` trait")
-- ⬜ M1.7 CSV importer: encoding detection, delimiter, header/skip rows, date formats
+- ✅ M1.7 CSV importer: encoding detection, delimiter, header/skip rows, date formats
   (`DD/MM` vs `MM/DD`), separate time column, decimal style (`1,234.56` vs `1.234,56`),
   signed amount or debit/credit columns, merchant vs raw description, source ID,
-  source category/type, original (local) amount + currency, optional balance column
+  source category/type, original (local) amount + currency, optional balance column.
+  `coffer_import::csv`: `CsvImporter` over a validated `CsvMapping` (the shape M1.8's
+  TOML will deserialize into). BOM or stated encoding, else UTF-8 only (never guessed);
+  delimiter stated or detected (ties refused); `skip_rows` and optional header, columns by
+  name or position; `strftime` dates that must round-trip, with `DateFormat::candidates`
+  to surface `DD/MM`/`MM/DD` ambiguity; per-row currency column; signed or debit/credit
+  amounts (`Unsigned`/`Signed`). Rows with the wrong column count are flagged
+  (`RowProblem::ColumnCount`), as are unreadable fields. Synthetic fixtures in
+  `fixtures/csv/` (`ARCHITECTURE.md` → "The CSV importer")
 - ⬜ M1.8 TOML preset format + loader (`presets/<region>/<bank>.toml`), including
   source-category → category mapping
 - ⬜ M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export)

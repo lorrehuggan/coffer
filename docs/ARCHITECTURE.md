@@ -362,7 +362,7 @@ Versions live in `[workspace.dependencies]` in the root `Cargo.toml`; crates opt
 | Area | Crates | Notes |
 |---|---|---|
 | Storage | `rusqlite` (`bundled`), `refinery` | `rusqlite` pinned to 0.40 until `refinery` supports 0.41. `refinery` checksums applied migrations, enforcing "never edit a shipped migration". No connection pool: one connection per process, WAL + `busy_timeout` + `BEGIN IMMEDIATE`; the app and the CLI open with `Database::open`, which creates the database if needed and runs migrations (all pending ones in one transaction); `coffer mcp` opens with `Database::open_existing`, which never creates or migrates and refuses a missing or older database, telling the user to open Coffer or run a CLI command. Both check an existing file first (a SQLite database, not a newer schema, applied migrations matching the embedded ones) and leave a refused file untouched: no permission change, WAL switch or write. SQLCipher later = `bundled-sqlcipher-vendored-openssl` |
-| Import | `csv`, `serde`, `encoding_rs`, `ofx-kit`, `chrono`, `toml` | Encoding comes from the preset; decode errors are flagged, never guessed. Strip the BOM before `csv`. `ofx-kit` is young and single-maintainer: pinned exactly and kept behind the `Importer` trait (fallback: `ofx-rs`). Dates must round-trip through their format string |
+| Import | `csv`, `serde`, `encoding_rs`, `ofx-kit`, `chrono`, `toml` | Encoding comes from the preset (or a BOM); without either only UTF-8 is accepted, and a file that doesn't decode is refused, never guessed. The BOM is stripped before `csv`. `ofx-kit` is young and single-maintainer: pinned exactly and kept behind the `Importer` trait (fallback: `ofx-rs`). Dates must round-trip through their format string |
 | Money / FX | none | Own `Money { minor: i64, currency }` (`coffer_core::money`, M1.5) with a hand-written, test-frozen exponent table. FX in `i128` fixed point with one explicit rounding. Decimal types from format crates are converted to minor units at the import boundary, never stored. See "Money" below |
 | Rules | `regex`, `aho-corasick` | `regex` is linear-time, so user rules can't hang the app |
 | Plumbing | `thiserror` (libs), `anyhow` (binary), `clap`, `tracing`, `tracing-subscriber`, `directories`, `uuid` (v7) | Logs go to stderr |
@@ -373,7 +373,8 @@ own QIF parser. Avoid GPL crates (`ofxy`, `tree_magic_mini`'s GPL data feature).
 
 ## Import pipeline
 
-1. **Detect** format (extension + sniffing) and encoding (UTF-8, Windows-1252, Latin-1).
+1. **Detect** format (extension + sniffing) and encoding (a BOM, else the stated
+   encoding: UTF-8, UTF-16, Windows-1252/Latin-1, Latin-9; else UTF-8 only).
 2. **Map** (CSV): match a preset or use the mapping screen — date column + format,
    optional separate time column, amount as signed column or debit/credit pair
    (prefer a signed column when both exist — e.g. Monzo puts some refunds as
@@ -435,6 +436,58 @@ CAMT.053, MT940); steps 4–7 are core's and don't depend on the format.
   means asking the user (or `--preset`), never guessing.
 - `SourceFile` holds the undecoded bytes and the file name only, never the directory; its
   `Debug` leaves the contents out. Decoding is the importer's, from the format or preset.
+
+### The CSV importer
+
+M1.7, decided 2026-11-10. `coffer_import::csv`: `CsvImporter` reads files through a
+`CsvMapping`, the Rust form a preset (M1.8) or the mapping screen (M3) produces.
+`CsvImporter::new` refuses a mapping that can't work for any file (no description column,
+the same debit and credit column, a named column without a header row).
+
+- **Encoding is never guessed.** A byte order mark wins (UTF-8, UTF-16LE/BE) and is
+  stripped. Otherwise the mapping's encoding is used; `Auto` means UTF-8 only.
+  Single-byte encodings accept any bytes, so picking Windows-1252 for a file that isn't
+  would silently change accented letters, and with them the dedupe fingerprint. Decoding
+  is strict (no replacement characters), and NULs in the text (UTF-16 without a BOM)
+  fail the file. A preset or the user states non-UTF-8 encodings.
+- **Delimiter**: stated, or detected from the first 50 records among `,` `;` tab `|`.
+  The first record sets the width (at least 2). The candidate under which most rows fit
+  that width wins, then the wider one; a tie is refused, so the mapping has to say.
+- **Layout**: `skip_rows` raw lines before the header (account summaries), then an
+  optional header. Named columns match header cells exactly after trimming; a missing or
+  duplicated name fails the file (`ImportError::MissingColumn` / `DuplicateColumn`; the
+  name comes from the mapping, so it can be shown). Files without a header use 0-based
+  positions. Line numbers are physical lines (counted from byte offsets, since the `csv`
+  crate's own count is wrong across CRLF), so flagged rows can be found in the file.
+- **A row with the wrong column count is flagged** (`RowProblem::ColumnCount`), not
+  read: an unquoted delimiter in a description shifts every later field, and reading it
+  would import a wrong amount. Extra trailing empty fields are fine (some banks end
+  every row, but not the header, with a delimiter).
+- **Dates round-trip.** Formats are `strftime` patterns, checked when built
+  (`DateFormat::new`: needs a year, month and day; may include a time; no time zones).
+  chrono parses leniently (`%Y` reads `26` as year 26), so each value must format back
+  to the same text, ignoring ASCII case, or the row is flagged. `DD/MM` against `MM/DD`
+  is the mapping's: `DateFormat::candidates` lists every common format a column's values
+  fit, and more than one means asking the user. A separate time column overrides the
+  date's time when filled in.
+- **Amounts** are read with `Money::parse_decimal` and the mapping's decimal mark, from
+  a signed column or a debit/credit pair. A pair is `Unsigned` (positive amounts, money
+  out negated; a negative value is flagged as unclear) or `Signed` (each value as
+  written). A row filling both columns is flagged unless one of them is zero. An
+  optional per-row currency column sets the currency amounts are read in; a row not in
+  the statement's currency is then flagged by `Statement::push`.
+- **Text**: a single description column is kept as written; several are trimmed and
+  joined with a space, empty ones left out. An empty description is allowed. Optional
+  text fields are `None` when blank, otherwise kept as written; the external ID is
+  trimmed. The original amount is read in its own currency and dropped when it just
+  repeats the amount (Monzo fills it on every row).
+- **Detection**: `Source` when the header has every column the mapping names,
+  `Format` for other readable CSV with at least two columns, `Extension` for an
+  unreadable `.csv`/`.tsv`/`.txt`. Two presets that both find their columns tie, and the
+  caller asks.
+- `CsvFile` (the `Parsed` type: encoding used, delimiter, header, records with line
+  numbers) is public for the mapping screen. Its `Debug` and `CsvRecord`'s show counts
+  only.
 
 ### Preset format (sketch, based on a real Monzo export)
 

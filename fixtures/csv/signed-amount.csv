@@ -1,0 +1,12 @@
+Transaction ID,Date,Time,Type,Name,Category,Amount,Currency,Local amount,Local currency,Notes,Description
+tx_0001,01/11/2026,08:15:02,Card payment,Bean There,Eating out,-3.40,GBP,-3.40,GBP,,BEAN THERE LONDON GBR
+tx_0002,01/11/2026,12:30:00,Card payment,Café Lumière,Eating out,-8.60,GBP,-10.00,EUR,lunch,CAFE LUMIERE PARIS FRA
+tx_0003,02/11/2026,09:00:00,Faster payment,Example Employer Ltd,Income,"2,000.00",GBP,"2,000.00",GBP,,EXAMPLE EMPLOYER SALARY
+tx_0004,03/11/2026,18:45:10,Card payment,Corner Shop,Groceries,-1.20,GBP,-1.20,GBP,,CORNER SHOP
+tx_0005,03/11/2026,18:45:10,Card payment,Corner Shop,Groceries,-1.20,GBP,-1.20,GBP,,CORNER SHOP
+tx_0006,04/11/2026,10:00:00,Card payment,Bean There,Eating out,3.40,GBP,3.40,GBP,refund,BEAN THERE LONDON GBR
+tx_0007,31/11/2026,10:00:00,Card payment,Nowhere,Shopping,-5.00,GBP,-5.00,GBP,,BAD DATE ROW
+tx_0008,05/11/2026,11:11:11,Card payment,Odd Shop, Inc,Shopping,-7.50,GBP,-7.50,GBP,,UNQUOTED COMMA ROW
+tx_0009,06/11/2026,07:00:00,Card payment,Too Precise,Shopping,-1.005,GBP,-1.005,GBP,,TOO PRECISE ROW
+tx_0010,06/11/2026,,Direct debit,Example Energy,Bills,-45.00,GBP,-45.00,GBP,,EXAMPLE ENERGY DD
+

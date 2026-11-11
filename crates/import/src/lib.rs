@@ -4,9 +4,11 @@
 //! An importer turns a [`SourceFile`] into a
 //! [`Statement`](coffer_core::statement::Statement), the normalized form that
 //! core deduplicates, reconciles and commits. Import is deterministic: no
-//! model or network calls. CSV arrives in M1.7 and OFX in M1.10
+//! model or network calls. [`csv::CsvImporter`] reads delimited text through
+//! a [`csv::CsvMapping`]. The OFX importer arrives in M1.10
 //! (`docs/ROADMAP.md`).
 
+pub mod csv;
 mod importer;
 mod source;
 
