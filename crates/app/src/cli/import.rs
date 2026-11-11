@@ -152,6 +152,11 @@ pub fn run(
                 plural(summary.balances, "balance"),
                 plural(summary.flags, "flag")
             )?;
+            writeln!(
+                out,
+                "Categorised: {} by the preset, {} by rules. Transfer pairs suggested: {}.",
+                summary.categorized_by_preset, summary.categorized_by_rules, summary.transfer_pairs
+            )?;
             writeln!(out, "To undo it: coffer undo-import {}", summary.batch)?;
             Ok(())
         }

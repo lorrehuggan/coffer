@@ -380,6 +380,11 @@ fn import_commits_and_again_finds_nothing_new() {
         out.contains("Imported monzo.csv as batch 1: 12 transactions, 0 balances, 0 flags.\n"),
         "{out}"
     );
+    // Ten of the fixture's Monzo categories are in the preset's map.
+    assert!(
+        out.contains("Categorised: 10 by the preset, 0 by rules. Transfer pairs suggested: 0.\n"),
+        "{out}"
+    );
     assert!(out.ends_with("To undo it: coffer undo-import 1\n"), "{out}");
     let batches = scratch.batches(1);
     assert_eq!(batches.len(), 1);
@@ -695,4 +700,45 @@ fn undo_names_later_imports_that_relied_on_it() {
         out.contains("Later imports into this account relied on it: 2."),
         "{out}"
     );
+}
+
+#[test]
+fn import_reports_transfer_pairs_it_suggests() {
+    let scratch = Scratch::with_accounts();
+    scratch.ok(&[
+        "accounts",
+        "add",
+        "--name",
+        "Savings",
+        "--kind",
+        "savings",
+        "--currency",
+        "GBP",
+    ]);
+    scratch.ok(&[
+        "import",
+        &fixture("presets/uk/monzo.csv"),
+        "--account",
+        "Monzo",
+    ]);
+
+    // A synthetic Monzo-format export for the savings account: the fixture's
+    // 24.00 payment out on 4 October arriving the next day.
+    let header = std::fs::read_to_string(fixture("presets/uk/monzo.csv"))
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_owned();
+    let file = scratch._dir.path().join("savings.csv");
+    std::fs::write(
+        &file,
+        format!(
+            "{header}\ntx_0000FAKE900000000000001,05/10/2026,09:00:00,Faster payment,\
+             Example Transfer,,,24.00,GBP,24.00,GBP,,,,FAKE TRANSFER IN,,,24.00\n"
+        ),
+    )
+    .unwrap();
+    let out = scratch.ok(&["import", &file.to_string_lossy(), "--account", "Savings"]);
+    assert!(out.contains("Transfer pairs suggested: 1.\n"), "{out}");
 }
