@@ -54,7 +54,7 @@ pub type SchemaVersion = i64;
 /// How long a statement waits for another process's lock before failing
 /// with `SQLITE_BUSY`. Imports commit in one transaction, so a reader or a
 /// second writer may wait for a whole import.
-const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Why the database couldn't be opened.
 #[derive(Debug, thiserror::Error)]
@@ -275,11 +275,35 @@ impl Database {
     }
 }
 
+/// For [`crate::backup`]: checks a connection's schema against this build's
+/// migrations without writing ([`migrations::check`]), and returns its
+/// version.
+pub(crate) fn check_schema(conn: &Connection) -> Result<SchemaVersion, Error> {
+    migrations::check(conn, &migrations::embedded())
+}
+
+/// For [`crate::backup`]: the schema version of the database file at
+/// `path`, read without changing it, and without checking its history.
+pub(crate) fn peek_schema_version(path: &Path) -> Result<SchemaVersion, Error> {
+    Ok(migrations::current_version(&inspect(path)?)?)
+}
+
+/// For tests elsewhere in core: a database with only this build's first
+/// `version` migrations applied, as an older Coffer left it.
+#[cfg(test)]
+pub(crate) fn open_at_version(path: &Path, version: SchemaVersion) -> Result<Database, Error> {
+    let migrations: Vec<_> = migrations::embedded()
+        .into_iter()
+        .filter(|migration| SchemaVersion::from(migration.version()) <= version)
+        .collect();
+    Database::open_with(path, &migrations)
+}
+
 /// Opens a read-write connection to an existing file. Not
 /// `SQLITE_OPEN_CREATE`: [`prepare_files`] creates the file with private
 /// permissions, and SQLite gives the -wal and -shm files the main file's
 /// mode.
-fn connect(path: &Path) -> Result<Connection, Error> {
+pub(crate) fn connect(path: &Path) -> Result<Connection, Error> {
     Ok(Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -387,7 +411,7 @@ fn restrict_files_to_owner(path: &Path) -> Result<(), Error> {
 }
 
 /// `coffer.db` → `coffer.db-wal`, `coffer.db-shm`.
-fn sidecar(path: &Path, suffix: &str) -> PathBuf {
+pub(crate) fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     let mut name = OsString::from(path.as_os_str());
     name.push(suffix);
     PathBuf::from(name)
@@ -395,7 +419,7 @@ fn sidecar(path: &Path, suffix: &str) -> PathBuf {
 
 /// Creates `dir` as `0700` if it doesn't exist. An existing directory is
 /// left alone: it may be one the user chose (`COFFER_DATA_DIR`).
-fn create_private_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> io::Result<()> {
     if dir.is_dir() {
         return Ok(());
     }
