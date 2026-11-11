@@ -1,8 +1,44 @@
-fn main() {
-    // `coffer --showcase` opens the component showcase (D2.5) instead of the
-    // app. Argument parsing proper arrives with the CLI commands (M1).
-    let showcase = std::env::args().skip(1).any(|arg| arg == "--showcase");
+use std::io::Write;
+use std::process::ExitCode;
 
+use clap::Parser;
+use coffer_app::cli::{self, Cli};
+use coffer_core::paths;
+
+fn main() -> ExitCode {
+    let args = Cli::parse();
+    match args.command {
+        // The headless commands never start GPUI.
+        Some(command) => run_command(command),
+        None => {
+            run_gui(args.showcase);
+            ExitCode::SUCCESS
+        }
+    }
+}
+
+/// Runs a CLI command against the database in the data dir
+/// (`COFFER_DATA_DIR` when set). Output on stdout, errors on stderr.
+fn run_command(command: cli::Command) -> ExitCode {
+    let result = paths::database_path()
+        .map_err(anyhow::Error::from)
+        .and_then(|database| {
+            let mut stdout = std::io::stdout().lock();
+            let result = cli::run(command, &database, &mut stdout);
+            stdout.flush()?;
+            result
+        });
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Opens the app, or with `--showcase` the component showcase (D2.5).
+fn run_gui(showcase: bool) {
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {

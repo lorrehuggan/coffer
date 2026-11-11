@@ -1069,6 +1069,7 @@ dependencies = [
  "gpui-kit",
  "image",
  "serde_json",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
  "ttf-parser",

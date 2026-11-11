@@ -40,3 +40,5 @@ serde_json.workspace = true
 image.workspace = true
 # Reads the bundled fonts' name and OS/2 tables in the font tests.
 ttf-parser.workspace = true
+# Scratch data dirs for the CLI tests, so they never touch the real one.
+tempfile.workspace = true
