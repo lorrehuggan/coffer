@@ -12,15 +12,20 @@
 //! - `coffer accounts [list]`, `coffer accounts add`: the accounts an import
 //!   goes into ([`accounts`]).
 //! - `coffer undo-import <batch>`: remove an import again ([`undo`]).
+//! - `coffer backup [--list]`, `coffer restore <file>`: local backups
+//!   ([`backup`]).
 //!
 //! Output is what the user asked for and nothing else. Errors are returned
 //! (as `anyhow` errors: this is the binary's layer) for `main` to print on
 //! stderr. Nothing is logged; transaction text never reaches a log.
 
 pub mod accounts;
+pub mod backup;
 pub mod import;
 pub mod undo;
 
+#[cfg(test)]
+mod backup_tests;
 #[cfg(test)]
 mod tests;
 
@@ -33,6 +38,7 @@ use coffer_core::db::Database;
 use coffer_import::preset::Presets;
 
 pub use accounts::{AccountsArgs, AccountsCommand, AddAccountArgs};
+pub use backup::{BackupArgs, RestoreArgs};
 pub use import::ImportArgs;
 pub use undo::UndoImportArgs;
 
@@ -60,13 +66,20 @@ pub enum Command {
     Accounts(AccountsArgs),
     /// Undo an import: remove its transactions, balances and flags.
     UndoImport(UndoImportArgs),
+    /// Back up the database now (kept until you delete it), or list the
+    /// backups.
+    Backup(BackupArgs),
+    /// Restore a backup over the database, after backing up the current one.
+    Restore(RestoreArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
 /// `coffer.db` in the binary), writing its output to `out`.
 ///
-/// `accounts add` and `import` create the database if there is none; the
-/// other commands need it to exist already.
+/// `accounts add` and `import` create the database if there is none;
+/// `restore` creates it from the backup; `backup --list` reads only the
+/// backups directory. The other commands need the database to exist
+/// already.
 pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Result<()> {
     match command {
         Command::Import(args) => {
@@ -90,6 +103,8 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
             let mut db = open_existing(database)?;
             undo::run(&mut db, &args, out)
         }
+        Command::Backup(args) => backup::run(database, &args, out),
+        Command::Restore(args) => backup::restore(database, &args, out),
     }
 }
 

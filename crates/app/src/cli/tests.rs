@@ -239,7 +239,7 @@ fn parses_undo_import() {
 
 #[test]
 fn later_commands_arent_there_yet() {
-    for command in ["mcp", "inbox", "backup", "restore", "export"] {
+    for command in ["mcp", "inbox", "export"] {
         assert!(
             Cli::try_parse_from(["coffer", command]).is_err(),
             "{command}"
