@@ -19,10 +19,12 @@ charts, and exposes the data to AI clients through an MCP server.
 M0 and the design track (D1–D6) are done and signed off; M1 is in progress. The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
-(`crates/core/migrations/V1__initial_schema.sql`, M1.4; no Rust API over it yet) and the
+(`crates/core/migrations/V1__initial_schema.sql`, M1.4) and the
 money types (`money`: `Currency`, `Money`, exact decimal parsing; M1.5) and the
 normalized import output (`statement`: `Statement`, `StatementLine`, flagged rows; M1.6)
-and category keys (`category`: `CategoryKey`; M1.8) and validated rule types (`rule`:
+and categories (`category`: `CategoryKey`, M1.8; `CategoryKind`, `DEFAULT_CATEGORIES`
+and `CategoryTree` via `Database::categories`, seeded by `V2__default_categories.sql`,
+M1.14) and validated rule types (`rule`:
 `RuleDefinition`, `Pattern`, `RuleAction`; no engine yet, M1.15).
 `crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
 importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader

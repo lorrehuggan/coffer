@@ -104,8 +104,10 @@ import preview rather than leave it out silently. Needs `header = true`.
 
 `[category_map]` maps the bank's category names (as in `source_category`, matched
 exactly, case included) to Coffer's category keys: one or two parts of lowercase
-letters, digits and `_`, joined by a dot (`food.groceries`, `transfer`). Unmapped
-categories are left for rules or the user.
+letters, digits and `_`, joined by a dot (`food.groceries`, `transfer`). Map only to
+the default categories listed in `docs/ARCHITECTURE.md` → "Categories" (a test checks
+it): they are the ones every Coffer database has. Map a bank category to a group
+(`travel`) when no subcategory fits. Unmapped categories are left for rules or the user.
 
 ### Not yet
 

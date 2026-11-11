@@ -30,6 +30,8 @@
 //! One connection per process, no pool (`docs/ARCHITECTURE.md` →
 //! Dependencies).
 
+#[cfg(test)]
+mod category_tests;
 mod migrations;
 #[cfg(test)]
 mod schema_tests;
@@ -42,6 +44,7 @@ use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
+use crate::category::CategoryTree;
 use crate::paths::{self, NoDataDir};
 
 /// A schema version: the number of the last migration applied, `0` for a
@@ -252,6 +255,12 @@ impl Database {
     /// its last migration.
     pub fn supported_schema_version() -> SchemaVersion {
         migrations::latest_version(&migrations::embedded())
+    }
+
+    /// Every category, as a two-level tree that looks categories up by key
+    /// ([`CategoryTree`]).
+    pub fn categories(&self) -> Result<CategoryTree, Error> {
+        Ok(CategoryTree::load(&self.conn)?)
     }
 }
 

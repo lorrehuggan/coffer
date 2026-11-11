@@ -469,7 +469,10 @@ Import real statements into a local database from the command line.
 - ⬜ M1.12 Balance reconciliation where the file has balances; failed imports flagged, not
   committed silently. Manual balance anchor for accounts whose exports have none
 - ⬜ M1.13 Import batches with undo
-- ⬜ M1.14 Default two-level category set with stable keys
+- ✅ M1.14 Default two-level category set with stable keys. 15 groups, 50 subcategories,
+  each `spending`, `income` or `transfer`, seeded once by `V2__default_categories.sql`;
+  `coffer_core::category::{DEFAULT_CATEGORIES, CategoryTree}`; bundled presets may map
+  only to default keys (tested) (`ARCHITECTURE.md` → "Categories")
 - ⬜ M1.15 Rules engine (contains / regex / amount range / account), priority ordering.
   The validated rule types exist in `coffer_core::rule` (match field and kind, regex
   pattern with size limits, amount bounds, typed action values, cross-action checks); the

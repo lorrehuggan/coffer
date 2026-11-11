@@ -43,6 +43,14 @@ impl Fixture {
         Self { db, _dir: dir }
     }
 
+    /// A database without the default categories, for tests that build
+    /// their own tree.
+    fn without_categories() -> Self {
+        let fixture = Self::new();
+        fixture.conn().execute("DELETE FROM category", []).unwrap();
+        fixture
+    }
+
     fn conn(&self) -> &Connection {
         &self.db.conn
     }
@@ -107,6 +115,15 @@ impl Fixture {
             )
             .unwrap();
         self.conn().last_insert_rowid()
+    }
+
+    /// A default category's ID.
+    fn default_category(&self, key: &str) -> i64 {
+        self.conn()
+            .query_row("SELECT id FROM category WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
+            .unwrap()
     }
 
     fn category(&self, key: &str, parent: Option<i64>) -> rusqlite::Result<i64> {
@@ -267,7 +284,7 @@ fn money_is_integer() {
         [id],
     ));
     // Text that is a whole number is stored as one; anything else is refused.
-    let category = fixture.category("food", None).unwrap();
+    let category = fixture.default_category("food");
     assert_refused(fixture.conn().execute(
         "INSERT INTO budget (category_id, amount_minor, currency, rollover, group_kind) \
          VALUES (?1, '100.50', 'GBP', 0, 'flex')",
@@ -397,7 +414,7 @@ fn only_pots_have_a_parent() {
 
 #[test]
 fn categories_have_two_levels() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::without_categories();
     let food = fixture.category("food", None).unwrap();
     let groceries = fixture.category("food.groceries", Some(food)).unwrap();
     let transport = fixture.category("transport", None).unwrap();
@@ -435,7 +452,7 @@ fn categories_have_two_levels() {
 /// `<parent key>.<part>` below it.
 #[test]
 fn category_keys_match_their_parent() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::without_categories();
     let food = fixture.category("food", None).unwrap();
     fixture.category("transport", None).unwrap();
 
@@ -454,7 +471,7 @@ fn category_keys_match_their_parent() {
 /// subcategory's key spells its parent, so neither changes; labels do.
 #[test]
 fn category_keys_and_parents_are_read_only() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::without_categories();
     let food = fixture.category("food", None).unwrap();
     let groceries = fixture.category("food.groceries", Some(food)).unwrap();
     let transport = fixture.category("transport", None).unwrap();
@@ -492,7 +509,7 @@ fn imported_source_fields_are_read_only() {
     let fixture = Fixture::new();
     let account = fixture.account("Current");
     let batch = fixture.batch(account);
-    let category = fixture.category("food", None).unwrap();
+    let category = fixture.default_category("food");
     let id = fixture.imported(account, batch, Some("tx_1"), "fp-1");
 
     for (column, value) in [
@@ -840,7 +857,7 @@ fn my_share_is_part_of_the_amount() {
 fn a_category_has_a_source() {
     let fixture = Fixture::new();
     let account = fixture.account("Current");
-    let category = fixture.category("food", None).unwrap();
+    let category = fixture.default_category("food");
     let id = fixture.manual(account);
 
     assert_refused(fixture.conn().execute(
@@ -1264,7 +1281,7 @@ fn valuation_accounts_hold_valuations_only() {
 #[test]
 fn budget_groups_fix_rollover() {
     let fixture = Fixture::new();
-    let category = fixture.category("food", None).unwrap();
+    let category = fixture.default_category("food");
     let budget = |month: Option<&str>, rollover: bool, group: &str, set_aside: Option<i64>| {
         fixture.conn().execute(
             "INSERT INTO budget (category_id, month, amount_minor, currency, rollover, \

@@ -688,3 +688,21 @@ fn bundled_presets_load_and_read_their_fixtures() {
         }
     }
 }
+
+/// A bundled preset maps only to default categories, which every database
+/// starts with (`coffer_core::category::DEFAULT_CATEGORIES`). Presets the
+/// user saves may name their own categories too, so loading doesn't check
+/// this; the import resolves keys against the database instead.
+#[test]
+fn bundled_presets_map_to_default_categories() {
+    let presets = Presets::bundled().unwrap_or_else(|error| panic!("{error}"));
+    for preset in presets.iter() {
+        for (source, key) in preset.category_map() {
+            assert!(
+                coffer_core::category::default_category(key.as_str()).is_some(),
+                "{}: {source:?} maps to {key}, which isn't a default category",
+                preset.id()
+            );
+        }
+    }
+}

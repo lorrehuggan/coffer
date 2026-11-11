@@ -343,6 +343,49 @@ decided by the user on the designer's recommendation:
    queues, point 1). "Add and save" writes the snapshot and the difference transaction
    in one DB transaction. Coffer never posts a difference on its own.
 
+### Decision record: categories (2026-11-11)
+
+M1.14, the default category set. The set itself is under "Categories" below.
+
+1. **The defaults are seeded by a migration** (`V2__default_categories.sql`), not by Rust
+   at every open. A migration runs once, in the same transaction as the schema, and is
+   checksummed like any other, so a default the user deleted never comes back and
+   `coffer mcp`, which never writes the schema, needs nothing extra.
+   `coffer_core::category::DEFAULT_CATEGORIES` is the same list in Rust (a test keeps
+   them equal) for code that has no database, such as the bundled presets' tests.
+2. **A category has a kind: `spending`, `income` or `transfer`** (`category.kind`).
+   Reports need to know which side a category is on, and so does the "moves income into
+   a spending category" check on wide rules (Inbox impact preview, point 2). A
+   subcategory has its group's kind, and a kind never changes, since changing it would
+   move a category's whole history between income and spending. Changing it means a new
+   category and moving the rows (an undoable change batch). A new category without a
+   kind is `spending`.
+3. **Keys are forever; labels belong to the user.** Renaming changes the label only (the
+   V1 trigger already makes `key` and `parent_id` read-only), so presets, rules, budgets
+   and MCP clients keep working. Default labels are English (en-GB) and keys name the
+   concept, not a country's word for it: `home.property_tax` is labelled "Council tax",
+   and an en-US label would say "Property tax". Translating default labels (until the
+   user renames one) can key off `DEFAULT_CATEGORIES`.
+4. **User categories share the key space.** A category the user adds (M3.7) gets its key
+   from its label when it's created (lowercase ASCII letters and digits, other runs as
+   `_`, a numeric suffix if taken, a fallback when nothing is left), and the key doesn't
+   follow later renames. It can be a new group or go under any group, taking the group's
+   kind. A later Coffer that adds defaults inserts each key only where it's free, so a
+   user's category with the same key is kept as it is.
+5. **Defaults are ordinary rows.** The user can rename them, and can delete one that
+   nothing uses. Deleting is refused while a transaction, split line, budget or
+   schedule points at it (foreign keys) or a rule action or preset names its key (core
+   checks rules; an unmatched preset key just leaves rows uncategorised). Hiding a used
+   category instead of deleting it is for M3.7 to design.
+6. **No category for "uncategorised", refunds or reimbursements.** Uncategorised and
+   split rows have no `category_id`. A linked refund takes its purchase's category and
+   a reimbursement nets against its expense (`transaction_link`); money in under a
+   spending category lowers that category's spending and isn't income.
+7. **Bundled presets map only to default keys**, checked by a test in
+   `coffer_import::preset`. Loading a preset doesn't check keys against the defaults,
+   since a preset the user saves (M3) may name their own categories; the import maps a
+   key that isn't in the database to nothing and leaves the row for rules or the user.
+
 ## Architecture
 
 ```
@@ -603,8 +646,10 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
 - **Category map.** `CategoryKey` (`coffer_core::category`) is one or two segments of
   `[a-z0-9_]` joined by `.`, the shape of `category.key`. Source categories match
   exactly, case included, after trimming the row's value; map keys must already be
-  trimmed. Whether a key exists is checked against the category set when the import
-  maps categories (M1.14 onwards); an unmapped category is left for rules or the user.
+  trimmed. Whether a key exists is checked against the database's categories when the
+  import maps them; a key it doesn't have, like an unmapped category, is left for rules
+  or the user. Bundled presets map only to default keys (a test checks it; see
+  "Categories").
   A `category_map` without a `source_category` column is refused.
 - **Every bundled preset has a fixture** at `fixtures/presets/<region>/<bank>.*` that it
   detects as `Source` and imports; a test enforces it.
@@ -640,6 +685,44 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
   unchanged. Symbols, locale separators, `−` and `+` follow `DESIGN.md` → "Money" in
   the app.
 
+## Categories
+
+`coffer_core::category` (M1.14; decisions in "Decision record: categories"). Every new
+database starts with this two-level set (`V2__default_categories.sql`,
+`DEFAULT_CATEGORIES`). Groups are in display order; a transaction can be filed under a
+group itself (`transfer`, `other`) as well as under a subcategory.
+
+| Group (kind) | Subcategories |
+|---|---|
+| `income` Income (income) | `salary` Salary · `self_employment` Self-employment · `benefits` Benefits · `pension` Pension · `interest` Interest · `investments` Investment income · `rental` Rental income · `gifts` Gifts received |
+| `home` Home | `rent` Rent · `mortgage` Mortgage · `property_tax` Council tax · `maintenance` Repairs and maintenance · `household` Household |
+| `bills` Bills | `energy` Energy · `water` Water · `phone` Phone · `internet` Internet · `tv` TV · `insurance` Insurance · `subscriptions` Subscriptions |
+| `food` Food | `groceries` Groceries · `eating_out` Eating out · `takeaway` Takeaways |
+| `transport` Transport | `public` Public transport · `taxi` Taxis · `fuel` Fuel · `parking` Parking and tolls · `vehicle` Vehicle costs |
+| `shopping` Shopping | `clothing` Clothing · `electronics` Electronics |
+| `entertainment` Entertainment | `events` Events and tickets · `hobbies` Hobbies |
+| `health` Health | `medical` Medical · `fitness` Fitness · `personal_care` Personal care |
+| `travel` Travel | `flights` Flights · `accommodation` Accommodation |
+| `family` Family | `childcare` Childcare · `children` Children · `education` Education · `pets` Pets |
+| `giving` Giving | `gifts` Gifts · `charity` Charity |
+| `finance` Finance | `fees` Fees and charges · `interest` Interest paid · `loans` Loan repayments · `tax` Tax |
+| `cash` Cash | — (cash withdrawals; with a cash account, the withdrawal is a transfer instead) |
+| `other` Other | — |
+| `transfer` Transfers (transfer) | `savings` Savings · `investments` Investments · `credit_card` Credit card payments |
+
+A subcategory's key is `<group>.<key>` (`food.groceries`); groups not marked are
+`spending`. `transfer` is for money between the user's own accounts, or to one Coffer
+doesn't see: like a confirmed transfer pair, it is neither income nor spending.
+
+- `CategoryKind` is the stored kind; a test keeps its keys equal to the schema's CHECK.
+- `Database::categories` returns a `CategoryTree`: groups with their subcategories in
+  the order they were created (the defaults first, in the order above), looked up by
+  key (`get`, `group_of`). `CategoryTree::load` takes a `&Connection`, so code that
+  writes in a transaction can map keys to IDs inside it.
+- `CategoryKey` and `CategoryKind` are SQLite `TEXT`; a stored value that doesn't parse
+  is an error, not a guess.
+- Editing categories (add, rename, delete, hide) is M3.7.
+
 ## Data model (initial)
 
 The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
@@ -667,8 +750,9 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   `"transaction"` (a test scans for them); `INSERT OR IGNORE` on a duplicate is an error
   too, because core dedupes first.
 - Triggers also keep categories to two levels with keys that match their place (a
-  top-level key is one part, a subcategory's is `<parent key>.<part>`) and make a
-  category's `key` and `parent_id` read-only (keys are stable; only the label changes),
+  top-level key is one part, a subcategory's is `<parent key>.<part>`), make a
+  category's `key`, `parent_id` and `kind` read-only (keys are stable; only the label
+  changes) and give a subcategory its group's kind,
   keep a transaction in its account's currency, keep `asset`/`liability` accounts to
   `valuation` snapshots only (and valuations to those accounts), put a pot under a
   `current` or `savings` account in the same currency and keep it there once it holds
@@ -728,8 +812,10 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   assertion; an account's first is its starting point and every later one is a check;
   `note` is user text, not sent over MCP by default. `ofx` and `csv` snapshots belong to
   their import batch and are removed when it is undone; the others have no batch
-- `category(id, parent_id?, key, label)` — two levels, stable keys
-  (`food.groceries` under `food`; key and parent read-only), translatable labels
+- `category(id, parent_id?, key, label, kind [spending|income|transfer])` — two levels,
+  stable keys (`food.groceries` under `food`; key and parent read-only), translatable
+  labels; a subcategory has its group's kind, and kinds are read-only. The defaults are
+  seeded by `V2__default_categories.sql` (see "Categories")
 - `rule(id, priority, match_field [merchant|description|source_category|source_type],
   match_kind [is|starts_with|contains|regex], pattern, amount_min?, amount_max?,
   account_id?, created_at)` and `rule_action(id, rule_id, kind [set_category|
