@@ -14,3 +14,9 @@ Generic CSV shapes for the CSV importer (M1.7), written by hand:
 | `signed-amount.csv` | UTF-8, LF. Signed amount, transaction IDs, separate time column, merchant, category, type, local amount + currency (one foreign spend), notes. Rows that must be flagged: an impossible date, an unquoted comma, an amount with too many decimals |
 | `debit-credit-windows-1252.csv` | Windows-1252 (`é`, `£`), CRLF. Three preamble lines before the header, `Paid out` / `Paid in` columns holding positive amounts, running balance, quoted thousands. Flagged: both columns filled, a negative money-out |
 | `semicolon-decimal-comma.csv` | UTF-8 with BOM, `;`-separated, `DD.MM.YYYY`, `1.234,56` decimals, a per-row currency column (one row in USD, flagged), description from two columns |
+
+## `presets/`
+
+One fixture per bank preset, at `presets/<region>/<bank>.<ext>` to match
+`presets/<region>/<bank>.toml`. A test requires each bundled preset to have one, to
+recognise it from its header and to import it. None yet: the first is Monzo (M1.9).

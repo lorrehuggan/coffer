@@ -112,7 +112,7 @@ pub struct OriginalAmountColumns {
 }
 
 /// How to read one kind of CSV export: the shape a preset
-/// (`crate::preset`, M1.8) or the mapping screen produces.
+/// ([`crate::preset`]) or the mapping screen produces.
 ///
 /// [`CsvMapping::new`] gives the required parts and sensible defaults for
 /// the rest; set the other fields directly. [`CsvImporter::new`] checks the

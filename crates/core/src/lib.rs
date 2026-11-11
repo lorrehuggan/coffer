@@ -5,6 +5,7 @@
 //! Synchronous and UI-free, so everything here is testable without a window.
 //! It must not depend on GPUI, MCP, or any network or AI crate.
 
+pub mod category;
 pub mod db;
 pub mod money;
 pub mod paths;

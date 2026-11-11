@@ -450,8 +450,18 @@ Import real statements into a local database from the command line.
   amounts (`Unsigned`/`Signed`). Rows with the wrong column count are flagged
   (`RowProblem::ColumnCount`), as are unreadable fields. Synthetic fixtures in
   `fixtures/csv/` (`ARCHITECTURE.md` → "The CSV importer")
-- ⬜ M1.8 TOML preset format + loader (`presets/<region>/<bank>.toml`), including
-  source-category → category mapping
+- ✅ M1.8 TOML preset format + loader (`presets/<region>/<bank>.toml`), including
+  source-category → category mapping.
+  `coffer_import::preset`: `Preset::from_toml` reads a `CsvMapping` plus ID, name, region,
+  `ignore` and `[category_map]`; unknown keys are refused and field values are checked
+  where written (errors point at the line); TOML column positions count from 1.
+  `crates/import/build.rs` compiles every `presets/**/*.toml` in (`Presets::bundled`);
+  `Presets::from_files` checks `<region>/<bank>.toml` placement, region, an ID of
+  `<region>-<bank>[-…]` and unique IDs. `Preset::category_for` maps exact source
+  categories to `coffer_core::category::CategoryKey`; `Preset::unread_columns` lists header
+  columns neither read nor ignored. A test requires every bundled preset to import its
+  fixture in `fixtures/presets/`. Contributor reference: `presets/README.md`
+  (`ARCHITECTURE.md` → "Presets"). `[sub_account_transfer]` waits for M1.17
 - ⬜ M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export)
 - ⬜ M1.10 OFX/QFX importer (SGML 1.x and XML 2.x), `FITID` IDs, `LEDGERBAL` balances
 - ⬜ M1.11 Deduplication: source ID when present (OFX `FITID`, CSV ID column);

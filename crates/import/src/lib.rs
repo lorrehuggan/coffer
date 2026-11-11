@@ -5,11 +5,13 @@
 //! [`Statement`](coffer_core::statement::Statement), the normalized form that
 //! core deduplicates, reconciles and commits. Import is deterministic: no
 //! model or network calls. [`csv::CsvImporter`] reads delimited text through
-//! a [`csv::CsvMapping`]. The OFX importer arrives in M1.10
+//! a [`csv::CsvMapping`]; [`preset::Presets`] loads the bank presets that
+//! produce those mappings. The OFX importer arrives in M1.10
 //! (`docs/ROADMAP.md`).
 
 pub mod csv;
 mod importer;
+pub mod preset;
 mod source;
 
 pub use importer::{AnyImporter, Candidate, Detect, Detection, ImportError, Importer, detect};

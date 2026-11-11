@@ -17,9 +17,17 @@ charts, and exposes the data to AI clients through an MCP server.
 ## Current state
 
 M0 and the design track (D1–D6) are done and signed off; M1 is in progress. The Cargo
-workspace below exists (M1.1): `crates/core`, `crates/import` and `crates/mcp` are still
-stubs, and all working code is in `crates/app` (package `coffer-app`, lib `coffer_app`,
-binary `coffer`). `coffer` opens the Transactions screen on fixture data
+workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
+dir, WAL, permissions, migrations; M1.3), the initial schema
+(`crates/core/migrations/V1__initial_schema.sql`, M1.4; no Rust API over it yet) and the
+money types (`money`: `Currency`, `Money`, exact decimal parsing; M1.5) and the
+normalized import output (`statement`: `Statement`, `StatementLine`, flagged rows; M1.6)
+and category keys (`category`: `CategoryKey`; M1.8).
+`crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
+importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
+(`preset`: `Preset`, `Presets::bundled`; M1.8), but no presets in `presets/` or OFX yet;
+synthetic CSV fixtures are in `fixtures/csv/`; `crates/mcp` is a stub. The GUI is in `crates/app` (package `coffer-app`, lib
+`coffer_app`, binary `coffer`) and doesn't open the database yet. `coffer` opens the Transactions screen on fixture data
 (`crates/app/src/transactions.rs`), and `coffer --showcase` opens the component showcase.
 `cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with
 Paper. Shared files stay at the root: `assets/` (fonts, brand) and `design/` (tokens).
@@ -136,9 +144,11 @@ Changing any of these needs an explicit decision recorded in `docs/ARCHITECTURE.
 ## Bank presets
 
 - One file per bank/account type: `presets/<region>/<bank>.toml` (regions: `uk`, `us`,
-  `eu` for now). The format is sketched in `docs/ARCHITECTURE.md`; `presets/uk/monzo.toml`
-  (planned in M1) will be the reference example.
-- Every preset needs a matching redacted fixture and a test that imports it.
+  `eu` for now). The field reference is `presets/README.md`, the decisions are in
+  `docs/ARCHITECTURE.md` → "Presets"; `presets/uk/monzo.toml` (M1.9) will be the
+  reference example. Every `.toml` there is compiled in (`crates/import/build.rs`).
+- Every preset needs a matching redacted fixture at `fixtures/presets/<region>/<bank>.*`
+  (a test checks it's there and imports) and a test that checks its rows.
 - Prefer a signed amount column over debit/credit pairs when the export has both.
 - New file formats (QIF, CAMT.053, MT940, …) are new `Importer` implementations, not
   preset features.

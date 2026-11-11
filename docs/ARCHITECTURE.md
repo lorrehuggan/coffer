@@ -489,43 +489,72 @@ the same debit and credit column, a named column without a header row).
   numbers) is public for the mapping screen. Its `Debug` and `CsvRecord`'s show counts
   only.
 
-### Preset format (sketch, based on a real Monzo export)
+### Presets
+
+M1.8, decided 2026-11-10. `coffer_import::preset`: a preset is a `CsvMapping` in TOML plus
+an ID, a name, a region, ignored columns and a category map. The field reference for
+contributors is `presets/README.md`.
 
 ```toml
-# presets/uk/monzo.toml
+# presets/uk/monzo.toml (illustrative; the real one is M1.9)
 id = "uk-monzo-current"
 name = "Monzo (current account)"
 region = "uk"
 currency = "GBP"
-encoding = "utf-8"
-delimiter = ","
+encoding = "utf-8"                                 # default "auto"
+delimiter = ","                                    # default: detected
 skip_rows = 0
+header = true                                      # false: columns are 1-based positions
 external_id = { column = "Transaction ID" }
 date = { column = "Date", format = "%d/%m/%Y" }
 time = { column = "Time", format = "%H:%M:%S" }    # optional
-amount = { column = "Amount" }                     # or { debit = "Paid out", credit = "Paid in" }
+amount = { column = "Amount" }                     # or { debit = "Paid out", credit = "Paid in", signs = "unsigned" }
 merchant = { column = "Name" }
-description = { columns = ["Description"] }
+description = { column = "Description" }           # or { columns = ["A", "B"] }
 source_category = { column = "Category" }
 source_type = { column = "Type" }
 original_amount = { column = "Local amount", currency_column = "Local currency" }
 note = { column = "Notes and #tags" }
+# row_currency = { column = "Currency" }           # per-row currency code
 # balance = { column = "Balance" }                 # Monzo exports have none
 decimal = "."
 ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money In"]
 
-[sub_account_transfer]  # rows matching this move money to/from a pot
-match = { column = "Type", equals = "Pot transfer" }
-sub_account_name = { column = "Name" }          # pot is created on first sight
-kind = "pot"
-
 [category_map]          # source category -> our category key
 "Groceries" = "food.groceries"
 "Eating out" = "food.eating_out"
-"Transport" = "transport"
 "Transfers" = "transfer"
-# ...
 ```
+
+- **Strict.** Unknown keys are refused (`deny_unknown_fields`), so a misspelt optional
+  field fails instead of being silently unmapped. Values that stand alone (columns, date
+  and time formats, encoding, delimiter, currency, category keys) are checked while
+  deserializing, so the error points at the line; the whole mapping is then checked by
+  `CsvImporter::new`. `amount` and `description` take exactly one of their forms.
+- **Positions count from 1** in TOML (`column = 3`), as the error messages do;
+  `CsvMapping` stays 0-based.
+- **Bundled.** `crates/import/build.rs` compiles every `presets/**/*.toml` into the binary
+  (`Presets::bundled`), so an installed Coffer needs no source tree and a preset is
+  never half-installed. Placement is checked at load, not in the build script, so a
+  misplaced file fails the tests with a message rather than being skipped.
+- **IDs are stable and findable.** The ID is recorded on `import_batch.preset_id`, so it
+  never changes once shipped. It is `<region>-<file stem>` optionally followed by
+  `-more` (`uk/monzo.toml` → `uk-monzo` or `uk-monzo-current`), lowercase letters,
+  digits and single hyphens, and unique; the region must match the directory.
+  `Presets::from_files` checks all of this for any `(path, text)` set, which is also
+  what user presets saved from the mapping screen (M3) can load through.
+- **Columns not read are visible.** `ignore` lists header columns the preset reads on
+  purpose not at all; `Preset::unread_columns` returns the file's other unread header
+  columns, so the preview can say what a bank added instead of dropping it silently.
+- **Category map.** `CategoryKey` (`coffer_core::category`) is one or two segments of
+  `[a-z0-9_]` joined by `.`, the shape of `category.key`. Source categories match
+  exactly, case included, after trimming the row's value; map keys must already be
+  trimmed. Whether a key exists is checked against the category set when the import
+  maps categories (M1.14 onwards); an unmapped category is left for rules or the user.
+  A `category_map` without a `source_category` column is refused.
+- **Every bundled preset has a fixture** at `fixtures/presets/<region>/<bank>.*` that it
+  detects as `Source` and imports; a test enforces it.
+- **Not yet:** `[sub_account_transfer]` (pot transfers) is M1.17 and refused until then.
 
 ## Money
 

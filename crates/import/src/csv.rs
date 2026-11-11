@@ -3,7 +3,7 @@
 //! A mapping says how one kind of export is laid out: encoding, delimiter,
 //! lines to skip, whether there's a header, and which columns hold the
 //! date, amount, description and the optional fields. Presets
-//! (`crate::preset`, M1.8) and the mapping screen both
+//! ([`crate::preset`]) and the mapping screen both
 //! produce one; [`CsvImporter`] reads files with it.
 //!
 //! - **Encoding** is strict: a byte order mark, otherwise the stated
