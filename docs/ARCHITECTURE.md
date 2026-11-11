@@ -363,7 +363,7 @@ Versions live in `[workspace.dependencies]` in the root `Cargo.toml`; crates opt
 |---|---|---|
 | Storage | `rusqlite` (`bundled`), `refinery` | `rusqlite` pinned to 0.40 until `refinery` supports 0.41. `refinery` checksums applied migrations, enforcing "never edit a shipped migration". No connection pool: one connection per process, WAL + `busy_timeout` + `BEGIN IMMEDIATE`; the app and the CLI open with `Database::open`, which creates the database if needed and runs migrations (all pending ones in one transaction); `coffer mcp` opens with `Database::open_existing`, which never creates or migrates and refuses a missing or older database, telling the user to open Coffer or run a CLI command. Both check an existing file first (a SQLite database, not a newer schema, applied migrations matching the embedded ones) and leave a refused file untouched: no permission change, WAL switch or write. SQLCipher later = `bundled-sqlcipher-vendored-openssl` |
 | Import | `csv`, `serde`, `encoding_rs`, `ofx-kit`, `chrono`, `toml` | Encoding comes from the preset; decode errors are flagged, never guessed. Strip the BOM before `csv`. `ofx-kit` is young and single-maintainer: pinned exactly and kept behind the `Importer` trait (fallback: `ofx-rs`). Dates must round-trip through their format string |
-| Money / FX | none | Own `Money { minor: i64, currency }` with a hand-written, test-frozen exponent table. FX in `i128` fixed point with one explicit rounding. Decimal types from format crates are converted to minor units at the import boundary, never stored |
+| Money / FX | none | Own `Money { minor: i64, currency }` (`coffer_core::money`, M1.5) with a hand-written, test-frozen exponent table. FX in `i128` fixed point with one explicit rounding. Decimal types from format crates are converted to minor units at the import boundary, never stored. See "Money" below |
 | Rules | `regex`, `aho-corasick` | `regex` is linear-time, so user rules can't hang the app |
 | Plumbing | `thiserror` (libs), `anyhow` (binary), `clap`, `tracing`, `tracing-subscriber`, `directories`, `uuid` (v7) | Logs go to stderr |
 | MCP | `rmcp` (`transport-io`), `tokio` (current-thread), `schemars` | Only the `mcp` crate / `coffer mcp` path uses tokio; `core` stays synchronous |
@@ -440,6 +440,34 @@ kind = "pot"
 "Transfers" = "transfer"
 # ...
 ```
+
+## Money
+
+`coffer_core::money` (M1.5). Decided 2026-11-10:
+
+- **Currencies come from a fixed table.** `Currency` can only be built from a code in a
+  hand-written ISO 4217 table, which gives its minor units (`GBP` 2, `JPY` 0, `KWD` 3,
+  `CLF` 4); the tests freeze it, because changing a value changes what every stored
+  amount in that currency means. The table holds the active list, apart from codes with
+  no minor unit (precious metals, `XDR`, `XSU`, `XUA`, test codes), plus codes withdrawn
+  since 2014 (`HRK`, `LTL`, `SLL`, `ZWL`, …), since older statements and card payments
+  abroad still name them. ISO's minor units win where everyday use differs (`MGA`,
+  `MRU`). An unknown code, including one read back from the database, is an error.
+- **Arithmetic is checked.** Adding, subtracting or comparing two currencies is an
+  error, as is overflowing `i64`; nothing panics or wraps. There are no operator
+  overloads for the same reason.
+- **Import reads amounts exactly or not at all.** `Money::parse_decimal` takes the
+  preset's decimal mark (`.` or `,`); thousands may be grouped by the other mark, a
+  space (including no-break spaces) or an apostrophe, in groups of three; the sign is a
+  leading `-`, `−` or `+`, or parentheses. Extra decimals are accepted only when they
+  are zeros (`12.340` GBP): anything else would mean rounding, so it's refused and the
+  row is flagged. Currency symbols, codes and trailing minus signs are the importer's
+  to deal with (a preset feature if a bank needs one). Parse errors don't contain the
+  text, since errors get logged.
+- **Display formatting is the app's.** Core's only text form is the plain, locale-free
+  `-1234.56` (`to_decimal_string`, for exports and the CLI), which parses back
+  unchanged. Symbols, locale separators, `−` and `+` follow `DESIGN.md` → "Money" in
+  the app.
 
 ## Data model (initial)
 

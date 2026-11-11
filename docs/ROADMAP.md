@@ -421,7 +421,14 @@ Import real statements into a local database from the command line.
   partial unique index allows one entered balance per account and day. Tables for later
   items (splits, tags, links, duplicates, change batches, schedules, MCP clients) come
   with those items
-- ⬜ M1.5 Money type: integer minor units + ISO 4217 currency (no floats anywhere)
+- ✅ M1.5 Money type: integer minor units + ISO 4217 currency (no floats anywhere).
+  `coffer_core::money`: `Currency` only builds from a known ISO 4217 code and carries its
+  minor units (hand-written table, frozen by tests, withdrawn codes since 2014 kept);
+  `Money { minor: i64, currency }` with checked arithmetic (mixing currencies or
+  overflowing is an error); `Money::parse_decimal` reads bank text exactly (`.`/`,`
+  decimal mark, grouped thousands, `-`/`−`/`+`/parentheses) and refuses anything it
+  would have to round; `to_decimal_string` is the plain export form. `Currency` is
+  `serde` and SQLite `TEXT`. Locale display formatting stays in the app; FX is M4.6
 - ⬜ M1.6 `Importer` trait (detect → parse → normalize)
 - ⬜ M1.7 CSV importer: encoding detection, delimiter, header/skip rows, date formats
   (`DD/MM` vs `MM/DD`), separate time column, decimal style (`1,234.56` vs `1.234,56`),

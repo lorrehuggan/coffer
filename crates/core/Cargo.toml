@@ -21,3 +21,5 @@ aho-corasick.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Checks the serde impls on `Currency` and `DecimalMark`.
+serde_json.workspace = true
