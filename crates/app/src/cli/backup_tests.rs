@@ -1,7 +1,7 @@
 //! `coffer backup` and `coffer restore` against scratch data dirs. Nothing
 //! here touches the real data dir.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use coffer_core::account;
@@ -265,4 +265,24 @@ fn restore_names_a_missing_backup() {
         error.starts_with("there is no backup coffer-20261111T153012.345Z-import.db"),
         "{error}"
     );
+}
+
+#[test]
+fn import_takes_an_automatic_backup_and_a_dry_run_doesnt() {
+    let scratch = Scratch::with_account();
+    let monzo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/presets/uk/monzo.csv")
+        .display()
+        .to_string();
+    scratch.ok(&["import", &monzo, "--dry-run"]);
+    assert!(backup::list(&scratch.db).unwrap().is_empty());
+
+    scratch.ok(&["import", &monzo]);
+    let backups = backup::list(&scratch.db).unwrap();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(backups[0].reason, Reason::Import);
+
+    // Nothing new: no backup.
+    scratch.ok(&["import", &monzo]);
+    assert_eq!(backup::list(&scratch.db).unwrap().len(), 1);
 }

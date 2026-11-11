@@ -25,7 +25,10 @@
 //!   untrusted (`trusted_schema = OFF`).
 //!
 //! [`Database::open`] then applies every pending migration
-//! (`crates/core/migrations/`), all in one transaction.
+//! (`crates/core/migrations/`), all in one transaction. When an existing
+//! database has migrations pending, it first takes a backup of it as it
+//! is (reason `migration`, [`crate::backup`]); if that fails, nothing is
+//! migrated.
 //!
 //! One connection per process, no pool (`docs/ARCHITECTURE.md` →
 //! Dependencies).
@@ -111,6 +114,11 @@ pub enum Error {
         found: SchemaVersion,
         supported: SchemaVersion,
     },
+
+    /// The backup taken before pending migrations failed, so nothing was
+    /// migrated (M1.28). Boxed: a backup error can hold a database error.
+    #[error("couldn't back up the database before updating it, so it wasn't updated: {0}")]
+    Backup(#[source] Box<crate::backup::Error>),
 }
 
 /// How a database's applied migrations differ from this build's
@@ -167,6 +175,15 @@ impl Database {
         prepare_files(path)?;
         let mut conn = connect(path)?;
         configure(&mut conn)?;
+        // A database at an older schema is backed up as it is before it is
+        // migrated (M1.28). A new database (version 0) has nothing to keep.
+        // `VACUUM INTO` can't run inside a transaction, so this comes before
+        // the migrations' own.
+        let found = migrations::current_version(&conn)?;
+        if found > 0 && found < migrations::latest_version(migrations) {
+            crate::backup::create_with_connection(&conn, path, crate::backup::Reason::Migration)
+                .map_err(|error| Error::Backup(Box::new(error)))?;
+        }
         migrations::run(&mut conn, migrations)?;
         Ok(Self {
             conn,

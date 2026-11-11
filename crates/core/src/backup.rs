@@ -280,7 +280,6 @@ pub fn create_from_path(db_path: &Path, reason: Reason) -> Result<Backup, Error>
 /// to `db_path` (e.g. `Database::open`'s, before it runs migrations). No
 /// transaction may be open on `conn`.
 // Unused until `Database::open` calls it before migrations (M1.28 wiring).
-#[allow(dead_code)]
 pub(crate) fn create_with_connection(
     conn: &Connection,
     db_path: &Path,

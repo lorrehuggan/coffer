@@ -709,3 +709,152 @@ fn restore_refuses_a_wal_without_its_database() {
     assert!(!setup.path.exists());
     assert_eq!(fs::read(&wal).unwrap(), b"pages");
 }
+
+// When backups are taken (M1.28 wiring) ---------------------------------------
+
+/// A one-row CSV statement, with an unreadable row too when `flagged`.
+fn statement(flagged: bool) -> crate::statement::Statement {
+    use crate::money::Money;
+    use crate::statement::{Field, RowProblem, SourceFormat, SourceLocation, StatementLine};
+    let mut statement = crate::statement::Statement::new(SourceFormat::Csv, Currency::GBP);
+    let date = chrono::NaiveDate::from_ymd_opt(2026, 11, 2).unwrap();
+    statement.push(
+        SourceLocation::Line(2),
+        Ok(StatementLine::new(
+            date,
+            Money::new(-340, Currency::GBP),
+            "SYNTHETIC CAFE",
+        )),
+    );
+    if flagged {
+        statement.push(
+            SourceLocation::Line(3),
+            Err(RowProblem::Missing(Field::Date)),
+        );
+    }
+    statement
+}
+
+/// Transactions in the database file at `path`: a backup, or the live
+/// database (read with its WAL, so not `immutable`).
+fn transactions_in(path: &Path) -> i64 {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    conn.query_row("SELECT COUNT(*) FROM \"transaction\"", [], |row| row.get(0))
+        .unwrap()
+}
+
+/// An older database (schema 2) with one account, closed again.
+fn older_database(path: &Path) {
+    let db = db::open_at_version(path, 2).unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO account (name, kind, currency) VALUES ('Old', 'current', 'GBP')",
+            [],
+        )
+        .unwrap();
+}
+
+#[test]
+fn opening_an_older_database_backs_it_up_before_migrating() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    older_database(&path);
+    assert!(
+        list(&path).unwrap().is_empty(),
+        "a new database isn't backed up"
+    );
+
+    let db = Database::open(&path).unwrap();
+    assert_eq!(
+        db.schema_version().unwrap(),
+        Database::supported_schema_version()
+    );
+    let backups = list(&path).unwrap();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(backups[0].reason, Reason::Migration);
+    // The backup is the database as it was before the migrations.
+    assert_eq!(db::peek_schema_version(&backups[0].path).unwrap(), 2);
+    assert_eq!(account_names(&backups[0].path), ["Old"]);
+    drop(db);
+
+    // Up to date: opening it again takes no backup.
+    drop(Database::open(&path).unwrap());
+    assert_eq!(list(&path).unwrap().len(), 1);
+}
+
+#[test]
+fn without_its_backup_a_database_isnt_migrated() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    older_database(&path);
+    // A file where the backups directory should be: the backup fails.
+    fs::write(backups_dir(&path), b"in the way").unwrap();
+
+    let error = Database::open(&path).unwrap_err();
+    assert!(matches!(error, db::Error::Backup(_)), "{error}");
+    assert_eq!(db::peek_schema_version(&path).unwrap(), 2);
+    assert!(
+        dir_names(path.parent().unwrap())
+            .iter()
+            .all(|name| !name.starts_with(".coffer-"))
+    );
+}
+
+#[test]
+fn an_import_is_backed_up_before_it_commits() {
+    use crate::import::{self, Committed, Confirmations};
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let mut db = Database::open(&path).unwrap();
+    let account = account::create(
+        &mut db,
+        &NewAccount::new("Current", AccountKind::Current, Currency::GBP),
+    )
+    .unwrap();
+
+    // A preview writes nothing, and a commit refused for a missing
+    // confirmation takes no backup either.
+    let preview = import::preview(&db, account, "a.csv", statement(true)).unwrap();
+    let refused = import::commit(&mut db, &preview, Confirmations::default());
+    assert!(matches!(refused, Err(import::Error::NotConfirmed(_))));
+    assert!(list(&path).unwrap().is_empty());
+
+    let committed = import::commit(&mut db, &preview, preview.needs_confirmation()).unwrap();
+    assert!(matches!(committed, Committed::Batch(_)));
+    let backups = list(&path).unwrap();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(backups[0].reason, Reason::Import);
+    // Taken before the commit: the import's row isn't in it.
+    assert_eq!(transactions_in(&backups[0].path), 0);
+    assert_eq!(transactions_in(&path), 1);
+
+    // Nothing new: no backup.
+    let again = import::preview(&db, account, "a.csv", statement(true)).unwrap();
+    let committed = import::commit(&mut db, &again, again.needs_confirmation()).unwrap();
+    assert_eq!(committed, Committed::NothingNew);
+    assert_eq!(list(&path).unwrap().len(), 1);
+}
+
+#[test]
+fn without_its_backup_nothing_is_imported() {
+    use crate::import;
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let mut db = Database::open(&path).unwrap();
+    let account = account::create(
+        &mut db,
+        &NewAccount::new("Current", AccountKind::Current, Currency::GBP),
+    )
+    .unwrap();
+    fs::write(backups_dir(&path), b"in the way").unwrap();
+
+    let preview = import::preview(&db, account, "a.csv", statement(false)).unwrap();
+    let error = import::commit(&mut db, &preview, preview.needs_confirmation()).unwrap_err();
+    assert!(matches!(error, import::Error::Backup(_)), "{error}");
+    assert_eq!(transactions_in(&path), 0);
+    let batches: i64 = db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM import_batch", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(batches, 0);
+}

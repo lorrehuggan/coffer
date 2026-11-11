@@ -427,6 +427,9 @@ fn write_preview(
                     format!("already recorded (balance {id})")
                 }
                 FileBalanceStatus::Repeated => "repeated in the file".to_owned(),
+                FileBalanceStatus::Locked => {
+                    "in the locked period, left out (unlock the account to record it)".to_owned()
+                }
             };
             writeln!(
                 out,

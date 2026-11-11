@@ -49,6 +49,7 @@ use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::account::{self, Account, date_key};
+use crate::backup;
 use crate::balance::{Assertion, DailyMovements};
 use crate::category::CategoryKey;
 use crate::db::Database;
@@ -118,6 +119,11 @@ pub enum Error {
 
     #[error("pots: {0}")]
     SubAccounts(#[from] sub_account::Error),
+
+    /// The backup taken before the commit failed, so nothing was imported
+    /// (M1.28).
+    #[error("couldn't back up the database before importing, so nothing was imported: {0}")]
+    Backup(#[source] Box<backup::Error>),
 
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
@@ -257,6 +263,10 @@ pub enum FileBalanceStatus {
     AlreadyRecorded(BalanceId),
     /// The file gives the same balance for the same day twice.
     Repeated,
+    /// Dated on or before the account's `reconciled_through`: left out, like
+    /// a row in the locked period, so the import changes nothing there and
+    /// stays undoable without unlocking. Not checked either.
+    Locked,
 }
 
 /// A balance the file gives: the account's balance at the end of `date`.
@@ -478,14 +488,27 @@ pub fn preview(
 /// 4. transfer pairs are suggested for the batch's rows
 ///    ([`transfer::detect_for_batch`], [`TransferWindow::DEFAULT`]).
 ///
-/// A failure in any step rolls the whole import back. A backup (M1.28)
-/// belongs just before this; merchant names (M1.23) will run in the same
-/// transaction.
+/// A failure in any step rolls the whole import back. Merchant names
+/// (M1.23) will run in the same transaction.
+///
+/// Before its DB transaction (`VACUUM INTO` can't run inside one), the
+/// commit takes a backup of the database (reason `import`,
+/// [`backup::create`]), unless the preview has nothing new or lacks a
+/// confirmation, which commit refuses without writing anything. If the
+/// backup fails, nothing is imported ([`Error::Backup`]).
 pub fn commit(
     db: &mut Database,
     preview: &ImportPreview,
     confirmed: Confirmations,
 ) -> Result<Committed, Error> {
+    let needed = preview.needs_confirmation();
+    let is_confirmed = (!needed.flagged_rows || confirmed.flagged_rows)
+        && (!needed.balance_mismatch || confirmed.balance_mismatch);
+    if !preview.is_nothing_new() && is_confirmed {
+        backup::create(db, backup::Reason::Import)
+            .map_err(|error| Error::Backup(Box::new(error)))?;
+    }
+
     let tx = db.conn_mut().transaction()?;
     let account = load_account(&tx, preview.account.id)?;
     check_target(&account, &preview.statement)?;
@@ -496,10 +519,7 @@ pub fn commit(
     if preview.is_nothing_new() {
         return Ok(Committed::NothingNew);
     }
-    let needed = preview.needs_confirmation();
-    if (needed.flagged_rows && !confirmed.flagged_rows)
-        || (needed.balance_mismatch && !confirmed.balance_mismatch)
-    {
+    if !is_confirmed {
         return Err(Error::NotConfirmed(needed));
     }
 
@@ -734,6 +754,11 @@ fn plan(conn: &Connection, account: &Account, statement: &Statement) -> Result<P
             FileBalanceStatus::Repeated
         } else if let Some(id) = recorded_balance(conn, account.id, date, balance)? {
             FileBalanceStatus::AlreadyRecorded(id)
+        } else if account
+            .reconciled_through
+            .is_some_and(|through| date <= through)
+        {
+            FileBalanceStatus::Locked
         } else {
             FileBalanceStatus::New
         };

@@ -101,14 +101,13 @@ fn rows_in_a_locked_period_stay_out() {
 
 /// `ARCHITECTURE.md` → Decisions → Reconciliation: "imports … touching
 /// locked dates are flagged and need an explicit unlock", and the decision
-/// record "import commit, dedupe and undo", point 10: "Locks hold". Rows
-/// in the locked period are flagged, but a balance the file gives for a
-/// date in it (a running-balance opening, an OFX `LEDGERBAL`) is recorded
-/// as new with nothing flagged about it. That adds a check inside the
-/// locked period, and leaves a batch the user can't undo without
-/// unlocking (`Error::Locked`).
+/// record "import commit, dedupe and undo", point 10: "Locks hold". A
+/// balance the file gives for a date in the locked period (a running-
+/// balance opening, an OFX `LEDGERBAL`) is left out like the rows there
+/// (`FileBalanceStatus::Locked`, shown in the preview): recording it would
+/// add a check inside the locked period and leave a batch the user can't
+/// undo without unlocking (`Error::Locked`). Found by M1.19.
 #[test]
-#[ignore = "bug: a file balance dated inside the locked period is recorded as new, and the batch then can't be undone"]
 fn a_file_balance_in_a_locked_period_is_not_recorded_silently() {
     // A CSV opening (end of 9 November) under a lock through 15 November.
     let mut scratch = Scratch::new();
@@ -120,10 +119,10 @@ fn a_file_balance_in_a_locked_period_is_not_recorded_silently() {
         read_with("uk-example-tab", NEWEST_FIRST),
     );
     assert_eq!(preview.balances()[0].date, date(2026, 11, 9));
-    assert_ne!(
+    assert_eq!(
         preview.balances()[0].status,
-        FileBalanceStatus::New,
-        "a balance in the locked period is flagged or left out, not recorded"
+        FileBalanceStatus::Locked,
+        "a balance in the locked period is left out, not recorded"
     );
 
     // An OFX file wholly inside the lock: every row is flagged, yet the
@@ -138,11 +137,11 @@ fn a_file_balance_in_a_locked_period_is_not_recorded_silently() {
         "nothing outside the locked period: {:?}",
         preview.balances()
     );
-    if let Committed::Batch(summary) =
-        scratch.import(account, "bank-sgml.ofx", read_ofx("bank-sgml.ofx"))
-    {
-        import::undo(&mut scratch.db, summary.batch).unwrap();
-    }
+    assert_eq!(preview.balances()[0].status, FileBalanceStatus::Locked);
+    assert_eq!(
+        scratch.import(account, "bank-sgml.ofx", read_ofx("bank-sgml.ofx")),
+        Committed::NothingNew
+    );
 }
 
 // Undo ------------------------------------------------------------------------
