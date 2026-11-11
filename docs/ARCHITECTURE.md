@@ -28,7 +28,7 @@ Built for one user first; released as open source (UK, US, euro area at launch).
 | PDF | Deferred. Plan: local text extraction + per-layout templates; any model-based extraction opt-in only |
 | Categorization | Local rules engine first; AI-proposed categories/rules land in the Inbox for approval; approvals become rules. The app also files `rule` suggestions itself (source `coffer`) after repeated identical manual recategorisations: deterministic counting, no ML. Learned classifiers are not used |
 | Transfers | Auto-detect opposite-amount pairs across own accounts within 3 days (`TransferWindow::DEFAULT`); user confirms; excluded from income/spend |
-| Pots / sub-accounts | Monzo Pots, Starling Spaces, Revolut Vaults etc. are sub-accounts of their parent. A preset rule identifies pot transfers; the importer creates the mirrored pot-side entry, auto-pairs it as a confirmed transfer, and pots count toward net worth (opening balance entered once per pot) |
+| Pots / sub-accounts | Monzo Pots, Starling Spaces, Revolut Vaults etc. are sub-accounts of their parent. A preset's `[sub_account_transfer]` identifies pot transfers; the import commit creates the pot when its bank ID is new, mirrors the row onto it (`origin = mirrored`) and pairs the two as a confirmed transfer. Pots count toward net worth (opening balance entered once per pot). See "Decision record: sub-accounts" |
 | AI integration | `coffer mcp` stdio MCP server (`rmcp`). Read-only query tools + inbox-only writes. No account numbers or PII in tool output |
 | Splits | A transaction can be split into lines that sum exactly to its amount, in its currency (enforced in core, in the same DB transaction as the edit). Reports, budgets and MCP read the `ledger_line` view: one row per split line, or the transaction itself when it isn't split |
 | Tags and notes | Many tags per transaction, alongside categories. Tag names are user text: MCP sees them only at `standard` access, and never for tags marked private. The imported note stays read-only; the user's note is a separate field. Neither note is exposed over MCP by default |
@@ -41,7 +41,7 @@ Built for one user first; released as open source (UK, US, euro area at launch).
 | Schedules and forecast | A detected recurring series becomes a schedule only when the user confirms it. The forecast is the last known balance plus schedule occurrences (plus the remaining flex budget), per account per day, in integer arithmetic, using cached FX rates only |
 | Budgets | Per-category monthly amounts with optional rollover. Each budget is in a group: fixed, non-monthly (accrues 1/12 of a yearly amount, seeded from yearly schedules) or flex |
 | Asset and liability accounts | Account kinds `asset` and `liability` hold manually valued items (house, pension, mortgage, loan). Valuations are `balance_snapshot` rows with source `valuation`; net worth uses the last value on or before each date. Investment holdings and prices are deferred (ROADMAP L.14) |
-| Backups and export | Rotating `VACUUM INTO` snapshots (0600) in the data dir before every import commit and migration; by default the last 10 plus one per month are kept. Restore runs `PRAGMA integrity_check` and a schema-version check before swapping files. Export is CSV/JSON with a documented schema (split lines carry their parent ID); Beancount/hledger journal export follows in M5.8. Local files only, no network |
+| Backups and export | Rotating `VACUUM INTO` snapshots (0600) in `<data dir>/backups` (0700) before every import commit, migration and restore; by default the last 10 automatic backups plus the newest of each earlier month are kept, and manual ones are never deleted. Restore runs `PRAGMA integrity_check` and a schema-version check on a copy before swapping files (see "Decision record: local backups"). Export is CSV/JSON with a documented schema (split lines carry their parent ID); Beancount/hledger journal export follows in M5.8. Local files only, no network |
 | MCP access | MCP is off until the user enables a client. Each client has an access level (`aggregate`, `pseudonymous` or `standard`); tools above it are never registered. The client is named by `coffer mcp --client <name>` in its configuration. This is a guardrail against over-sharing, not authentication: any local process can read the database file (at-rest encryption is L.6). Every tool call is recorded in `mcp_access_log`. Approval happens only in Coffer's own window or CLI; MCP elicitation, sampling and MCP Apps are not used for it |
 
 ### Decision record: feature research (2026-11-09)
@@ -496,8 +496,8 @@ transfer window and the order of preset map and rules were decided by the user.
    file needs `--statement N` (from 1); without it the command lists the statements by
    kind, the account number's last four digits, currency and row count. `--account`
    takes an ID or an exact name; without it, the import goes to the only open account in
-   the file's currency that holds transactions (a pot counts), else the command lists
-   them.
+   the file's currency that holds transactions, else the command lists them. (A pot
+   counted until M1.17; it no longer does: "Decision record: sub-accounts", point 7.)
 8. **The CLI confirms with `--yes`, and `--dry-run` writes nothing.** An import with
    flagged rows or a balance mismatch is refused (exit 1) without `--yes`; `undo-import`
    without `--yes` previews and exits 0. `accounts` (list) and `undo-import` need an
@@ -510,6 +510,101 @@ transfer window and the order of preset map and rules were decided by the user.
    output; it uses `anyhow` like the binary. Library crates (`core`, `import`, `mcp`)
    still use `thiserror` only. The CLI sets up no logging and never prints row text it
    wasn't asked for (a test checks fixture descriptions don't appear).
+
+### Decision record: sub-accounts (2026-11-11)
+
+Decided while building M1.17 (`coffer_core::sub_account`, `V4__sub_account_key.sql`) and
+wiring it into `import::commit`. The preset format is under "Presets".
+
+1. **Pots are found by key, never by name.** `account.sub_account_key` (V4) holds the
+   bank's ID for the pot (Monzo's `pot_…`), only on pots, unique per parent, and
+   read-only once set. A key the parent has no pot for creates one: kind `pot`, the
+   parent's currency and institution, named from the latest-dated row that names it (the
+   later row on a tie), else after the key. Existing pots keep their names, so a pot
+   renamed at the bank stays one account. The same key under another parent is another
+   pot. A pot the user created by hand has no key and isn't matched; the import creates a
+   keyed pot beside it (linking the two is for the accounts screen, M3).
+2. **The mirror runs inside the import's DB transaction,** after the batch's rows are
+   stored and before rules and transfer detection, which both see the mirrored rows.
+   Each mirrored row is the parent row seen from the pot: same batch, date and time,
+   opposite amount and original amount, the parent's other source fields, note and
+   category, `origin = 'mirrored'`. The preview plans it (`ImportPreview::sub_accounts`:
+   pots to create, existing and closed pots, rows to mirror), and the plan is part of the
+   stale check.
+3. **The mirrored row keeps the parent's `external_id` and `fingerprint`,** so the pot's
+   dedupe indexes hold at most one mirror per parent row; mirroring a row twice fails.
+4. **The pair is `confirmed` from the start** (`transfer::record_confirmed_pair`): the
+   bank says it's a transfer. Detection skips both rows, since they are grouped.
+5. **All or nothing.** Pot transfers into an account that isn't current or savings, or a
+   pot locked on or before one of its rows, fail the import, in the preview already;
+   half a transfer is never imported. A closed pot still takes its rows, and the preview
+   says so. A matching row without a pot ID is flagged (`RowProblem::SubAccountKeyMissing`).
+6. **Counts and undo.** `CommitSummary::transactions` and the category counts are the
+   file's rows; `mirrored` and `pots_created` are counted apart. `BatchInfo::transactions`
+   includes mirrored rows. Undo deletes the mirrored rows with the batch and dissolves
+   their groups; `UndoPreview::transfers` counts only pairs with a row outside the batch,
+   since both sides of a pot pair go. Created pots stay (the user may have entered an
+   opening balance), and importing the file again finds them by key. Re-importing the
+   same file mirrors nothing, because its rows are already imported. Files imported
+   before M1.17 keep their pot rows without a pot side; undo and import them again to
+   mirror them.
+7. **Pots aren't a default import target.** `coffer import` without `--account` no
+   longer counts pots: their rows come with the parent's export, and once an import has
+   created pots the parent must stay the only candidate. A pot still takes a file named
+   with `--account`.
+
+### Decision record: local backups (2026-11-11)
+
+Decided while building M1.28 (`coffer_core::backup`, `coffer backup`, `coffer restore`).
+Retention and location were decided by the user.
+
+1. **Where and how.** Backups are `VACUUM INTO` snapshots in `backups/` next to the
+   database (`<data dir>/backups`, `0700`; files `0600`), derived from the database
+   path, so `COFFER_DATA_DIR` moves them too. Each is written to a hidden temporary name,
+   fsynced, then hard-linked to its final name (a rename after checking the name is free
+   where hard links aren't supported), so a partial file never looks like a backup and no
+   backup is overwritten.
+2. **The name is the metadata.** `coffer-<UTC yyyymmddThhmmss.mmmZ>-<reason>.db`, reason
+   `import`, `migration`, `restore` or `manual`. Only names that parse exactly are
+   backups; nothing else in the directory is listed, rotated or deleted. The schema
+   version is read from the file, not the name.
+3. **Rotation.** Automatic backups (import, migration, restore) keep the 10 most recent
+   plus the newest of each earlier calendar month (UTC). Manual backups (`coffer
+   backup`, "Back up now") are never deleted automatically. A failed rotation is logged
+   and doesn't fail the backup.
+4. **When.** `import::commit` takes one before its DB transaction (`VACUUM INTO` can't run
+   inside one), only when it will write: not for nothing new or a missing confirmation,
+   and never for a preview or `--dry-run`. `Database::open` takes one before applying
+   pending migrations to an existing database (not to a new one). A restore takes one of
+   the current database first. If the backup fails, the import or migration doesn't
+   happen.
+5. **Restore checks a copy first.** The backup is copied next to the database and the
+   copy is checked: `PRAGMA integrity_check`, a migration history matching this build's,
+   and a schema no newer than it. The user's backup file is only read. An older schema is
+   restored and then migrated by `Database::open` (which backs the restored file up as a
+   `migration` backup first). `coffer restore` without `--yes` shows the check and
+   changes nothing.
+6. **Restore never skips its safety backup.** If the current database can't be backed up
+   (it's damaged), the restore is refused, and the user moves the file aside first. Its
+   `-wal`/`-shm` are checkpointed and removed before the rename, never after. A database
+   still open elsewhere (its `-wal` survives our close) is refused. A refused restore
+   leaves the current database untouched. No other Coffer process may have the database
+   open during a restore; MCP servers refusing calls during the swap come with M2.
+
+### Decision record: importer paths and locked balances (2026-11-11)
+
+From M1.19, which added end-to-end tests for every importer path (CSV, OFX/QFX,
+presets, dedupe, reconciliation, commit, undo, CLI; `crates/import/tests/*_paths.rs`,
+`crates/app/tests/cli_paths.rs`) and found one bug.
+
+1. **A balance from the file in a locked period is left out.** A running-balance opening
+   or an OFX `LEDGERBAL` dated on or before the account's `reconciled_through` is
+   `FileBalanceStatus::Locked`: shown in the preview, not recorded and not checked, like
+   a row in the locked period. Recording it added a check inside the lock and made the
+   batch impossible to undo without unlocking; a file wholly inside the lock now imports
+   nothing.
+2. **Test presets aren't bundled.** Mappings that read the generic CSV fixtures live in
+   `fixtures/csv/mappings/<region>/*.toml` and are loaded by the tests only.
 
 ## Architecture
 
@@ -529,8 +624,8 @@ binary is built from `coffer-app`, which depends on the other three; shared file
 repository root (`assets/` for fonts and brand marks, `design/` for the exported tokens).
 
 Single binary: `coffer` (GUI), `coffer mcp` (stdio MCP server),
-`coffer import <file>` (headless import, used from M1), `coffer backup` / `coffer restore`,
-`coffer export`.
+`coffer import <file>` (headless import, used from M1), `coffer backup [--list]` /
+`coffer restore <file> [--yes]` (M1.28), `coffer export`.
 
 The GUI and MCP processes share the SQLite file; WAL allows concurrent readers.
 
@@ -576,16 +671,18 @@ own QIF parser. Avoid GPL crates (`ofxy`, `tree_magic_mini`'s GPL data feature).
    exports (e.g. Monzo) have no balances; then nothing is reconciled and net worth
    anchors on a user-entered balance for that account.
 6. **Preview → commit**: show new / already-imported / flagged counts, and flag rows dated
-   on or before the account's `reconciled_through` lock; take a backup; commit in one
-   DB transaction; record an `import_batch` so an import can be undone.
+   on or before the account's `reconciled_through` lock (and leave out the file's
+   balances dated then); take a backup (M1.28); commit in one DB transaction; record an
+   `import_batch` so an import can be undone.
 7. **Post-process** (deterministic, no model, inside the commit's DB transaction): map
    source categories via the preset; apply rules (which can match merchant, raw
    description, source category, source type, amount, account) and their actions, a
    rule's category overriding the preset's; run transfer-pair detection; clean merchant
    text and apply merchant aliases into `merchant_display`; match schedule occurrences;
-   queue near-duplicate candidates; record balances and check assertions. The first
-   three run today (M1.15, M1.16; "Decision record: rules engine, transfer detection and
-   the CLI").
+   queue near-duplicate candidates; record balances and check assertions. Before all of
+   these, sub-account transfers are mirrored onto their pots (M1.17). The mirror, the
+   preset map, rules and transfer detection run today ("Decision record: sub-accounts";
+   "Decision record: rules engine, transfer detection and the CLI").
 
 ### The `Importer` trait
 
@@ -797,14 +894,23 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
     sit in "Money Out" as positive values). `Currency` is read as the row currency, so
     a row not in pounds is flagged rather than taken as GBP.
   - `Name` is the merchant (the pot's name for a pot transfer), `Description` the raw
-    text (the pot's ID for a pot transfer). Pot transfers import as ordinary rows until
-    M1.17.
+    text (the pot's ID for a pot transfer). `[sub_account_transfer]` recognises pot
+    transfers by `Type` = "Pot transfer" (M1.17).
   - `Address` is ignored, so merchant addresses never reach the database from Monzo.
   - Monzo's "Transfers" category isn't mapped: Monzo also files payments to and from
     people under it, which are spending or income. "Savings" (what Monzo gives pot
     transfers) maps to `transfer.savings`; Family and Finances map to the `family` and
     `finance` groups; "General" and "Expenses" are left for rules or the user.
-- **Not yet:** `[sub_account_transfer]` (pot transfers) is M1.17 and refused until then.
+- **`[sub_account_transfer]`** (M1.17, decided 2026-11-11): `kind` (`"pot"` only),
+  `when = { column, is }`, `key = { column }`, optional `name = { column }`. A row whose
+  `when` column, trimmed, is exactly `is` (case included; `is` must be trimmed and
+  non-empty) is a transfer between the account and one of its pots. Its line carries
+  `SubAccountRef { kind, key, name }` (trimmed), and the commit mirrors it onto the pot
+  ("Decision record: sub-accounts"). A match with a blank key is flagged
+  (`RowProblem::SubAccountKeyMissing`) rather than imported without its pot side. Its
+  columns count as read (detection, `unread_columns`, `ignore`). Starling Spaces and
+  Revolut Vaults become new `kind`s with their own columns. Monzo: `when = Type is "Pot
+  transfer"`, `key = Description` (`pot_…`), `name = Name`.
 
 ### The OFX importer
 
@@ -939,12 +1045,15 @@ M1.11–M1.13, decided 2026-11-11 (decision record "import commit, dedupe and un
 - **Commit** inserts the `import_batch`, its rows (`origin = imported`, `created_at` =
   the batch's `imported_at`), its new balances (`csv` or `ofx`) and its `import_flag`
   rows, in one DB transaction. In the same transaction it stores each new row's preset
-  category (`category_source = preset_map`), runs the rules on the batch
-  (`rule::apply_to_batch`), which override it, and suggests transfer pairs
+  category (`category_source = preset_map`), mirrors sub-account transfers onto their
+  pots (`sub_account::mirror`), runs the rules on the batch (`rule::apply_to_batch`),
+  which override the preset's category, and suggests transfer pairs
   (`transfer::detect_for_batch`); a failure in any step rolls the whole import back.
-  `CommitSummary` counts the rows categorised by the preset and by rules, and the pairs
-  suggested. The M1.28 backup goes just before it; merchant names (M1.23) will run
-  inside it.
+  `CommitSummary` counts the file's rows categorised by the preset and by rules, the
+  mirrored rows and created pots, and the pairs suggested. The M1.28 backup is taken
+  just before the transaction; merchant names (M1.23) will run inside it.
+- **File balances** are `New`, `AlreadyRecorded`, `Repeated`, or `Locked` (dated on or
+  before the lock; left out).
 
 ## Money
 
@@ -1066,8 +1175,10 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
 
 - `account(id, parent_id?, name, institution, kind [current|savings|credit_card|pot|cash|
   asset|liability|...], currency, opening_balance_minor?, opening_date?,
-  reconciled_through?, closed_on?)` — pots are child accounts of their parent; a pot's
-  parent is a `current` or `savings` account in the same currency;
+  reconciled_through?, closed_on?, sub_account_key?)` — pots are child accounts of their
+  parent; a pot's parent is a `current` or `savings` account in the same currency;
+  `sub_account_key` (V4, pots only, unique per parent, read-only once set) is the bank's
+  ID for a pot the import created;
   `asset` and `liability` accounts hold `valuation` snapshots only, no transactions
 - `import_batch(id, account_id, source_file, format [csv|ofx|qif|camt053|mt940],
   preset_id?, imported_at, status [committed|undone])` — `source_file` is the file name

@@ -461,7 +461,7 @@ Import real statements into a local database from the command line.
   categories to `coffer_core::category::CategoryKey`; `Preset::unread_columns` lists header
   columns neither read nor ignored. A test requires every bundled preset to import its
   fixture in `fixtures/presets/`. Contributor reference: `presets/README.md`
-  (`ARCHITECTURE.md` → "Presets"). `[sub_account_transfer]` waits for M1.17
+  (`ARCHITECTURE.md` → "Presets"). `[sub_account_transfer]` came with M1.17
 - 🚧 M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export).
   The preset (`uk-monzo`, signed `Amount`, `multiline_fields = true`, Monzo categories
   mapped to default keys) and a synthetic fixture with one row per known quirk are in, with
@@ -502,13 +502,26 @@ Import real statements into a local database from the command line.
   `coffer_core::transfer`: 3-day window, closest pairs first, `suggested`
   `transfer_group` rows, run by `import::commit`; confirm/reject come with the inbox and
   Transactions screen
-- ⬜ M1.17 Sub-accounts (Monzo Pots, Starling Spaces, Revolut Vaults): preset-driven detection,
-  auto-created pot accounts, mirrored pot-side entries auto-paired as transfers
+- ✅ M1.17 Sub-accounts (Monzo Pots, Starling Spaces, Revolut Vaults): preset-driven detection,
+  auto-created pot accounts, mirrored pot-side entries auto-paired as transfers.
+  `[sub_account_transfer]` in presets (Monzo's pots in `presets/uk/monzo.toml` and its
+  fixture); `coffer_core::sub_account` plans the pots in the preview and mirrors the
+  rows in `import::commit`, before rules and transfer detection, as `confirmed`
+  transfer groups; pots are found by the bank's ID (`account.sub_account_key`,
+  `V4__sub_account_key.sql`) and stay when their import is undone. Starling Spaces and
+  Revolut Vaults need their presets (`ARCHITECTURE.md` → "Decision record:
+  sub-accounts")
 - ✅ M1.18 CLI: `coffer import <file> [--account] [--preset] [--dry-run]`,
   `coffer accounts`, `coffer undo-import <batch>`. clap, in `coffer_app::cli`; also
   `--statement N` for multi-statement OFX, `--yes` to accept flags, a mismatch or an
   undo, and `coffer accounts add`
-- ⬜ M1.19 Redacted fixtures + tests for every importer path
+- ✅ M1.19 Redacted fixtures + tests for every importer path. Synthetic fixtures for
+  newest-first, headerless, tab-separated and US-dated CSVs and a follow-on OFX
+  statement, test-only mappings in `fixtures/csv/mappings/`, and end-to-end tests in
+  `crates/import/tests/{csv,ofx,commit}_paths.rs` and `crates/app/tests/cli_paths.rs`.
+  The bug it found (a file balance inside a locked period was recorded, making the batch
+  impossible to undo) is fixed (`ARCHITECTURE.md` → "Decision record: importer paths
+  and locked balances")
 - ⬜ M1.20 Split transactions: `transaction_split` lines that sum exactly to the parent
   (checked in core); reports and budgets read the `ledger_line` view, so a split purchase
   counts in each of its categories
@@ -536,9 +549,13 @@ Import real statements into a local database from the command line.
   balance, and a failure names the window between the last passing assertion and the
   failing one. Per-account lock date (`reconciled_through`): anything that would change
   transactions before it is flagged and needs an explicit unlock
-- ⬜ M1.28 Local backups: rotating `VACUUM INTO` snapshots (0600) before every import commit
+- ✅ M1.28 Local backups: rotating `VACUUM INTO` snapshots (0600) before every import commit
   and migration; `coffer backup`, `coffer restore <file>` (integrity and schema-version
-  checks before swapping)
+  checks before swapping). `coffer_core::backup`: `<data dir>/backups`, the last 10
+  automatic backups plus one per earlier month, manual ones kept; `import::commit` and
+  `Database::open` back up first; `coffer backup [--list]`, `coffer restore <file>
+  [--yes]`. MCP servers refusing calls during a restore come with M2
+  (`ARCHITECTURE.md` → "Decision record: local backups")
 - ⬜ M1.29 `coffer export --format csv|json`: documented schema, filters by date, account,
   category and tag; split lines keep their parent ID
 
