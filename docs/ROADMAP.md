@@ -462,7 +462,12 @@ Import real statements into a local database from the command line.
   columns neither read nor ignored. A test requires every bundled preset to import its
   fixture in `fixtures/presets/`. Contributor reference: `presets/README.md`
   (`ARCHITECTURE.md` → "Presets"). `[sub_account_transfer]` waits for M1.17
-- ⬜ M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export)
+- 🚧 M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export).
+  The preset (`uk-monzo`, signed `Amount`, `multiline_fields = true`, Monzo categories
+  mapped to default keys) and a synthetic fixture with one row per known quirk are in, with
+  tests in `crates/import/tests/preset_uk_monzo.rs`. Still to do: check the fixture's
+  assumptions (pot rows, £0.00 card checks, quoting, line endings) against a real export
+  (`ARCHITECTURE.md` → "Presets")
 - ✅ M1.10 OFX/QFX importer (SGML 1.x and XML 2.x), `FITID` IDs, `LEDGERBAL` balances.
   `coffer_import::ofx`: `OfxImporter` over Coffer's own tolerant SGML/XML reader (`ofx-kit`
   dropped: it fails whole files on one bad row and guesses encodings). Bank and credit

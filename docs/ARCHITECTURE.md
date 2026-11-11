@@ -649,34 +649,35 @@ an ID, a name, a region, ignored columns and a category map. The field reference
 contributors is `presets/README.md`.
 
 ```toml
-# presets/uk/monzo.toml (illustrative; the real one is M1.9)
-id = "uk-monzo-current"
-name = "Monzo (current account)"
+# presets/uk/monzo.toml (M1.9; comments and most of the category map left out)
+id = "uk-monzo"
+name = "Monzo"
 region = "uk"
 currency = "GBP"
 encoding = "utf-8"                                 # default "auto"
 delimiter = ","                                    # default: detected
 skip_rows = 0
 header = true                                      # false: columns are 1-based positions
+multiline_fields = true                            # notes can span lines; default false
 external_id = { column = "Transaction ID" }
 date = { column = "Date", format = "%d/%m/%Y" }
 time = { column = "Time", format = "%H:%M:%S" }    # optional
 amount = { column = "Amount" }                     # or { debit = "Paid out", credit = "Paid in", signs = "unsigned" }
+decimal = "."
+row_currency = { column = "Currency" }             # per-row currency code
+original_amount = { column = "Local amount", currency_column = "Local currency" }
 merchant = { column = "Name" }
 description = { column = "Description" }           # or { columns = ["A", "B"] }
 source_category = { column = "Category" }
 source_type = { column = "Type" }
-original_amount = { column = "Local amount", currency_column = "Local currency" }
 note = { column = "Notes and #tags" }
-# row_currency = { column = "Currency" }           # per-row currency code
 # balance = { column = "Balance" }                 # Monzo exports have none
-decimal = "."
 ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money In"]
 
 [category_map]          # source category -> our category key
 "Groceries" = "food.groceries"
 "Eating out" = "food.eating_out"
-"Transfers" = "transfer"
+"Savings" = "transfer.savings"
 ```
 
 - **Strict.** Unknown keys are refused (`deny_unknown_fields`), so a misspelt optional
@@ -713,6 +714,28 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
   A `category_map` without a `source_category` column is refused.
 - **Every bundled preset has a fixture** at `fixtures/presets/<region>/<bank>.*` that it
   detects as `Source` and imports; a test enforces it.
+- **Monzo is the reference preset** (M1.9, decided 2026-11-11; `presets/uk/monzo.toml`,
+  fixture `fixtures/presets/uk/monzo.csv`, tests in
+  `crates/import/tests/preset_uk_monzo.rs`). Settled with it:
+  - The ID is `uk-monzo`, with no account-type suffix: personal and joint current
+    accounts export the same columns, and two presets with the same header would only
+    tie at detection. A Monzo export with other columns gets its own file
+    (`monzo-<kind>.toml`).
+  - `multiline_fields = true`: "Notes and #tags" is free text from the app and can hold
+    line breaks inside its quotes, and Monzo's writer quotes correctly, so a row over
+    several lines there is a note, not a stray quote. The column count and the
+    end-of-file check still catch broken quoting.
+  - The signed `Amount` is read and `Money Out` / `Money In` are ignored (refunds can
+    sit in "Money Out" as positive values). `Currency` is read as the row currency, so
+    a row not in pounds is flagged rather than taken as GBP.
+  - `Name` is the merchant (the pot's name for a pot transfer), `Description` the raw
+    text (the pot's ID for a pot transfer). Pot transfers import as ordinary rows until
+    M1.17.
+  - `Address` is ignored, so merchant addresses never reach the database from Monzo.
+  - Monzo's "Transfers" category isn't mapped: Monzo also files payments to and from
+    people under it, which are spending or income. "Savings" (what Monzo gives pot
+    transfers) maps to `transfer.savings`; Family and Finances map to the `family` and
+    `finance` groups; "General" and "Expenses" are left for rules or the user.
 - **Not yet:** `[sub_account_transfer]` (pot transfers) is M1.17 and refused until then.
 
 ### The OFX importer

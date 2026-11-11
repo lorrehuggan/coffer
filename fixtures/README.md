@@ -32,4 +32,8 @@ Synthetic OFX and QFX files for the OFX importer (M1.10), written by hand
 
 One fixture per bank preset, at `presets/<region>/<bank>.<ext>` to match
 `presets/<region>/<bank>.toml`. A test requires each bundled preset to have one, to
-recognise it from its header and to import it. None yet: the first is Monzo (M1.9).
+recognise it from its header and to import it.
+
+| File | Shape |
+|---|---|
+| `uk/monzo.csv` | Monzo's CSV export (M1.9), written by hand from the export's documented columns, not from a real file. UTF-8, LF, 18 columns. One row per quirk: a refund as a positive amount under "Money Out", pot transfers both ways (pot name as `Name`, pot ID as `Description`), a card payment in EUR with its local amount, a £0.00 card check, two identical same-day coffees with their own IDs, a note over two lines with escaped quotes, a payment from a person, emoji and non-ASCII merchants, quoted addresses with commas |

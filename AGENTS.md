@@ -31,9 +31,9 @@ checks; `account`: minimal accounts and entered balances; `id`: row IDs; M1.11�
 migration `V3__import_flags.sql`).
 `crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
 importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
-(`preset`: `Preset`, `Presets::bundled`; M1.8) and the OFX/QFX importer (`ofx`:
-`OfxImporter`, own SGML/XML reader; M1.10), but no presets in `presets/` yet; synthetic
-fixtures are in `fixtures/csv/` and `fixtures/ofx/`; `crates/mcp` is a stub. The GUI is in `crates/app` (package `coffer-app`, lib
+(`preset`: `Preset`, `Presets::bundled`; M1.8) and the first preset, `presets/uk/monzo.toml`
+(M1.9) and the OFX/QFX importer (`ofx`: `OfxImporter`, own SGML/XML reader; M1.10);
+synthetic fixtures are in `fixtures/csv/`, `fixtures/presets/` and `fixtures/ofx/`; `crates/mcp` is a stub. The GUI is in `crates/app` (package `coffer-app`, lib
 `coffer_app`, binary `coffer`) and doesn't open the database yet. `coffer` opens the Transactions screen on fixture data
 (`crates/app/src/transactions.rs`), and `coffer --showcase` opens the component showcase.
 `cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with
@@ -152,7 +152,7 @@ Changing any of these needs an explicit decision recorded in `docs/ARCHITECTURE.
 
 - One file per bank/account type: `presets/<region>/<bank>.toml` (regions: `uk`, `us`,
   `eu` for now). The field reference is `presets/README.md`, the decisions are in
-  `docs/ARCHITECTURE.md` → "Presets"; `presets/uk/monzo.toml` (M1.9) will be the
+  `docs/ARCHITECTURE.md` → "Presets"; `presets/uk/monzo.toml` (M1.9) is the
   reference example. Every `.toml` there is compiled in (`crates/import/build.rs`).
 - Every preset needs a matching redacted fixture at `fixtures/presets/<region>/<bank>.*`
   (a test checks it's there and imports) and a test that checks its rows.

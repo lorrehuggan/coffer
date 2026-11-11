@@ -1,0 +1,117 @@
+# Monzo: the CSV export from the app (account menu → Bank statements → Custom
+# statements → Comma Separated (CSV)). Personal and joint current accounts
+# export the same columns, so one preset covers both.
+#
+# This is the reference preset: copy it when adding a bank. The field reference
+# is presets/README.md; the decisions behind the format are in
+# docs/ARCHITECTURE.md → "Presets" and "The CSV importer". The fixture it must
+# import is fixtures/presets/uk/monzo.csv, and its rows are checked in
+# crates/import/tests/preset_uk_monzo.rs.
+#
+# The export's header, in order:
+#
+#   Transaction ID, Date, Time, Type, Name, Emoji, Category, Amount, Currency,
+#   Local amount, Local currency, Notes and #tags, Address, Receipt,
+#   Description, Category split, Money Out, Money In
+#
+# Every column is either read below or listed in `ignore`, so a column Monzo
+# adds later shows up in the import preview instead of vanishing.
+
+# Recorded on every import batch: never change it. No account-type suffix,
+# since the one export format serves every Monzo current account.
+id = "uk-monzo"
+name = "Monzo"
+region = "uk"
+# What `Amount` is in. Rows whose `Currency` (below) says otherwise are flagged.
+currency = "GBP"
+
+# The export is UTF-8 and comma-separated, with one header row and nothing
+# before it. Stated rather than detected, so detection can't tie.
+encoding = "utf-8"
+delimiter = ","
+skip_rows = 0
+header = true
+
+# Monzo quotes fields properly, and a note typed in the app ("Notes and
+# #tags") can run over several lines inside its quotes. With this off, every
+# such row would be flagged as a possible stray quote. The column count and
+# the end-of-file check still catch a quote that really is broken.
+multiline_fields = true
+
+# Monzo's own ID ("tx_…"), unique per transaction: dedupe uses it first, so
+# two identical coffees on the same day both import.
+external_id = { column = "Transaction ID" }
+
+# UK day-first dates, always zero-padded (01/10/2026), and a separate time.
+date = { column = "Date", format = "%d/%m/%Y" }
+time = { column = "Time", format = "%H:%M:%S" }
+
+# The signed amount in the account's currency: negative is money out. Read it
+# rather than "Money Out" / "Money In": Monzo puts some refunds in "Money Out"
+# as positive values, which a debit/credit pair would read as spending.
+amount = { column = "Amount" }
+decimal = "."
+row_currency = { column = "Currency" }
+
+# For a card payment abroad, what was charged in the local currency (-10.00
+# EUR against an Amount of -8.62 GBP). Monzo fills these on every row; when
+# they just repeat the amount, Coffer drops them.
+original_amount = { column = "Local amount", currency_column = "Local currency" }
+
+# "Name" is Monzo's cleaned-up merchant or payee ("Café Lumière"), or the pot's
+# name for a pot transfer. "Description" is the raw text from the card network
+# or the payment reference ("CAFE LUMIERE PARIS FRA", or "pot_…" for a pot),
+# kept as written for rules and dedupe.
+merchant = { column = "Name" }
+description = { column = "Description" }
+
+# Monzo's category and transaction type ("Card payment", "Faster payment",
+# "Direct Debit", "Pot transfer", "Monzo-to-Monzo", …), for rules and
+# `category_map`.
+source_category = { column = "Category" }
+source_type = { column = "Type" }
+
+# What the user wrote in the app, hashtags included. Can span lines (above).
+note = { column = "Notes and #tags" }
+
+# Columns read on purpose not at all:
+# - Emoji: Monzo's icon for the category or merchant.
+# - Address: the merchant's street address. Coffer has no field for it, and
+#   it can say where the user was.
+# - Receipt: a receipt attached in the app; attachments are Coffer's own.
+# - Category split: Monzo's own split of one payment across categories. Splits
+#   are made in Coffer, not imported.
+# - Money Out, Money In: the same amount as `Amount`, split by direction.
+# There's no running balance column, so nothing is reconciled; the account's
+# balance comes from the user.
+ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money In"]
+
+# Monzo's built-in categories → Coffer's category keys, matched exactly (case
+# included). Not mapped, so left for rules or the user:
+# - General: Monzo's catch-all, which says nothing.
+# - Expenses: money to be reimbursed, which Coffer tracks as a link to the
+#   repayment rather than a category.
+# - Transfers: Monzo's category for payments to and from people too (a friend
+#   paying back their half), which are spending or income, not a transfer
+#   between the user's own accounts. Transfer-pair detection finds those.
+# - Categories the user created in the app.
+# "Savings" is what Monzo gives pot transfers: money moving between the user's
+# own accounts, not spending. (Recognising pots as sub-accounts is M1.17.)
+# Family and Finances map to Coffer's group of the same name, since Monzo's
+# category spans several of its subcategories.
+[category_map]
+"Groceries" = "food.groceries"
+"Eating out" = "food.eating_out"
+"Transport" = "transport"
+"Bills" = "bills"
+"Entertainment" = "entertainment"
+"Shopping" = "shopping"
+"Holidays" = "travel"
+"Personal care" = "health.personal_care"
+"Cash" = "cash"
+"Income" = "income"
+"Family" = "family"
+"Gifts" = "giving.gifts"
+"Charity" = "giving.charity"
+"Finances" = "finance"
+"Savings" = "transfer.savings"

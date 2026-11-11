@@ -9,7 +9,7 @@ load all of them.
 
 `presets/<region>/<bank>.toml`, one file per bank and account type. Regions are lowercase
 letters (`uk`, `us`, `eu`); file names are lowercase letters, digits and hyphens
-(`monzo.toml`, `monzo-joint.toml`).
+(`monzo.toml`, `nationwide-credit-card.toml`).
 
 Every preset needs a redacted fixture at `fixtures/presets/<region>/<bank>.csv` (same
 name, any extension) that it recognises and imports, plus a test that checks the rows.
@@ -18,9 +18,14 @@ and `AGENTS.md` → "Personal financial data". Never commit a real export.
 
 ## Example
 
+The Monzo preset, [`uk/monzo.toml`](uk/monzo.toml), is the reference: copy it when
+adding a bank, comments and all. Its fixture is
+[`fixtures/presets/uk/monzo.csv`](../fixtures/presets/uk/monzo.csv) and its tests are in
+`crates/import/tests/preset_uk_monzo.rs`. Without the comments it reads:
+
 ```toml
-id = "uk-monzo-current"            # stable forever: it's recorded on every import
-name = "Monzo (current account)"   # what the user sees
+id = "uk-monzo"                    # stable forever: it's recorded on every import
+name = "Monzo"                     # what the user sees
 region = "uk"                      # must match the directory
 currency = "GBP"                   # the account's ISO 4217 currency
 
@@ -28,27 +33,28 @@ encoding = "utf-8"                 # optional, default "auto"
 delimiter = ","                    # optional, detected when left out
 skip_rows = 0                      # optional, lines before the header
 header = true                      # optional, whether the file has a header row
+multiline_fields = true            # optional, whether quoted fields can hold line breaks
 
 external_id = { column = "Transaction ID" }
 date = { column = "Date", format = "%d/%m/%Y" }
 time = { column = "Time", format = "%H:%M:%S" }
 amount = { column = "Amount" }
+decimal = "."
+row_currency = { column = "Currency" }
+original_amount = { column = "Local amount", currency_column = "Local currency" }
 merchant = { column = "Name" }
 description = { column = "Description" }
 source_category = { column = "Category" }
 source_type = { column = "Type" }
-original_amount = { column = "Local amount", currency_column = "Local currency" }
 note = { column = "Notes and #tags" }
-decimal = "."
 ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money In"]
 
 [category_map]                     # the bank's category -> Coffer's category key
 "Groceries" = "food.groceries"
 "Eating out" = "food.eating_out"
-"Transfers" = "transfer"
+"Savings" = "transfer.savings"
+# … and the rest of Monzo's built-in categories that map cleanly
 ```
-
-(Illustrative: the real Monzo preset arrives with M1.9.)
 
 ## Fields
 
