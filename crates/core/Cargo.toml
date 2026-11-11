@@ -18,3 +18,6 @@ directories.workspace = true
 uuid.workspace = true
 regex.workspace = true
 aho-corasick.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

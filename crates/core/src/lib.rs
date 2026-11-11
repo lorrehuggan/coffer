@@ -3,5 +3,7 @@
 //! and export.
 //!
 //! Synchronous and UI-free, so everything here is testable without a window.
-//! It must not depend on GPUI, MCP, or any network or AI crate. Populated from
-//! M1.3 onward (`docs/ROADMAP.md`).
+//! It must not depend on GPUI, MCP, or any network or AI crate.
+
+pub mod db;
+pub mod paths;

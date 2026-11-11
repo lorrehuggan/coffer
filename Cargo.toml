@@ -57,5 +57,8 @@ schemars = "1"
 # Test and example tooling (crates/app dev-dependencies). Each is already in
 # the tree via GPUI; the reasons are recorded where they're used.
 serde_json = "1"
+# Temporary directories for the database tests in crates/core: WAL and file
+# modes need a real file. Already in the tree via GPUI; MIT OR Apache-2.0.
+tempfile = "3.27"
 image = { version = "0.25", default-features = false, features = ["png"] }
 ttf-parser = "0.25"

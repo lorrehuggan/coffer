@@ -394,7 +394,16 @@ Import real statements into a local database from the command line.
   Versions, edition and licence come from the root `[workspace.package]` and
   `[workspace.dependencies]`; each crate declares the dependencies of its role
 - ✅ M1.2 Add `LICENSE-MIT`, `LICENSE-APACHE`; set `license = "MIT OR Apache-2.0"`
-- ⬜ M1.3 SQLite setup: platform data dir, WAL mode, 0600 permissions, versioned migrations
+- ✅ M1.3 SQLite setup: platform data dir, WAL mode, 0600 permissions, versioned migrations.
+  `coffer_core::db::Database::open` creates the data dir (0700) and `coffer.db` (0600,
+  as are its `-wal`/`-shm`), sets WAL, `synchronous = FULL`, foreign keys,
+  `trusted_schema = OFF`, a busy timeout and `BEGIN IMMEDIATE`, then applies the
+  embedded `crates/core/migrations/` in one transaction. An existing file is checked
+  before anything changes it (a SQLite database, not a newer schema, unedited migration
+  history); a refused file is left byte- and mode-for-mode as it was. A newer schema or
+  an edited, unknown or skipped migration is refused. `Database::open_existing` (for
+  `coffer mcp`) never creates or migrates: a missing database, a pending migration, a
+  newer schema or a changed history is refused. `COFFER_DATA_DIR` overrides the data dir
 - ⬜ M1.4 Schema: accounts, import batches, transactions, balance snapshots, categories,
   rules, transfer groups, budgets, FX rates, suggestions, reports
 - ⬜ M1.5 Money type: integer minor units + ISO 4217 currency (no floats anywhere)

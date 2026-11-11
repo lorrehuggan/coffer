@@ -32,6 +32,8 @@ Check the tree before assuming a module exists.
   Outside direnv, use `devenv shell -- <command>`.
 - Rust stable, edition 2024. Toolchain components: clippy, rustfmt, rust-analyzer.
 - Add system libraries in `devenv.nix`, not with ad-hoc installs.
+- Set `COFFER_DATA_DIR` to a scratch directory when running Coffer against test data,
+  so it never touches the real database in the platform data dir.
 - Paper (design work): the Paper MCP server is the local Paper Desktop app, configured
   as `paper` and loaded lazily. Run `mcp_connect` with `paper` before any Paper task. Its
   tools (`mcp_paper_*`) only appear on the next turn, so connect, then end the turn or

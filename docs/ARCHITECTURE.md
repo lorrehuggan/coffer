@@ -21,7 +21,7 @@ Built for one user first; released as open source (UK, US, euro area at launch).
 | Stack | Rust 2024, GPUI via `gpui-kit` / `gpui-component` (charts, `DataTable`, sidebar/dock built in) |
 | Platforms | Linux + macOS official; Windows compiles in CI, community-supported |
 | License | `MIT OR Apache-2.0` |
-| Storage | SQLite, WAL mode, file mode 0600, `~/.local/share/coffer` (platform data dir). Not encrypted in v1 (SQLCipher possible later) |
+| Storage | SQLite, WAL mode, `synchronous = FULL`, file mode 0600 (data dir 0700), `coffer.db` in the platform data dir (`~/.local/share/coffer`; `~/Library/Application Support/Coffer` on macOS), overridable with `COFFER_DATA_DIR`. Not encrypted in v1 (SQLCipher possible later) |
 | Money | Integer minor units + ISO 4217 currency per account/transaction. Never floats |
 | Currency | Multi-currency; one home currency for reporting. ECB reference rates fetched opt-in and cached (the app's only network call); manual rates as fallback |
 | Formats (v1) | CSV (generic mapping + presets), OFX/QFX. QIF, CAMT.053, MT940 later via `Importer` trait |
@@ -359,7 +359,7 @@ Versions live in `[workspace.dependencies]` in the root `Cargo.toml`; crates opt
 
 | Area | Crates | Notes |
 |---|---|---|
-| Storage | `rusqlite` (`bundled`), `refinery` | `rusqlite` pinned to 0.40 until `refinery` supports 0.41. `refinery` checksums applied migrations, enforcing "never edit a shipped migration". No connection pool: one connection per process, WAL + `busy_timeout` + `BEGIN IMMEDIATE`; only the GUI runs migrations. SQLCipher later = `bundled-sqlcipher-vendored-openssl` |
+| Storage | `rusqlite` (`bundled`), `refinery` | `rusqlite` pinned to 0.40 until `refinery` supports 0.41. `refinery` checksums applied migrations, enforcing "never edit a shipped migration". No connection pool: one connection per process, WAL + `busy_timeout` + `BEGIN IMMEDIATE`; the app and the CLI open with `Database::open`, which creates the database if needed and runs migrations (all pending ones in one transaction); `coffer mcp` opens with `Database::open_existing`, which never creates or migrates and refuses a missing or older database, telling the user to open Coffer or run a CLI command. Both check an existing file first (a SQLite database, not a newer schema, applied migrations matching the embedded ones) and leave a refused file untouched: no permission change, WAL switch or write. SQLCipher later = `bundled-sqlcipher-vendored-openssl` |
 | Import | `csv`, `serde`, `encoding_rs`, `ofx-kit`, `chrono`, `toml` | Encoding comes from the preset; decode errors are flagged, never guessed. Strip the BOM before `csv`. `ofx-kit` is young and single-maintainer: pinned exactly and kept behind the `Importer` trait (fallback: `ofx-rs`). Dates must round-trip through their format string |
 | Money / FX | none | Own `Money { minor: i64, currency }` with a hand-written, test-frozen exponent table. FX in `i128` fixed point with one explicit rounding. Decimal types from format crates are converted to minor units at the import boundary, never stored |
 | Rules | `regex`, `aho-corasick` | `regex` is linear-time, so user rules can't hang the app |
