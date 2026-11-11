@@ -27,7 +27,7 @@ Built for one user first; released as open source (UK, US, euro area at launch).
 | Formats (v1) | CSV (generic mapping + presets), OFX/QFX. QIF, CAMT.053, MT940 later via `Importer` trait |
 | PDF | Deferred. Plan: local text extraction + per-layout templates; any model-based extraction opt-in only |
 | Categorization | Local rules engine first; AI-proposed categories/rules land in the Inbox for approval; approvals become rules. The app also files `rule` suggestions itself (source `coffer`) after repeated identical manual recategorisations: deterministic counting, no ML. Learned classifiers are not used |
-| Transfers | Auto-detect opposite-amount pairs across own accounts within N days; user confirms; excluded from income/spend |
+| Transfers | Auto-detect opposite-amount pairs across own accounts within 3 days (`TransferWindow::DEFAULT`); user confirms; excluded from income/spend |
 | Pots / sub-accounts | Monzo Pots, Starling Spaces, Revolut Vaults etc. are sub-accounts of their parent. A preset rule identifies pot transfers; the importer creates the mirrored pot-side entry, auto-pairs it as a confirmed transfer, and pots count toward net worth (opening balance entered once per pot) |
 | AI integration | `coffer mcp` stdio MCP server (`rmcp`). Read-only query tools + inbox-only writes. No account numbers or PII in tool output |
 | Splits | A transaction can be split into lines that sum exactly to its amount, in its currency (enforced in core, in the same DB transaction as the edit). Reports, budgets and MCP read the `ledger_line` view: one row per split line, or the transaction itself when it isn't split |
@@ -446,6 +446,71 @@ reconciliation and the commit".
     out; undo refuses a batch with a transaction or balance on or before its account's
     lock date. Both need the user to unlock first (M1.27).
 
+### Decision record: rules engine, transfer detection and the CLI (2026-11-11)
+
+Decided while building M1.15, M1.16 and M1.18 (`coffer_core::rule`,
+`coffer_core::transfer`, `coffer_app::cli`) and wiring them into `import::commit`. The
+transfer window and the order of preset map and rules were decided by the user.
+
+1. **Rules override the preset's category map.** On import, a new row first gets the
+   category its preset maps its source category to (`category_source = preset_map`;
+   the CSV importer puts it on `StatementLine::category`). The rules then run on the
+   batch, and a matching `set_category` rule replaces it (`category_source = rule`,
+   `rule_id`). Rows no rule matches keep the preset's category. Rules never change a
+   `user` or `ai_approved` category (rules decision record, point 3). A preset key with
+   no category (the user deleted it) leaves the row uncategorised.
+2. **Transfer window: 3 days, both ends included** (`TransferWindow::DEFAULT`; at most
+   31). A pair is two rows on different accounts (pots and their parent included; never
+   `asset` or `liability`), in one currency, with exactly opposite non-zero amounts, at
+   most the window apart, neither excluded, neither already in a transfer group of any
+   status (a `rejected` group keeps its rows, so a rejected pair isn't suggested again),
+   and neither dated after its account's `closed_on`. Each pair becomes a `suggested`
+   `transfer_group`. Detection never changes categories.
+3. **Closest pairs first.** Candidate pairs are taken in order of the gap in days, then
+   the gap in time when both rows have one (a pair with both times first), then the
+   lower and higher transaction IDs; taking one removes its rows from the rest. The
+   result depends only on row values and IDs, so it is deterministic, and two identical
+   transfers each way on one day pair one-to-one. This doesn't maximise the number of
+   pairs: out on the 10th and the 12th with one deposit on the 12th pairs the 12th.
+4. **Rules, preset categories and transfer detection run inside the import's DB
+   transaction,** in that order, on the batch's rows only (mirrored rows included). An
+   error in any of them rolls the import back: a rule whose category no longer exists
+   fails the import when it matches a row (not when it matches nothing), and the user
+   fixes the rule. The rule set is loaded once per commit.
+5. **Matching.** `is`, `starts_with` and `contains` compare text folded per character
+   (lowercase, uppercase, lowercase again: `Straße`, `STRASSE` and `strasse` are equal,
+   final `ς` is `σ`) without Unicode tables. `regex` uses the regex crate's
+   case-insensitive mode, so a regex `straße` doesn't match `STRASSE`. The description
+   is matched with whitespace collapsed but its case kept, so a regex sees the letters
+   the bank wrote; patterns are compared as written. A missing field (no merchant)
+   never matches.
+6. **Rule store.** A new rule goes first; `create_at` and `move_to` place one at a
+   position, and every write renumbers priorities 0, 1, 2, … in order. A rule naming a
+   category or split category that doesn't exist is refused when saved. Errors about a
+   stored rule that no longer validates name its ID and the action kind, never its
+   text. Deleting a rule clears `rule_id` and keeps the category (rules decision
+   record, point 7).
+7. **`coffer import` acts only on a confident, unique detection.** OFX by its format; a
+   preset only by its own header row (`Detection::Source`). A CSV that merely parses,
+   or a tie, is an error that lists the presets for `--preset`. A multi-statement OFX
+   file needs `--statement N` (from 1); without it the command lists the statements by
+   kind, the account number's last four digits, currency and row count. `--account`
+   takes an ID or an exact name; without it, the import goes to the only open account in
+   the file's currency that holds transactions (a pot counts), else the command lists
+   them.
+8. **The CLI confirms with `--yes`, and `--dry-run` writes nothing.** An import with
+   flagged rows or a balance mismatch is refused (exit 1) without `--yes`; `undo-import`
+   without `--yes` previews and exits 0. `accounts` (list) and `undo-import` need an
+   existing database; `import` and `accounts add` create it. Opening applies pending
+   migrations, as the app does. `accounts add` checks the pot rules (a pot needs a
+   current or savings parent in its currency; only a pot has a parent) before the
+   schema does, for readable messages.
+9. **`anyhow` in `coffer_app::cli`.** The CLI is the binary's layer but lives in the
+   `coffer-app` lib so tests can run commands against a scratch database and read their
+   output; it uses `anyhow` like the binary. Library crates (`core`, `import`, `mcp`)
+   still use `thiserror` only. The CLI sets up no logging and never prints row text it
+   wasn't asked for (a test checks fixture descriptions don't appear).
+
 ## Architecture
 
 ```
@@ -513,11 +578,14 @@ own QIF parser. Avoid GPL crates (`ofxy`, `tree_magic_mini`'s GPL data feature).
 6. **Preview → commit**: show new / already-imported / flagged counts, and flag rows dated
    on or before the account's `reconciled_through` lock; take a backup; commit in one
    DB transaction; record an `import_batch` so an import can be undone.
-7. **Post-process** (deterministic, no model): clean merchant text and apply merchant
-   aliases into `merchant_display`; apply rules (which can match merchant, raw description,
-   source category, source type, amount, account) and their actions; map source categories
-   via the preset; run transfer-pair detection; match schedule occurrences; queue
-   near-duplicate candidates; record balances and check assertions.
+7. **Post-process** (deterministic, no model, inside the commit's DB transaction): map
+   source categories via the preset; apply rules (which can match merchant, raw
+   description, source category, source type, amount, account) and their actions, a
+   rule's category overriding the preset's; run transfer-pair detection; clean merchant
+   text and apply merchant aliases into `merchant_display`; match schedule occurrences;
+   queue near-duplicate candidates; record balances and check assertions. The first
+   three run today (M1.15, M1.16; "Decision record: rules engine, transfer detection and
+   the CLI").
 
 ### The `Importer` trait
 
@@ -870,8 +938,13 @@ M1.11–M1.13, decided 2026-11-11 (decision record "import commit, dedupe and un
   `Reconciled` or `Mismatch` (the import screen's reconciliation block).
 - **Commit** inserts the `import_batch`, its rows (`origin = imported`, `created_at` =
   the batch's `imported_at`), its new balances (`csv` or `ofx`) and its `import_flag`
-  rows, in one DB transaction. The M1.28 backup goes just before it; rules, preset
-  categories, merchant names and transfer pairing will run inside it.
+  rows, in one DB transaction. In the same transaction it stores each new row's preset
+  category (`category_source = preset_map`), runs the rules on the batch
+  (`rule::apply_to_batch`), which override it, and suggests transfer pairs
+  (`transfer::detect_for_batch`); a failure in any step rolls the whole import back.
+  `CommitSummary` counts the rows categorised by the preset and by rules, and the pairs
+  suggested. The M1.28 backup goes just before it; merchant names (M1.23) will run
+  inside it.
 
 ## Money
 

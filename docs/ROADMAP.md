@@ -492,15 +492,22 @@ Import real statements into a local database from the command line.
   each `spending`, `income` or `transfer`, seeded once by `V2__default_categories.sql`;
   `coffer_core::category::{DEFAULT_CATEGORIES, CategoryTree}`; bundled presets may map
   only to default keys (tested) (`ARCHITECTURE.md` → "Categories")
-- ⬜ M1.15 Rules engine (contains / regex / amount range / account), priority ordering.
-  The validated rule types exist in `coffer_core::rule` (match field and kind, regex
-  pattern with size limits, amount bounds, typed action values, cross-action checks); the
-  engine, matching and ordering are still to do
-- ⬜ M1.16 Transfer-pair detection (opposite amounts, own accounts, N-day window)
+- ✅ M1.15 Rules engine (contains / regex / amount range / account), priority ordering.
+  Validated types, store (`create`, `create_at`, `list`, `move_to`, `delete`) and
+  `RuleSet` matching field by field in priority order; `set_category` only (the other
+  actions are M1.24). Runs in `import::commit` after the preset's category map, which it
+  overrides (`ARCHITECTURE.md` → "Decision record: rules engine, transfer detection and
+  the CLI")
+- ✅ M1.16 Transfer-pair detection (opposite amounts, own accounts, N-day window).
+  `coffer_core::transfer`: 3-day window, closest pairs first, `suggested`
+  `transfer_group` rows, run by `import::commit`; confirm/reject come with the inbox and
+  Transactions screen
 - ⬜ M1.17 Sub-accounts (Monzo Pots, Starling Spaces, Revolut Vaults): preset-driven detection,
   auto-created pot accounts, mirrored pot-side entries auto-paired as transfers
-- ⬜ M1.18 CLI: `coffer import <file> [--account] [--preset] [--dry-run]`,
-  `coffer accounts`, `coffer undo-import <batch>`
+- ✅ M1.18 CLI: `coffer import <file> [--account] [--preset] [--dry-run]`,
+  `coffer accounts`, `coffer undo-import <batch>`. clap, in `coffer_app::cli`; also
+  `--statement N` for multi-statement OFX, `--yes` to accept flags, a mismatch or an
+  undo, and `coffer accounts add`
 - ⬜ M1.19 Redacted fixtures + tests for every importer path
 - ⬜ M1.20 Split transactions: `transaction_split` lines that sum exactly to the parent
   (checked in core); reports and budgets read the `ledger_line` view, so a split purchase
