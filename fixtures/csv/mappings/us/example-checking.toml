@@ -1,0 +1,15 @@
+# Reads repeated-ids-us.csv: US dates, IDs, a debit/credit pair whose
+# values carry their sign, and a memo as the note. One row per line
+# (`multiline_fields` off), so the two-line memo is flagged.
+id = "us-example-checking"
+name = "Example Bank (US checking)"
+region = "us"
+currency = "USD"
+encoding = "utf-8"
+delimiter = ","
+external_id = { column = "Reference" }
+date = { column = "Posted Date", format = "%m/%d/%Y" }
+amount = { debit = "Debit", credit = "Credit", signs = "signed" }
+merchant = { column = "Payee" }
+description = { column = "Payee" }
+note = { column = "Memo" }

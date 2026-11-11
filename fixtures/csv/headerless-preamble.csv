@@ -1,0 +1,6 @@
+Example Bank statement export (synthetic)
+Account: FAKE-0000, "Everyday" saver
+03 Nov 2026,DEB,Example Grocer,-20.00,480.00
+04 Nov 2026,CR,Example Refund,5.00,485.00
+05 Nov 2026,DEB,Example Pharmacy,-7.50,470.00
+06 Nov 2026,DEB,Example Cinema,-12.00,458.00
