@@ -386,6 +386,66 @@ M1.14, the default category set. The set itself is under "Categories" below.
    since a preset the user saves (M3) may name their own categories; the import maps a
    key that isn't in the database to nothing and leaves the row for rules or the user.
 
+### Decision record: import commit, dedupe and undo (2026-11-11)
+
+Decided while building M1.11–M1.13 (`coffer_core::import`, `coffer_core::balance`,
+`coffer_core::account`); the details are under "Import pipeline" → "Dedupe,
+reconciliation and the commit".
+
+1. **Preview, then commit what was previewed.** `import::preview` reads the database and
+   writes nothing; `import::commit` plans again inside its own `BEGIN IMMEDIATE`
+   transaction and refuses (`Stale`) if the plan or the account differs from the
+   preview. What the user confirmed is exactly what is stored, even if another process
+   imported in between.
+2. **Flagged rows are recorded, not stored as transactions.** A row that can't be read
+   has no date or amount to store, so "imported as flagged" (`DESIGN.md` → Import) means
+   the batch keeps an `import_flag` row (its place in the file and core's reason, never
+   its text; a new migration). The same goes for a source ID already taken by a
+   different transaction, a row in a locked period, and a running balance that doesn't
+   follow from the rows before it (that row itself is imported). Committing with flags
+   or a failed reconciliation needs an explicit confirmation from the caller. The Review
+   screen's "Import N transactions" counts new rows only; flagged rows are listed
+   beside it.
+3. **A source ID with a different date or amount is a conflict, not a duplicate.** It is
+   flagged and not imported. The same ID, date and amount with different text is the
+   same transaction (banks re-word descriptions). A repeated ID within one file is
+   "repeated in file" when date and amount agree, otherwise flagged.
+4. **Re-importing a file stores nothing.** With no new transaction and no new balance,
+   `commit` returns `NothingNew` and records no batch. A balance from a file is new
+   unless an earlier import recorded the same balance on the same day; undoing that
+   earlier batch takes the balance with it, and importing the file again restores it.
+5. **From running balances, only the opening is recorded.** A file with a balance column
+   is checked row by row (in whichever order fits: oldest or newest first), and records
+   one `balance_snapshot`: the balance at the end of the day before its first row. The
+   last day of an export taken during the day is incomplete, so an end-of-day balance
+   for it would fail once that day's later rows arrive. The next file's opening checks
+   this one's rows. Balances the file states (OFX `LEDGERBAL`) are recorded as given;
+   the importer is responsible for their date being an end of day.
+6. **The manual anchor is an entered balance.** `account::add_balance` records a
+   `manual` (or `statement`) `balance_snapshot`: an end-of-day balance, one per account
+   and day. It is checked like every other balance (Review queues, point 1). The
+   account's `opening_balance_minor` / `opening_date`, when set, count as one more
+   end-of-day balance on that date, so nothing entered there is ignored; core itself
+   records entered balances as snapshots.
+7. **Undo removes the batch's rows with everything on them.** `import::undo` deletes the
+   batch's transactions (mirrored pot rows included), balances and flags and marks it
+   `undone`, in one DB transaction. The user's edits on those rows (category, notes,
+   share, exclusion; later splits, tags and links) go with them: `undo_preview` counts
+   the edited rows so the confirmation can say so, and importing the file again brings
+   the rows back without the edits. Tables that will reference a transaction must be
+   cleared by undo when they arrive; until then a reference makes the undo fail as a
+   whole.
+8. **Undo dissolves transfer pairs.** A `transfer_group` with one of the batch's rows is
+   deleted and its other rows become ordinary transactions again, to be paired again
+   when the file is re-imported (M1.16). A pair with one side gone isn't a transfer.
+9. **Undo names later imports that relied on the batch.** A later overlapping import
+   skipped the rows this batch already had, so undoing it removes them from the
+   account. `undo_preview` lists later committed batches into the same account;
+   importing those files again brings the rows back.
+10. **Locks hold.** A new row dated on or before `reconciled_through` is flagged and stays
+    out; undo refuses a batch with a transaction or balance on or before its account's
+    lock date. Both need the user to unlock first (M1.27).
+
 ## Architecture
 
 ```
@@ -655,6 +715,51 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
   detects as `Source` and imports; a test enforces it.
 - **Not yet:** `[sub_account_transfer]` (pot transfers) is M1.17 and refused until then.
 
+### Dedupe, reconciliation and the commit
+
+M1.11–M1.13, decided 2026-11-11 (decision record "import commit, dedupe and undo").
+`coffer_core::import`: `preview(db, account, file name, Statement)` →
+`ImportPreview` (every row's `RowOutcome`, the file's balances, a `Reconciliation`,
+`counts()`, `needs_confirmation()`), then `commit(db, &preview, Confirmations)` →
+`Committed::Batch(summary)` or `NothingNew`. `undo_preview(db, batch)` and
+`undo(db, batch)` remove a batch; `batches`, `batch` and `batch_flags` read the history.
+
+- **Row outcomes**: `New` (with its fingerprint), `AlreadyImported` (the stored row and
+  whether its source ID or fingerprint matched), `RepeatedInFile`, or `Flagged`:
+  `Unreadable(RowProblem)`, `SourceIdConflict`, `SourceIdRepeated`, `Locked`. Every row of
+  the statement has one, in file order.
+- **Source ID first.** A row with an external ID matches only the account's row with that
+  ID, and never by fingerprint; source IDs are per account, so the same ID on two
+  accounts is two transactions. Excluded rows still count as imported.
+- **Fingerprint** (`import::fingerprint`, frozen by a test):
+  `v1|<YYYY-MM-DD>|<amount minor>|<currency>|<occurrence>|<normalized description>`.
+  The time, merchant and other fields are left out; the account is the unique index's
+  other column, not part of the text. The occurrence index counts earlier rows in the
+  same file with the same date, amount and normalized description, from 0, separately
+  for rows with and without a source ID; flagged rows take none. A stored row without a
+  source ID matches when its fingerprint is equal. So identical same-day rows are 0, 1,
+  2… and both import; re-importing finds each again; an overlapping export with all of
+  a day's rows numbers them the same way. One cut off part-way through a day can number
+  that day's identical rows differently. The text is readable rather than hashed: no
+  collisions, and nothing the row doesn't already hold. Description normalization is
+  `statement::normalize_description`.
+- **Running balances** (`Reconciliation::running`): each stated balance must equal the
+  previous one plus the amounts since; a flagged row restarts the chain. The file's
+  order is the one under which fewer balances fail, ties going by the dates. A mismatch
+  is flagged at its row.
+- **Balance checks** (`coffer_core::balance::check`, reused by M1.27): the account's
+  balances (entered, earlier files, the opening balance, and this file's) are sorted by
+  date; the first is the starting point and each later one must equal the last passing
+  one plus the transactions after it, up to and including its day. Rows excluded as
+  `duplicate` leave the sum. The preview runs it with and without the import and reports
+  the checks this file adds, the stored ones whose result it changes, and stored ones
+  the file states again. `ReconciliationStatus`: `NoBalances`, `StartingPoint`,
+  `Reconciled` or `Mismatch` (the import screen's reconciliation block).
+- **Commit** inserts the `import_batch`, its rows (`origin = imported`, `created_at` =
+  the batch's `imported_at`), its new balances (`csv` or `ofx`) and its `import_flag`
+  rows, in one DB transaction. The M1.28 backup goes just before it; rules, preset
+  categories, merchant names and transfer pairing will run inside it.
+
 ## Money
 
 `coffer_core::money` (M1.5). Decided 2026-11-10:
@@ -781,6 +886,10 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
 - `import_batch(id, account_id, source_file, format [csv|ofx|qif|camt053|mt940],
   preset_id?, imported_at, status [committed|undone])` — `source_file` is the file name
   without its directory; QFX is `ofx`
+- `import_flag(id, batch_id, location_kind [line|entry], location, kind [unreadable|
+  source_id_conflict|locked|running_balance], detail)` — a row the import left out or
+  doubts (M1.11–M1.13, V3): its place in the file and core's reason, never the row's
+  text. Read-only; undo deletes it with its batch
 - `change_batch(id, kind [rule_apply|duplicate_merge|bulk_edit], created_at,
   status [applied|undone])` and `change_item(batch_id, transaction_id, field, old_value,
   new_value)` — undo for changes to existing transactions

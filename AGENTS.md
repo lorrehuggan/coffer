@@ -25,7 +25,10 @@ normalized import output (`statement`: `Statement`, `StatementLine`, flagged row
 and categories (`category`: `CategoryKey`, M1.8; `CategoryKind`, `DEFAULT_CATEGORIES`
 and `CategoryTree` via `Database::categories`, seeded by `V2__default_categories.sql`,
 M1.14) and validated rule types (`rule`:
-`RuleDefinition`, `Pattern`, `RuleAction`; no engine yet, M1.15).
+`RuleDefinition`, `Pattern`, `RuleAction`; no engine yet, M1.15) and the import commit
+(`import`: preview → commit → undo with dedupe and reconciliation; `balance`: balance
+checks; `account`: minimal accounts and entered balances; `id`: row IDs; M1.11–M1.13,
+migration `V3__import_flags.sql`).
 `crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
 importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 (`preset`: `Preset`, `Presets::bundled`; M1.8), but no presets in `presets/` or OFX yet;

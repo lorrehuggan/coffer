@@ -23,6 +23,7 @@ const TABLES: &[&str] = &[
     "category",
     "fx_rate",
     "import_batch",
+    "import_flag",
     "report",
     "rule",
     "rule_action",
@@ -1042,6 +1043,37 @@ fn undone_batches_hold_nothing() {
         "UPDATE balance_snapshot SET batch_id = ?1 WHERE id = ?2",
         [batch, kept],
     ));
+}
+
+#[test]
+fn import_flags_are_read_only_and_go_before_undo() {
+    let fixture = Fixture::new();
+    let current = fixture.account("Current");
+    let batch = fixture.batch(current);
+    let flag = |batch: i64, kind: &str, location_kind: &str, location: i64| {
+        fixture.conn().execute(
+            "INSERT INTO import_flag (batch_id, location_kind, location, kind, detail) \
+             VALUES (?1, ?2, ?3, ?4, 'the date is missing')",
+            params![batch, location_kind, location, kind],
+        )
+    };
+    flag(batch, "unreadable", "line", 3).unwrap();
+    assert_refused(flag(batch, "skipped", "line", 3));
+    assert_refused(flag(batch, "unreadable", "row", 3));
+    assert_refused(flag(batch, "unreadable", "line", 0));
+    assert_refused(fixture.conn().execute(
+        "UPDATE import_flag SET detail = 'changed' WHERE batch_id = ?1",
+        [batch],
+    ));
+
+    let undo = "UPDATE import_batch SET status = 'undone' WHERE id = ?1";
+    assert_refused(fixture.conn().execute(undo, [batch]));
+    fixture
+        .conn()
+        .execute("DELETE FROM import_flag WHERE batch_id = ?1", [batch])
+        .unwrap();
+    fixture.conn().execute(undo, [batch]).unwrap();
+    assert_refused(flag(batch, "locked", "entry", 1));
 }
 
 #[test]

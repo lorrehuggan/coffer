@@ -464,11 +464,20 @@ Import real statements into a local database from the command line.
   (`ARCHITECTURE.md` → "Presets"). `[sub_account_transfer]` waits for M1.17
 - ⬜ M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export)
 - ⬜ M1.10 OFX/QFX importer (SGML 1.x and XML 2.x), `FITID` IDs, `LEDGERBAL` balances
-- ⬜ M1.11 Deduplication: source ID when present (OFX `FITID`, CSV ID column);
-  fingerprint with occurrence index otherwise
-- ⬜ M1.12 Balance reconciliation where the file has balances; failed imports flagged, not
-  committed silently. Manual balance anchor for accounts whose exports have none
-- ⬜ M1.13 Import batches with undo
+- ✅ M1.11 Deduplication: source ID when present (OFX `FITID`, CSV ID column);
+  fingerprint with occurrence index otherwise.
+  `coffer_core::import`: a source ID is matched by ID only (a conflicting date or amount
+  is flagged); otherwise a readable `v1|date|amount|currency|occurrence|description`
+  fingerprint (`import::fingerprint`)
+- ✅ M1.12 Balance reconciliation where the file has balances; failed imports flagged, not
+  committed silently. Manual balance anchor for accounts whose exports have none.
+  `coffer_core::balance::check`; running balances checked row by row, file balances
+  stored, mismatches need explicit confirmation; `account::add_balance` is the manual
+  anchor
+- ✅ M1.13 Import batches with undo. `import::preview` → `commit` (one DB transaction,
+  re-planned and refused if stale) → `undo` / `undo_preview`; unreadable rows are kept as
+  `import_flag` rows (`V3__import_flags.sql`) (`ARCHITECTURE.md` → "Dedupe,
+  reconciliation and the commit")
 - ✅ M1.14 Default two-level category set with stable keys. 15 groups, 50 subcategories,
   each `spending`, `income` or `transfer`, seeded once by `V2__default_categories.sql`;
   `coffer_core::category::{DEFAULT_CATEGORIES, CategoryTree}`; bundled presets may map

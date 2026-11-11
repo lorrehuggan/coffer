@@ -262,6 +262,17 @@ impl Database {
     pub fn categories(&self) -> Result<CategoryTree, Error> {
         Ok(CategoryTree::load(&self.conn)?)
     }
+
+    /// The connection, for core's own modules. It isn't public: every write
+    /// goes through core's API, which keeps the invariants the schema can't
+    /// check alone.
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    pub(crate) fn conn_mut(&mut self) -> &mut Connection {
+        &mut self.conn
+    }
 }
 
 /// Opens a read-write connection to an existing file. Not
