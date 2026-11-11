@@ -316,4 +316,10 @@ fn categories_map_to_coffer_keys() {
     assert_eq!(mapped(11), Some(key("food.groceries")));
     assert_eq!(mapped(8), None, "General says nothing");
     assert_eq!(mapped(12), None, "Transfers includes payments from people");
+
+    // The importer puts the same categories on the lines themselves, for
+    // the commit to store as `preset_map`.
+    for n in 1..=12 {
+        assert_eq!(line(&statement, n).category, mapped(n), "line {n}");
+    }
 }

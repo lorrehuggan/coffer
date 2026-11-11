@@ -44,7 +44,6 @@ pub struct Preset {
     region: String,
     importer: CsvImporter,
     ignore: Vec<String>,
-    category_map: BTreeMap<String, CategoryKey>,
 }
 
 /// Why a preset's TOML can't be used.
@@ -167,13 +166,17 @@ impl Preset {
             return Err(PresetError::CategoryMapSource(source.clone()));
         }
 
-        let importer = CsvImporter::new(raw.name, mapping)?.with_preset(&raw.id);
+        // The importer categorises each line through the map, so its
+        // statements carry the preset's categories (`category_source =
+        // 'preset_map'` once committed).
+        let importer = CsvImporter::new(raw.name, mapping)?
+            .with_preset(&raw.id)
+            .with_category_map(raw.category_map);
         Ok(Preset {
             id: raw.id,
             region: raw.region,
             importer,
             ignore: raw.ignore,
-            category_map: raw.category_map,
         })
     }
 
@@ -210,14 +213,14 @@ impl Preset {
 
     /// The bank's category names mapped to Coffer's category keys.
     pub fn category_map(&self) -> &BTreeMap<String, CategoryKey> {
-        &self.category_map
+        self.importer.category_map()
     }
 
     /// The category key for a row's source category, matched exactly
     /// (case included) after trimming the row's value. `None` when the
     /// preset doesn't map it, which leaves the row for rules or the user.
     pub fn category_for(&self, source_category: &str) -> Option<&CategoryKey> {
-        self.category_map.get(source_category.trim())
+        self.category_map().get(source_category.trim())
     }
 
     /// Header columns in `file` that the preset neither reads nor lists in

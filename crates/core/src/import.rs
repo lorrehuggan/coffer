@@ -9,6 +9,9 @@
 //!    balances the file adds, and how they reconcile. It writes nothing.
 //! 2. [`commit`] does it, in one DB transaction: an `import_batch`, its
 //!    transactions, the file's balances and a record of its flagged rows.
+//!    In the same transaction it categorises the new rows (the preset's
+//!    category map, then the rules, which override it) and suggests
+//!    transfer pairs ([`crate::transfer`]).
 //!    It first plans again inside that transaction and refuses with
 //!    [`Error::Stale`] if anything differs from the preview, so what the
 //!    user saw is what is stored. Flagged rows and a failed reconciliation
@@ -47,10 +50,13 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 
 use crate::account::{self, Account, date_key};
 use crate::balance::{Assertion, DailyMovements};
+use crate::category::CategoryKey;
 use crate::db::Database;
 use crate::id::{AccountId, BalanceId, BatchId, TransactionId};
 use crate::money::{Currency, Money};
+use crate::rule;
 use crate::statement::{RowProblem, SourceFormat, SourceLocation, Statement, StatementLine};
+use crate::transfer::{self, TransferWindow};
 
 pub use dedupe::{FINGERPRINT_VERSION, fingerprint};
 pub use reconcile::{
@@ -100,6 +106,12 @@ pub enum Error {
 
     #[error("an amount is too large to represent")]
     Overflow,
+
+    #[error("rules: {0}")]
+    Rules(#[from] rule::StoreError),
+
+    #[error("transfer detection: {0}")]
+    Transfers(#[from] transfer::Error),
 
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
@@ -381,6 +393,14 @@ pub struct CommitSummary {
     pub transactions: usize,
     pub balances: usize,
     pub flags: usize,
+    /// New rows the preset's category map categorised and no rule
+    /// overrode (`category_source = 'preset_map'`).
+    pub categorized_by_preset: usize,
+    /// New rows a rule categorised (`category_source = 'rule'`).
+    pub categorized_by_rules: usize,
+    /// Transfer pairs suggested for the new rows, each a `suggested`
+    /// `transfer_group`.
+    pub transfer_pairs: usize,
 }
 
 /// Plans importing `statement` into `account`. Reads only.
@@ -418,9 +438,20 @@ pub fn preview(
 /// preview, and with [`Error::NotConfirmed`] when `confirmed` doesn't cover
 /// [`ImportPreview::needs_confirmation`].
 ///
-/// A backup (M1.28) belongs just before this; rules, categories, merchant
-/// names and transfer pairing (M1.14–M1.16, M1.23) run inside the same
-/// transaction once they exist.
+/// After storing the rows, and in the same transaction:
+///
+/// 1. each new row gets the category the preset's map gives it
+///    ([`StatementLine::category`]; `category_source = 'preset_map'`). A
+///    key with no category (the user deleted it) leaves the row
+///    uncategorised;
+/// 2. the rules run on the batch ([`rule::apply_to_batch`]); a matching
+///    `set_category` rule overrides the preset's category;
+/// 3. transfer pairs are suggested for the batch's rows
+///    ([`transfer::detect_for_batch`], [`TransferWindow::DEFAULT`]).
+///
+/// A failure in any step rolls the whole import back. A backup (M1.28)
+/// belongs just before this; merchant names (M1.23) will run in the same
+/// transaction.
 pub fn commit(
     db: &mut Database,
     preview: &ImportPreview,
@@ -466,15 +497,19 @@ pub fn commit(
         transactions: 0,
         balances: 0,
         flags: 0,
+        categorized_by_preset: 0,
+        categorized_by_rules: 0,
+        transfer_pairs: 0,
     };
     {
+        let categories = category_ids(&tx)?;
         let mut insert_row = tx.prepare(
             "INSERT INTO \"transaction\" (account_id, batch_id, date, time, amount_minor, \
              currency, merchant, description_raw, description_normalized, external_id, \
              fingerprint, source_category, source_type, original_amount_minor, \
-             original_currency, note, origin, created_at) \
+             original_currency, note, origin, created_at, category_id, category_source) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-             'imported', ?17)",
+             'imported', ?17, ?18, ?19)",
         )?;
         let mut insert_flag = tx.prepare(
             "INSERT INTO import_flag (batch_id, location_kind, location, kind, detail) \
@@ -488,6 +523,7 @@ pub fn commit(
         for row in preview.rows() {
             match (row.outcome, row.line) {
                 (RowOutcome::New { fingerprint }, Some(line)) => {
+                    let category = line.category.as_ref().and_then(|key| categories.get(key));
                     insert_row.execute(params![
                         account.id,
                         batch,
@@ -506,6 +542,8 @@ pub fn commit(
                         line.original_amount.map(|amount| amount.currency()),
                         line.note,
                         imported_at,
+                        category,
+                        category.map(|_| "preset_map"),
                     ])?;
                     summary.transactions += 1;
                 }
@@ -554,6 +592,18 @@ pub fn commit(
         }
     }
 
+    // Rules override the preset's categories, so they run after the rows
+    // are stored with them.
+    summary.categorized_by_rules = rule::apply_to_batch(&tx, batch)?;
+    let preset: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM \"transaction\" \
+         WHERE batch_id = ?1 AND category_source = 'preset_map'",
+        [batch],
+        |row| row.get(0),
+    )?;
+    summary.categorized_by_preset = usize::try_from(preset).unwrap_or(0);
+    summary.transfer_pairs = transfer::detect_for_batch(&tx, batch, TransferWindow::DEFAULT)?.len();
+
     tx.commit()?;
     tracing::info!(
         batch = %batch,
@@ -561,9 +611,21 @@ pub fn commit(
         transactions = summary.transactions,
         balances = summary.balances,
         flags = summary.flags,
+        categorized_by_preset = summary.categorized_by_preset,
+        categorized_by_rules = summary.categorized_by_rules,
+        transfer_pairs = summary.transfer_pairs,
         "committed an import"
     );
     Ok(Committed::Batch(summary))
+}
+
+/// Every category's ID, by key.
+fn category_ids(conn: &Connection) -> Result<HashMap<CategoryKey, i64>, Error> {
+    let mut statement = conn.prepare("SELECT key, id FROM category")?;
+    let ids = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    Ok(ids)
 }
 
 /// The account must take transactions in the statement's currency.

@@ -19,3 +19,6 @@ tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Reads the committed rows back in the end-to-end import test
+# (tests/commit_uk_monzo.rs): core has no public transaction query yet.
+rusqlite.workspace = true

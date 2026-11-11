@@ -1100,6 +1100,7 @@ dependencies = [
  "coffer-core",
  "csv",
  "encoding_rs",
+ "rusqlite",
  "serde",
  "tempfile",
  "thiserror 2.0.21",

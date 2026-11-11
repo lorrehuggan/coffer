@@ -28,6 +28,9 @@ mod mapping;
 mod normalize;
 mod reader;
 
+use std::collections::BTreeMap;
+
+use coffer_core::category::CategoryKey;
 use coffer_core::statement::{SourceFormat, Statement};
 
 pub use dates::{DateFormat, FormatError, TimeFormat};
@@ -50,6 +53,8 @@ pub struct CsvImporter {
     name: String,
     preset_id: Option<String>,
     mapping: CsvMapping,
+    /// The preset's category map: source category → Coffer category.
+    category_map: BTreeMap<String, CategoryKey>,
 }
 
 impl CsvImporter {
@@ -61,6 +66,7 @@ impl CsvImporter {
             name: name.into(),
             preset_id: None,
             mapping,
+            category_map: BTreeMap::new(),
         })
     }
 
@@ -70,8 +76,22 @@ impl CsvImporter {
         self
     }
 
+    /// Gives each line the category `map` has for its source category
+    /// ([`StatementLine::category`](coffer_core::statement::StatementLine::category)),
+    /// matched exactly after trimming the row's value.
+    pub fn with_category_map(mut self, map: BTreeMap<String, CategoryKey>) -> CsvImporter {
+        self.category_map = map;
+        self
+    }
+
     pub fn mapping(&self) -> &CsvMapping {
         &self.mapping
+    }
+
+    /// The category map lines are categorised with; empty unless a preset
+    /// gave one.
+    pub fn category_map(&self) -> &BTreeMap<String, CategoryKey> {
+        &self.category_map
     }
 
     pub fn preset_id(&self) -> Option<&str> {
@@ -131,7 +151,16 @@ impl Importer for CsvImporter {
         for record in parsed.records() {
             let line = match record.structure_problem(self.mapping.multiline_fields) {
                 Some(problem) => Err(problem),
-                None => positions.line(&self.mapping, &record.fields),
+                None => positions
+                    .line(&self.mapping, &record.fields)
+                    .map(|mut line| {
+                        line.category = line
+                            .source_category
+                            .as_deref()
+                            .and_then(|source| self.category_map.get(source.trim()))
+                            .cloned();
+                        line
+                    }),
             };
             statement.push(record.location(), line);
         }

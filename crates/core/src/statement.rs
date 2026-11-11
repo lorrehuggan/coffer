@@ -17,6 +17,8 @@ use std::fmt;
 
 use chrono::{NaiveDate, NaiveTime};
 
+use crate::category::CategoryKey;
+
 use crate::money::{Currency, Money, ParseAmountError};
 
 /// The file format a statement came from, as `import_batch.format` stores it.
@@ -208,6 +210,11 @@ pub struct StatementLine {
     /// The account's balance after this row, when the file has a running
     /// balance.
     pub balance_after: Option<Money>,
+    /// The category the preset's category map gives `source_category`, if
+    /// it maps it. Not a source field: the commit stores it as the row's
+    /// category with `category_source = 'preset_map'`, and a matching rule
+    /// overrides it.
+    pub category: Option<CategoryKey>,
 }
 
 impl StatementLine {
@@ -225,6 +232,7 @@ impl StatementLine {
             original_amount: None,
             note: None,
             balance_after: None,
+            category: None,
         }
     }
 

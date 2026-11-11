@@ -1076,13 +1076,13 @@ fn undo_takes_user_edits_with_it_and_dissolves_transfers() {
         ]),
     );
     let other = fixture.import_batch(savings, lines(vec![line(2, 10_000, "From current")]));
+    // The commit suggested the pair; the user confirms it.
+    assert_eq!(other.transfer_pairs, 1);
     fixture.sql(
         "UPDATE \"transaction\" SET user_note = 'mine' WHERE description_raw = 'Coffee';
          UPDATE \"transaction\" SET excluded_reason = 'disputed', \
              excluded_at = '2026-11-11T09:00:00.000Z' WHERE description_raw = 'Tea';
-         INSERT INTO transfer_group (status) VALUES ('confirmed');
-         UPDATE \"transaction\" SET transfer_group_id = last_insert_rowid() \
-             WHERE description_raw IN ('To savings', 'From current');",
+         UPDATE transfer_group SET status = 'confirmed';",
     );
 
     let preview = undo_preview(&fixture.db, summary.batch).unwrap();
@@ -1163,4 +1163,221 @@ fn undo_leaves_a_locked_period_alone() {
 
     fixture.sql("UPDATE account SET reconciled_through = '2026-11-02'");
     undo(&mut fixture.db, summary.batch).unwrap();
+}
+
+// Categories, rules and transfers in the commit ------------------------------------
+
+/// A rule matching `text` in the description, setting `category`.
+fn description_rule(db: &mut Database, text: &str, category: &str) -> crate::id::RuleId {
+    use crate::rule::{AmountBounds, MatchField, MatchKind, Pattern, RuleAction, RuleDefinition};
+    let definition = RuleDefinition::new(
+        MatchField::Description,
+        Pattern::new(MatchKind::Contains, text).unwrap(),
+        AmountBounds::ANY,
+        None,
+        vec![RuleAction::SetCategory(CategoryKey::new(category).unwrap())],
+    )
+    .unwrap();
+    crate::rule::create(db, &definition).unwrap()
+}
+
+fn with_category(mut line: StatementLine, key: &str) -> StatementLine {
+    line.category = Some(CategoryKey::new(key).unwrap());
+    line
+}
+
+/// `(category key, category_source, rule_id)` of every transaction, by ID.
+fn categories(fixture: &Fixture) -> Vec<(Option<String>, Option<String>, Option<i64>)> {
+    let mut statement = fixture
+        .db
+        .conn()
+        .prepare(
+            "SELECT c.key, t.category_source, t.rule_id FROM \"transaction\" t \
+             LEFT JOIN category c ON c.id = t.category_id ORDER BY t.id",
+        )
+        .unwrap();
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+fn owned(
+    key: Option<&str>,
+    source: Option<&str>,
+    rule: Option<i64>,
+) -> (Option<String>, Option<String>, Option<i64>) {
+    (key.map(str::to_owned), source.map(str::to_owned), rule)
+}
+
+#[test]
+fn commit_stores_the_preset_category() {
+    let mut fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let summary = fixture.import_batch(
+        account,
+        lines(vec![
+            with_category(line(3, -500, "Coffee"), "food.eating_out"),
+            line(4, -900, "Something else"),
+        ]),
+    );
+    assert_eq!(summary.categorized_by_preset, 1);
+    assert_eq!(summary.categorized_by_rules, 0);
+    assert_eq!(
+        categories(&fixture),
+        vec![
+            owned(Some("food.eating_out"), Some("preset_map"), None),
+            owned(None, None, None),
+        ]
+    );
+}
+
+#[test]
+fn a_preset_category_that_no_longer_exists_leaves_the_row_uncategorised() {
+    let mut fixture = Fixture::new();
+    let account = fixture.account("Current");
+    fixture.sql("DELETE FROM category WHERE key = 'food.takeaway'");
+    let summary = fixture.import_batch(
+        account,
+        lines(vec![with_category(
+            line(3, -1_500, "Pizza"),
+            "food.takeaway",
+        )]),
+    );
+    assert_eq!(
+        (summary.transactions, summary.categorized_by_preset),
+        (1, 0)
+    );
+    assert_eq!(categories(&fixture), vec![owned(None, None, None)]);
+}
+
+#[test]
+fn rules_override_the_preset_category_and_fill_the_rest() {
+    let mut fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let rule = description_rule(&mut fixture.db, "bean there", "food.takeaway");
+    let summary = fixture.import_batch(
+        account,
+        lines(vec![
+            // The preset says eating out; the user's rule says takeaway.
+            with_category(line(3, -340, "BEAN THERE  LONDON"), "food.eating_out"),
+            // No preset category: the rule fills it.
+            line(4, -340, "Bean There"),
+            // The rule doesn't match: the preset's category stays.
+            with_category(line(5, -6_125, "Example Energy"), "bills.energy"),
+        ]),
+    );
+    assert_eq!(summary.categorized_by_rules, 2);
+    assert_eq!(summary.categorized_by_preset, 1);
+    assert_eq!(
+        categories(&fixture),
+        vec![
+            owned(Some("food.takeaway"), Some("rule"), Some(rule.get())),
+            owned(Some("food.takeaway"), Some("rule"), Some(rule.get())),
+            owned(Some("bills.energy"), Some("preset_map"), None),
+        ]
+    );
+}
+
+#[test]
+fn rules_run_only_on_the_new_batch() {
+    let mut fixture = Fixture::new();
+    let account = fixture.account("Current");
+    fixture.import_batch(account, lines(vec![line(3, -340, "Bean There")]));
+    // Rule edits don't re-run on history (decision record "rules", point 4).
+    description_rule(&mut fixture.db, "bean there", "food.takeaway");
+    fixture.import_batch(account, lines(vec![line(4, -340, "Bean There")]));
+    let rule = fixture.count("SELECT id FROM rule");
+    assert_eq!(
+        categories(&fixture),
+        vec![
+            owned(None, None, None),
+            owned(Some("food.takeaway"), Some("rule"), Some(rule)),
+        ]
+    );
+}
+
+#[test]
+fn a_failing_rule_rolls_the_whole_import_back() {
+    let mut fixture = Fixture::new();
+    let account = fixture.account("Current");
+    description_rule(&mut fixture.db, "pizza", "food.takeaway");
+    // The rule's category is gone: applying it is an error, not a skip.
+    fixture.sql("DELETE FROM category WHERE key = 'food.takeaway'");
+    let preview = fixture.preview(account, lines(vec![line(3, -1_500, "Fake Pizza Co")]));
+    let confirm = preview.needs_confirmation();
+    assert!(matches!(
+        commit(&mut fixture.db, &preview, confirm),
+        Err(Error::Rules(_))
+    ));
+    assert_eq!(fixture.count("SELECT COUNT(*) FROM import_batch"), 0);
+    assert_eq!(fixture.count("SELECT COUNT(*) FROM \"transaction\""), 0);
+}
+
+#[test]
+fn commit_suggests_transfer_pairs_across_accounts() {
+    let mut fixture = Fixture::new();
+    let current = fixture.account("Current");
+    let savings = fixture.account("Savings");
+    let out = fixture.import_batch(
+        current,
+        lines(vec![
+            line(3, -20_000, "To savings"),
+            line(3, -500, "Coffee"),
+        ]),
+    );
+    assert_eq!(out.transfer_pairs, 0);
+    // Two days later, inside the default three-day window.
+    let arrived = fixture.import_batch(savings, lines(vec![line(5, 20_000, "From current")]));
+    assert_eq!(arrived.transfer_pairs, 1);
+    assert_eq!(
+        fixture.count(
+            "SELECT COUNT(*) FROM \"transaction\" t JOIN transfer_group g \
+             ON g.id = t.transfer_group_id WHERE g.status = 'suggested' \
+             AND t.amount_minor IN (-20000, 20000)"
+        ),
+        2
+    );
+    // Undoing either side dissolves the pair (decision record "import
+    // commit", point 8); importing it again pairs it again.
+    let undone = undo(&mut fixture.db, arrived.batch).unwrap();
+    assert_eq!(undone.transfers, 1);
+    assert_eq!(fixture.count("SELECT COUNT(*) FROM transfer_group"), 0);
+    let again = fixture.import_batch(savings, lines(vec![line(5, 20_000, "From current")]));
+    assert_eq!(again.transfer_pairs, 1);
+}
+
+#[test]
+fn transfers_outside_the_window_are_not_suggested() {
+    let mut fixture = Fixture::new();
+    let current = fixture.account("Current");
+    let savings = fixture.account("Savings");
+    fixture.import_batch(current, lines(vec![line(3, -20_000, "To savings")]));
+    let arrived = fixture.import_batch(savings, lines(vec![line(7, 20_000, "From current")]));
+    assert_eq!(arrived.transfer_pairs, 0);
+    assert_eq!(fixture.count("SELECT COUNT(*) FROM transfer_group"), 0);
+}
+
+#[test]
+fn transfer_pairing_leaves_categories_alone() {
+    let mut fixture = Fixture::new();
+    let current = fixture.account("Current");
+    let savings = fixture.account("Savings");
+    fixture.import_batch(
+        current,
+        lines(vec![with_category(
+            line(3, -20_000, "To savings"),
+            "transfer.savings",
+        )]),
+    );
+    fixture.import_batch(savings, lines(vec![line(3, 20_000, "From current")]));
+    assert_eq!(
+        categories(&fixture),
+        vec![
+            owned(Some("transfer.savings"), Some("preset_map"), None),
+            owned(None, None, None),
+        ]
+    );
+    assert_eq!(fixture.count("SELECT COUNT(*) FROM transfer_group"), 1);
 }

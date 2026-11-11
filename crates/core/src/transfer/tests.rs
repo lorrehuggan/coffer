@@ -56,10 +56,27 @@ impl Fixture {
             statement.push(SourceLocation::Line(index as u64 + 2), Ok(line));
         }
         let preview = import::preview(&self.db, account, "statement.csv", statement).unwrap();
-        match import::commit(&mut self.db, &preview, Confirmations::default()).unwrap() {
+        let batch = match import::commit(&mut self.db, &preview, Confirmations::default()).unwrap()
+        {
             Committed::Batch(summary) => summary.batch,
             Committed::NothingNew => panic!("expected a new batch"),
-        }
+        };
+        // The commit suggests pairs itself; take those back so each test
+        // runs detection on its own terms. Any group with one of the new
+        // rows is the commit's: detection never touches a grouped row.
+        self.db
+            .conn()
+            .execute_batch(&format!(
+                "CREATE TEMP TABLE committed_groups AS \
+                     SELECT DISTINCT transfer_group_id AS id FROM \"transaction\" \
+                     WHERE batch_id = {batch} AND transfer_group_id IS NOT NULL; \
+                 UPDATE \"transaction\" SET transfer_group_id = NULL \
+                     WHERE transfer_group_id IN (SELECT id FROM committed_groups); \
+                 DELETE FROM transfer_group WHERE id IN (SELECT id FROM committed_groups); \
+                 DROP TABLE committed_groups;"
+            ))
+            .unwrap();
+        batch
     }
 
     /// A manual transaction (no batch), in the account's currency.
