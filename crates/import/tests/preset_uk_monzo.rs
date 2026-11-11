@@ -7,7 +7,9 @@ use std::path::Path;
 use chrono::{NaiveDate, NaiveTime};
 use coffer_core::category::CategoryKey;
 use coffer_core::money::{Currency, Money};
-use coffer_core::statement::{RowProblem, SourceLocation, Statement, StatementLine};
+use coffer_core::statement::{
+    RowProblem, SourceLocation, Statement, StatementLine, SubAccountKind, SubAccountRef,
+};
 use coffer_import::preset::{Preset, Presets};
 use coffer_import::{AnyImporter, Detection, Importer, SourceFile, detect};
 
@@ -105,7 +107,7 @@ fn every_row_imports_in_file_order() {
         .lines()
         .map(|(location, line)| (location, line.external_id.clone().unwrap()))
         .collect();
-    let expected: Vec<_> = [2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14]
+    let expected: Vec<_> = [2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16]
         .into_iter()
         .zip(1..)
         .map(|(at, n)| (SourceLocation::Line(at), format!("tx_0000FAKE{n:015}")))
@@ -129,6 +131,8 @@ fn amounts_dates_and_times() {
         (10, 9, "18:00:00", 5_000),
         (11, 10, "16:20:37", -415),
         (12, 11, "21:30:00", 1_200),
+        (13, 12, "09:00:00", -7_500),
+        (14, 13, "09:00:00", -2_500),
     ];
     for (n, day, at, minor) in expected {
         let line = line(&statement, n);
@@ -148,7 +152,9 @@ fn amounts_dates_and_times() {
             - 6_125
             + 5_000
             - 415
-            + 1_200))
+            + 1_200
+            - 7_500
+            - 2_500))
     );
 }
 
@@ -213,19 +219,61 @@ fn a_card_payment_abroad_keeps_the_local_amount() {
     assert_eq!(lunch.description_raw, "CAFE LUMIERE PARIS FRA");
 }
 
-/// Pot transfers are ordinary rows until M1.17 recognises pots: the pot's
-/// name as the merchant and its ID as the description.
+/// Pot transfers keep the pot's name as the merchant and its ID as the
+/// description, like any row, and carry the pot (`[sub_account_transfer]`)
+/// for the commit to mirror: into and out of one pot, into a second pot,
+/// and into the first again after the user renamed it (same ID).
 #[test]
-fn pot_transfers_import_as_ordinary_rows() {
+fn pot_transfers_name_their_pot() {
     let statement = statement();
-    for (n, minor) in [(2, -20_000), (10, 5_000)] {
+    let rainy = "pot_0000FAKEPOT00000000001";
+    let holiday = "pot_0000FAKEPOT00000000002";
+    for (n, minor, name, key) in [
+        (2, -20_000, "Rainy Day", rainy),
+        (10, 5_000, "Rainy Day", rainy),
+        (13, -7_500, "Holiday Fund", holiday),
+        (14, -2_500, "Emergency Fund", rainy),
+    ] {
         let pot = line(&statement, n);
         assert_eq!(pot.amount, gbp(minor));
         assert_eq!(pot.source_type.as_deref(), Some("Pot transfer"));
         assert_eq!(pot.source_category.as_deref(), Some("Savings"));
-        assert_eq!(pot.merchant.as_deref(), Some("Rainy Day"));
-        assert_eq!(pot.description_raw, "pot_0000FAKEPOT00000000001");
+        assert_eq!(pot.merchant.as_deref(), Some(name));
+        assert_eq!(pot.description_raw, key);
+        assert_eq!(
+            pot.sub_account,
+            Some(SubAccountRef {
+                kind: SubAccountKind::Pot,
+                key: key.to_owned(),
+                name: Some(name.to_owned()),
+            }),
+            "tx {n}"
+        );
     }
+    let others = statement
+        .lines()
+        .filter(|(_, line)| line.source_type.as_deref() != Some("Pot transfer"));
+    for (location, line) in others {
+        assert_eq!(line.sub_account, None, "{location}");
+    }
+}
+
+/// A pot transfer without the pot's ID is flagged, not imported without its
+/// pot side.
+#[test]
+fn a_pot_transfer_without_its_pot_id_is_flagged() {
+    let text = fixture_text().replace(",pot_0000FAKEPOT00000000002,", ",,");
+    let file = SourceFile::from_bytes("monzo.csv", text);
+    let statement = monzo().importer().import(&file).unwrap();
+    assert_eq!(
+        statement.flagged().collect::<Vec<_>>(),
+        [(
+            SourceLocation::Line(15),
+            &RowProblem::SubAccountKeyMissing {
+                kind: SubAccountKind::Pot
+            }
+        )]
+    );
 }
 
 /// A zero-amount card check is kept, not dropped.
@@ -319,7 +367,7 @@ fn categories_map_to_coffer_keys() {
 
     // The importer puts the same categories on the lines themselves, for
     // the commit to store as `preset_map`.
-    for n in 1..=12 {
+    for n in 1..=14 {
         assert_eq!(line(&statement, n).category, mapped(n), "line {n}");
     }
 }

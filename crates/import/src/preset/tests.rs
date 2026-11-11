@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use coffer_core::money::{Currency, DecimalMark};
-use coffer_core::statement::RowProblem;
+use coffer_core::statement::{RowProblem, SubAccountKind, SubAccountRef};
 
 use super::*;
 use crate::csv::{DateFormat, Delimiter, TimeFormat};
@@ -343,12 +343,9 @@ fn unknown_and_missing_keys_are_refused() {
     let missing = toml_error(&MINIMAL.replace(r#"currency = "GBP""#, ""));
     assert!(missing.contains("currency"), "{missing}");
 
-    // Sub-account transfers come with M1.17; until then they're refused,
-    // not ignored.
-    let later = toml_error(&format!(
-        "{MINIMAL}\n[sub_account_transfer]\nkind = \"pot\"\n"
-    ));
-    assert!(later.contains("sub_account_transfer"), "{later}");
+    // An unknown table is refused too (more in `sub_account_transfer_*`).
+    let table = toml_error(&format!("{MINIMAL}\n[sub_accounts]\nkind = \"pot\"\n"));
+    assert!(table.contains("sub_accounts"), "{table}");
 }
 
 #[test]
@@ -705,4 +702,201 @@ fn bundled_presets_map_to_default_categories() {
             );
         }
     }
+}
+
+// Sub-account transfers (M1.17) -------------------------------------------------
+
+/// [`MINIMAL`] with the columns a pot transfer needs and the section.
+const POTS: &str = r#"
+id = "uk-test"
+name = "Test"
+region = "uk"
+currency = "GBP"
+date = { column = "Date", format = "%d/%m/%Y" }
+amount = { column = "Amount" }
+description = { column = "Description" }
+merchant = { column = "Name" }
+source_type = { column = "Type" }
+
+[sub_account_transfer]
+kind = "pot"
+when = { column = "Type", is = "Pot transfer" }
+key = { column = "Description" }
+name = { column = "Name" }
+"#;
+
+#[test]
+fn sub_account_transfer_is_read() {
+    let preset = Preset::from_toml(POTS).unwrap();
+    assert_eq!(
+        preset.sub_account_transfer(),
+        Some(&SubAccountTransfer {
+            kind: SubAccountKind::Pot,
+            match_column: named("Type"),
+            match_value: "Pot transfer".into(),
+            key: named("Description"),
+            name: Some(named("Name")),
+        })
+    );
+    assert_eq!(
+        Preset::from_toml(MINIMAL).unwrap().sub_account_transfer(),
+        None
+    );
+
+    // `name` is optional; positions count from 1 here too.
+    let unnamed = POTS.replace("\nname = { column = \"Name\" }\n", "\n");
+    let preset = Preset::from_toml(&unnamed).unwrap();
+    assert_eq!(preset.sub_account_transfer().unwrap().name, None);
+    let by_position = Preset::from_toml(
+        &POTS.replace("key = { column = \"Description\" }", "key = { column = 3 }"),
+    )
+    .unwrap();
+    assert_eq!(
+        by_position.sub_account_transfer().unwrap().key,
+        Column::Index(2)
+    );
+}
+
+#[test]
+fn sub_account_transfer_unknown_and_missing_keys_are_refused() {
+    let typo = toml_error(&POTS.replace("key = {", "kee = {"));
+    assert!(typo.contains("kee"), "{typo}");
+    let inner = toml_error(&POTS.replace("is = \"Pot transfer\"", "equals = \"Pot transfer\""));
+    assert!(inner.contains("equals"), "{inner}");
+    let extra = toml_error(&format!("{POTS}balance = {{ column = \"Balance\" }}\n"));
+    assert!(extra.contains("balance"), "{extra}");
+    let no_key = toml_error(&POTS.replace("key = { column = \"Description\" }\n", ""));
+    assert!(no_key.contains("key"), "{no_key}");
+    let no_when =
+        toml_error(&POTS.replace("when = { column = \"Type\", is = \"Pot transfer\" }\n", ""));
+    assert!(no_when.contains("when"), "{no_when}");
+    let no_kind = toml_error(&POTS.replace("kind = \"pot\"\n", ""));
+    assert!(no_kind.contains("kind"), "{no_kind}");
+}
+
+#[test]
+fn sub_account_transfer_values_are_checked_where_they_are_written() {
+    let line_of = |text: &str, needle: &str| {
+        text.lines()
+            .position(|line| line.contains(needle))
+            .map(|index| index + 1)
+            .unwrap()
+    };
+    for (from, to, expected) in [
+        ("kind = \"pot\"", "kind = \"space\"", "unknown variant"),
+        ("kind = \"pot\"", "kind = \"Pot\"", "unknown variant"),
+        ("is = \"Pot transfer\"", "is = \"\"", "can't be empty"),
+        (
+            "is = \"Pot transfer\"",
+            "is = \" Pot transfer\"",
+            "start or end with a space",
+        ),
+        ("is = \"Pot transfer\"", "is = 3", "a string"),
+        (
+            "key = { column = \"Description\" }",
+            "key = { column = 0 }",
+            "count from 1",
+        ),
+        (
+            "key = { column = \"Description\" }",
+            "key = { column = \" \" }",
+            "can't be empty",
+        ),
+        (
+            "name = { column = \"Name\" }",
+            "name = { column = -1 }",
+            "count from 1",
+        ),
+    ] {
+        let text = POTS.replace(from, to);
+        let message = toml_error(&text);
+        assert!(message.contains(expected), "{to}: {message}");
+        let line = line_of(&text, to);
+        assert!(
+            message.contains(&format!("line {line}")),
+            "{to}: the error points at line {line}: {message}"
+        );
+    }
+}
+
+#[test]
+fn sub_account_columns_count_as_read() {
+    // A column only the section reads is read, not "unread", and can't be
+    // ignored.
+    let text = POTS.replace(
+        "key = { column = \"Description\" }",
+        "key = { column = \"Pot\" }",
+    );
+    let preset = Preset::from_toml(&text).unwrap();
+    let file = SourceFile::from_bytes(
+        "s.csv",
+        "Date,Amount,Description,Name,Type,Pot\n01/11/2026,-1.00,a,b,c,\n",
+    );
+    let parsed = preset.importer().parse(&file).unwrap();
+    assert_eq!(preset.unread_columns(&parsed), Vec::<&str>::new());
+    assert_eq!(preset.importer().detect(&file), Detection::Source);
+    let without_pot = SourceFile::from_bytes(
+        "s.csv",
+        "Date,Amount,Description,Name,Type\n01/11/2026,-1.00,a,b,c\n",
+    );
+    assert_eq!(preset.importer().detect(&without_pot), Detection::Format);
+
+    assert!(matches!(
+        error(&text.replace("[sub_account_transfer]", "ignore = [\"Pot\"]\n\n[sub_account_transfer]")),
+        PresetError::IgnoredColumnRead(name) if name == "Pot"
+    ));
+}
+
+#[test]
+fn sub_account_transfer_rows_carry_their_pot() {
+    let preset = Preset::from_toml(POTS).unwrap();
+    let file = SourceFile::from_bytes(
+        "s.csv",
+        "Date,Amount,Description,Name,Type\n\
+         01/11/2026,-20.00,pot_1,Rainy Day,Pot transfer\n\
+         02/11/2026,5.00, pot_1 , Rainy  Day ,  Pot transfer \n\
+         03/11/2026,-1.00,pot_2,,Pot transfer\n\
+         04/11/2026,-3.40,BEAN THERE,Bean There,Card payment\n\
+         05/11/2026,-1.00,pot_3,Holiday,pot transfer\n\
+         06/11/2026,-1.00,  ,Holiday,Pot transfer\n",
+    );
+    let statement = preset.importer().import(&file).unwrap();
+    let pot = |key: &str, name: Option<&str>| {
+        Some(SubAccountRef {
+            kind: SubAccountKind::Pot,
+            key: key.into(),
+            name: name.map(Into::into),
+        })
+    };
+    let read: Vec<_> = statement
+        .rows()
+        .iter()
+        .map(|row| row.outcome.as_ref().map(|line| line.sub_account.clone()))
+        .collect();
+    assert_eq!(
+        read,
+        [
+            Ok(pot("pot_1", Some("Rainy Day"))),
+            // Key and name trimmed; the type matches after trimming.
+            Ok(pot("pot_1", Some("Rainy  Day"))),
+            Ok(pot("pot_2", None)),
+            Ok(None),
+            // Matched exactly, case included.
+            Ok(None),
+            Err(&RowProblem::SubAccountKeyMissing {
+                kind: SubAccountKind::Pot
+            }),
+        ]
+    );
+    // The rest of the row reads as before: the description is the pot ID as
+    // written.
+    let (_, second) = statement.lines().nth(1).unwrap();
+    assert_eq!(second.description_raw, " pot_1 ");
+    assert_eq!(
+        RowProblem::SubAccountKeyMissing {
+            kind: SubAccountKind::Pot
+        }
+        .to_string(),
+        "the row is a pot transfer, but the pot's ID is missing"
+    );
 }

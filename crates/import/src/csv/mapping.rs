@@ -3,6 +3,7 @@
 use std::fmt;
 
 use coffer_core::money::{Currency, DecimalMark};
+use coffer_core::statement::SubAccountKind;
 
 use super::dates::{DateFormat, TimeFormat};
 use super::encoding::TextEncoding;
@@ -111,6 +112,33 @@ pub struct OriginalAmountColumns {
     pub currency: Column,
 }
 
+/// How an export marks a transfer between the account and one of its
+/// sub-accounts (a Monzo Pot), and which columns say which sub-account.
+///
+/// A row is such a transfer when its `match_column`, trimmed, is exactly
+/// `match_value` (case included). Its line then carries a
+/// [`SubAccountRef`](coffer_core::statement::SubAccountRef) with the
+/// trimmed `key` and `name`; a matching row with a blank key is flagged
+/// ([`RowProblem::SubAccountKeyMissing`]). Other rows are read as usual.
+///
+/// [`RowProblem::SubAccountKeyMissing`]: coffer_core::statement::RowProblem::SubAccountKeyMissing
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubAccountTransfer {
+    pub kind: SubAccountKind,
+    /// The column that says a row is a sub-account transfer (Monzo's
+    /// `Type`).
+    pub match_column: Column,
+    /// Its value on such a row (`Pot transfer`): not empty, and without
+    /// spaces at either end.
+    pub match_value: String,
+    /// The sub-account's stable ID at the bank (Monzo's `Description`,
+    /// `pot_…`), which finds the pot again on every import.
+    pub key: Column,
+    /// The sub-account's name (Monzo's `Name`), for a pot the import
+    /// creates. Optional.
+    pub name: Option<Column>,
+}
+
 /// How to read one kind of CSV export: the shape a preset
 /// ([`crate::preset`]) or the mapping screen produces.
 ///
@@ -164,6 +192,9 @@ pub struct CsvMapping {
     pub note: Option<Column>,
     /// A running balance after each row.
     pub balance: Option<Column>,
+    /// Rows that are transfers to or from a sub-account (a pot), if the
+    /// export has them.
+    pub sub_account_transfer: Option<SubAccountTransfer>,
 }
 
 impl CsvMapping {
@@ -196,6 +227,7 @@ impl CsvMapping {
             original_amount: None,
             note: None,
             balance: None,
+            sub_account_transfer: None,
         }
     }
 
@@ -209,6 +241,11 @@ impl CsvMapping {
             .original_amount
             .iter()
             .flat_map(|original| [&original.amount, &original.currency]);
+        let sub_account = self.sub_account_transfer.iter().flat_map(|transfer| {
+            [&transfer.match_column, &transfer.key]
+                .into_iter()
+                .chain(&transfer.name)
+        });
         std::iter::once(&self.date.column)
             .chain(self.time.as_ref().map(|time| &time.column))
             .chain(amount)
@@ -221,6 +258,7 @@ impl CsvMapping {
             .chain(original)
             .chain(&self.note)
             .chain(&self.balance)
+            .chain(sub_account)
     }
 
     pub(super) fn validate(&self) -> Result<(), MappingError> {
@@ -231,6 +269,14 @@ impl CsvMapping {
             && debit == credit
         {
             return Err(MappingError::SameDebitAndCredit);
+        }
+        if let Some(transfer) = &self.sub_account_transfer
+            && (transfer.match_value.is_empty()
+                || transfer.match_value.trim() != transfer.match_value)
+        {
+            return Err(MappingError::SubAccountMatchValue(
+                transfer.match_value.clone(),
+            ));
         }
         if !self.has_header
             && let Some(Column::Named(name)) = self
@@ -254,4 +300,9 @@ pub enum MappingError {
 
     #[error("the column “{0}” is named, but the file has no header row to find it in")]
     NamedColumnWithoutHeader(String),
+
+    #[error(
+        "the value that marks a sub-account transfer is empty or starts or ends with a space: {0:?}"
+    )]
+    SubAccountMatchValue(String),
 }

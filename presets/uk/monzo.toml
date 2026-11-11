@@ -86,6 +86,20 @@ note = { column = "Notes and #tags" }
 # balance comes from the user.
 ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money In"]
 
+# Pots. Monzo lists money moving into and out of a pot as rows of this account,
+# with "Pot transfer" as the `Type`, the pot's ID ("pot_…") as the
+# `Description` and the pot's name as the `Name`. Each such row is mirrored
+# onto the pot, a sub-account of the account imported into, and the two are
+# recorded as a confirmed transfer. The pot is found by its ID, never by name:
+# the user can rename a pot in the app, and later rows then carry the new name.
+# The import creates a pot the first time it sees its ID. A pot transfer with
+# no ID is flagged rather than imported without its pot side.
+[sub_account_transfer]
+kind = "pot"
+when = { column = "Type", is = "Pot transfer" }
+key = { column = "Description" }
+name = { column = "Name" }
+
 # Monzo's built-in categories → Coffer's category keys, matched exactly (case
 # included). Not mapped, so left for rules or the user:
 # - General: Monzo's catch-all, which says nothing.
@@ -96,7 +110,7 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
 #   between the user's own accounts. Transfer-pair detection finds those.
 # - Categories the user created in the app.
 # "Savings" is what Monzo gives pot transfers: money moving between the user's
-# own accounts, not spending. (Recognising pots as sub-accounts is M1.17.)
+# own accounts, not spending. (The pot side is `[sub_account_transfer]`, below.)
 # Family and Finances map to Coffer's group of the same name, since Monzo's
 # category spans several of its subcategories.
 [category_map]

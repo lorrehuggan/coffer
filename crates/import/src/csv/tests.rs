@@ -830,3 +830,51 @@ fn debug_output_leaves_out_transaction_text() {
     assert!(!debug.contains("tx_0001"), "{debug}");
     assert!(debug.contains("records: 10"), "{debug}");
 }
+
+// Sub-account transfers (M1.17) -------------------------------------------------
+
+fn pot_transfers(match_value: &str) -> SubAccountTransfer {
+    SubAccountTransfer {
+        kind: coffer_core::statement::SubAccountKind::Pot,
+        match_column: Column::Index(0),
+        match_value: match_value.to_owned(),
+        key: Column::Index(2),
+        name: None,
+    }
+}
+
+#[test]
+fn a_sub_account_match_value_must_be_trimmed_and_not_empty() {
+    for bad in ["", " Pot transfer", "Pot transfer\t"] {
+        let mut mapping = simple_mapping();
+        mapping.has_header = false;
+        mapping.date.column = Column::Index(1);
+        mapping.amount = AmountColumns::Signed(Column::Index(3));
+        mapping.description = vec![Column::Index(2)];
+        mapping.sub_account_transfer = Some(pot_transfers(bad));
+        assert_eq!(
+            CsvImporter::new("x", mapping).err(),
+            Some(MappingError::SubAccountMatchValue(bad.to_owned())),
+            "{bad:?}"
+        );
+    }
+}
+
+#[test]
+fn a_sub_account_column_must_exist_in_the_file() {
+    let mut mapping = simple_mapping();
+    mapping.sub_account_transfer = Some(SubAccountTransfer {
+        match_column: named("Type"),
+        key: named("Pot"),
+        ..pot_transfers("Pot transfer")
+    });
+    let importer = importer(mapping);
+    let file = SourceFile::from_bytes(
+        "s.csv",
+        "Date,Amount,Description,Type\n01/11/2026,-1.00,a,b\n",
+    );
+    assert!(matches!(
+        importer.import(&file),
+        Err(ImportError::MissingColumn { column }) if column.contains("Pot")
+    ));
+}
