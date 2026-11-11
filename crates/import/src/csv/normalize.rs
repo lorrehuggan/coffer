@@ -1,7 +1,7 @@
 //! Turning CSV records into statement lines.
 
 use coffer_core::money::{Currency, DecimalMark, Money, ParseAmountError};
-use coffer_core::statement::{Field, RowProblem, StatementLine};
+use coffer_core::statement::{Field, RowProblem, StatementLine, SubAccountRef};
 
 use super::mapping::{AmountColumns, Column, CsvMapping, SplitSigns};
 use super::reader::{CsvFile, fits_width};
@@ -32,6 +32,15 @@ pub(super) struct Positions {
     original_amount: Option<(usize, usize)>,
     note: Option<usize>,
     balance: Option<usize>,
+    sub_account: Option<SubAccountAt>,
+}
+
+/// [`SubAccountTransfer`](super::SubAccountTransfer)'s columns, as
+/// positions.
+struct SubAccountAt {
+    match_column: usize,
+    key: usize,
+    name: Option<usize>,
 }
 
 impl Positions {
@@ -105,6 +114,17 @@ impl Positions {
                 .transpose()?,
             note: optional(&mapping.note)?,
             balance: optional(&mapping.balance)?,
+            sub_account: mapping
+                .sub_account_transfer
+                .as_ref()
+                .map(|transfer| {
+                    Ok::<_, ImportError>(SubAccountAt {
+                        match_column: at(&transfer.match_column)?,
+                        key: at(&transfer.key)?,
+                        name: optional(&transfer.name)?,
+                    })
+                })
+                .transpose()?,
         })
     }
 
@@ -188,6 +208,26 @@ impl Positions {
         line.original_amount = original_amount;
         line.note = optional(self.note).and_then(text);
         line.balance_after = balance_after;
+        if let (Some(at), Some(transfer)) = (&self.sub_account, &mapping.sub_account_transfer)
+            && get(at.match_column).trim() == transfer.match_value
+        {
+            let key = get(at.key).trim();
+            if key.is_empty() {
+                return Err(RowProblem::SubAccountKeyMissing {
+                    kind: transfer.kind,
+                });
+            }
+            line.sub_account = Some(SubAccountRef {
+                kind: transfer.kind,
+                key: key.to_owned(),
+                name: at
+                    .name
+                    .map(get)
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned),
+            });
+        }
         Ok(line)
     }
 }

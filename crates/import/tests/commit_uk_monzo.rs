@@ -93,9 +93,9 @@ fn monzo_imports_with_preset_categories_rules_and_transfers() {
 
     let summary = batch(commit(&mut db, current));
     assert_eq!(summary.categorized_by_rules, 2, "lines 3 and 4");
-    // Every line the map covers (10 of 12), less the two the rule took.
-    assert_eq!(summary.categorized_by_preset, 8);
-    // Pot transfers have no pot account yet (M1.17), so nothing pairs.
+    // Every line the map covers (12 of 14), less the two the rule took.
+    assert_eq!(summary.categorized_by_preset, 10);
+    // Nothing pairs within one account.
     assert_eq!(summary.transfer_pairs, 0);
 
     assert_eq!(category_of(&db, 3), pair("rule", "food.takeaway"));

@@ -11,6 +11,7 @@ use std::fmt;
 
 use coffer_core::category::CategoryKey;
 use coffer_core::money::{Currency, DecimalMark};
+use coffer_core::statement::SubAccountKind;
 use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
 
@@ -48,6 +49,7 @@ pub(super) struct RawPreset {
     pub ignore: Vec<String>,
     #[serde(default)]
     pub category_map: BTreeMap<String, CategoryKey>,
+    pub sub_account_transfer: Option<RawSubAccountTransfer>,
 }
 
 fn yes() -> bool {
@@ -118,6 +120,62 @@ pub(super) struct RawDescription {
 pub(super) struct RawOriginalAmount {
     pub column: PresetColumn,
     pub currency_column: PresetColumn,
+}
+
+/// ```toml
+/// [sub_account_transfer]
+/// kind = "pot"
+/// when = { column = "Type", is = "Pot transfer" }
+/// key = { column = "Description" }
+/// name = { column = "Name" }
+/// ```
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawSubAccountTransfer {
+    pub kind: RawSubAccountKind,
+    pub when: RawWhen,
+    pub key: RawColumn,
+    pub name: Option<RawColumn>,
+}
+
+/// Only `pot` so far.
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum RawSubAccountKind {
+    Pot,
+}
+
+impl From<RawSubAccountKind> for SubAccountKind {
+    fn from(kind: RawSubAccountKind) -> SubAccountKind {
+        match kind {
+            RawSubAccountKind::Pot => SubAccountKind::Pot,
+        }
+    }
+}
+
+/// `{ column = "Type", is = "Pot transfer" }`
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawWhen {
+    pub column: PresetColumn,
+    pub is: PresetMatchValue,
+}
+
+/// A value a row's column is compared with, exactly after trimming the
+/// row's value; so it must be trimmed itself, and not empty.
+pub(super) struct PresetMatchValue(pub String);
+
+impl<'de> Deserialize<'de> for PresetMatchValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<PresetMatchValue, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        if value.is_empty() || value.trim() != value {
+            return Err(de::Error::custom(
+                "the value to match can't be empty or start or end with a space, since the \
+                 row's value is trimmed before comparing",
+            ));
+        }
+        Ok(PresetMatchValue(value))
+    }
 }
 
 /// A column as a preset writes it: a header name (a string) or a 1-based
