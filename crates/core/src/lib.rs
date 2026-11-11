@@ -15,3 +15,4 @@ pub mod money;
 pub mod paths;
 pub mod rule;
 pub mod statement;
+pub mod transfer;
