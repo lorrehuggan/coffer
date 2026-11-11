@@ -403,6 +403,39 @@ own QIF parser. Avoid GPL crates (`ofxy`, `tree_magic_mini`'s GPL data feature).
    via the preset; run transfer-pair detection; match schedule occurrences; queue
    near-duplicate candidates; record balances and check assertions.
 
+### The `Importer` trait
+
+M1.6, decided 2026-11-10. Steps 1–3 above are one importer each (CSV, OFX, later QIF,
+CAMT.053, MT940); steps 4–7 are core's and don't depend on the format.
+
+- **The normalized form lives in core.** `coffer_core::statement::Statement` is what every
+  importer produces and what dedupe, reconciliation and the commit consume, so it sits in
+  `core` (which can't depend on `import`). It has the format, the preset ID if any, one
+  currency, the file's rows in order and any statement-level balances (`LEDGERBAL`). A
+  statement isn't tied to an account: the user picks it at import, and the commit checks
+  the currencies agree.
+- **Rows are never dropped.** Each row is a `StatementLine` or a `RowProblem`, at its
+  `SourceLocation` (line in a text file, entry in a structured one), kept in file order
+  for the fingerprint's occurrence index and running balances. A line whose amount or
+  running balance isn't in the statement's currency is flagged as it's added; a
+  statement-level balance in another currency fails the file. Only a file that can't be
+  read as a whole is an `ImportError`. Neither kind of error contains the file's text.
+- **`description_normalized` is computed, not carried**
+  (`statement::normalize_description`: whitespace collapsed, trimmed, Unicode uppercase),
+  so it can't disagree with the raw text. Changing it changes the fingerprint.
+- **Three traits in `coffer-import`.** `Detect` (`name`, `format`, `detect`) says what an
+  importer is and how well a file fits: `No < Extension < Format < Source` (`Source` is a
+  preset's own header row, `Format` is merely valid CSV or OFX). `Importer: Detect` adds
+  `parse` (into the format's own `Parsed` type) and `normalize` (into a `Statement`).
+  `AnyImporter: Detect`, implemented for every `Importer`, hides `Parsed` so importers
+  can be listed as `&dyn AnyImporter` and adds `import` (parse, then normalize). Each
+  method has one home, so calls never need disambiguating.
+- **Choosing is the caller's.** `coffer_import::detect` ranks the importers that
+  recognise a file, best first, ties in the given order. No candidate or a tie at the top
+  means asking the user (or `--preset`), never guessing.
+- `SourceFile` holds the undecoded bytes and the file name only, never the directory; its
+  `Debug` leaves the contents out. Decoding is the importer's, from the format or preset.
+
 ### Preset format (sketch, based on a real Monzo export)
 
 ```toml

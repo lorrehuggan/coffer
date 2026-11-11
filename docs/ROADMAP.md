@@ -429,7 +429,15 @@ Import real statements into a local database from the command line.
   decimal mark, grouped thousands, `-`/`−`/`+`/parentheses) and refuses anything it
   would have to round; `to_decimal_string` is the plain export form. `Currency` is
   `serde` and SQLite `TEXT`. Locale display formatting stays in the app; FX is M4.6
-- ⬜ M1.6 `Importer` trait (detect → parse → normalize)
+- ✅ M1.6 `Importer` trait (detect → parse → normalize).
+  `coffer_import`: `Detect` (name, format, `Detection` from `No` to `Source`), `Importer`
+  (`parse` into its own `Parsed` type, `normalize` into a `Statement`), `AnyImporter` for
+  `&dyn` lists with `import`, and `detect` to rank candidates (the caller chooses).
+  `coffer_core::statement`: `Statement` (format, preset, currency, rows in file order,
+  stated balances), `StatementLine`, flagged rows as `RowProblem` at a `SourceLocation`
+  (never dropped, no transaction text), `normalize_description`. Exercised with a toy
+  importer in tests; CSV and OFX are M1.7 and M1.10 (`ARCHITECTURE.md` → "The
+  `Importer` trait")
 - ⬜ M1.7 CSV importer: encoding detection, delimiter, header/skip rows, date formats
   (`DD/MM` vs `MM/DD`), separate time column, decimal style (`1,234.56` vs `1.234,56`),
   signed amount or debit/credit columns, merchant vs raw description, source ID,

@@ -8,3 +8,4 @@
 pub mod db;
 pub mod money;
 pub mod paths;
+pub mod statement;
