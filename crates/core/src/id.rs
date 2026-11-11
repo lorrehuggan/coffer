@@ -65,3 +65,7 @@ row_id!(
     /// A `balance_snapshot` row.
     BalanceId
 );
+row_id!(
+    /// A `transfer_group` row.
+    TransferGroupId
+);
