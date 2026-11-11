@@ -1,0 +1,10 @@
+Posted Date,Reference,Payee,Debit,Credit,Memo
+11/02/2026,FAKE-REF-001,Example Diner,-18.25,,
+11/03/2026,FAKE-REF-002,Example Payroll,,2400.00,
+11/03/2026,FAKE-REF-002,Example Payroll,,2400.00,
+11/04/2026,FAKE-REF-003,Example Hardware,-31.40,,"Shelf brackets
+and screws"
+11/05/2026,FAKE-REF-001,Example Diner,-81.25,,
+11/06/2026,,Example Vending,-1.50,,
+11/06/2026,,Example Vending,-1.50,,
+11/07/2026,FAKE-REF-004,Example Transfer In,0.00,25.00,

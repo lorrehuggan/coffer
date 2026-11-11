@@ -1,0 +1,11 @@
+# Reads newest-first-tab.tsv and newest-first-tab-later.tsv: tabs
+# (detected), ISO dates, no IDs, a running balance with the newest row first.
+id = "uk-example-tab"
+name = "Example Bank (tab-separated)"
+region = "uk"
+currency = "GBP"
+encoding = "utf-8"
+date = { column = "Date", format = "%Y-%m-%d" }
+amount = { column = "Amount" }
+description = { column = "Description" }
+balance = { column = "Balance" }

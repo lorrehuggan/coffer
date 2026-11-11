@@ -1,0 +1,13 @@
+# Reads debit-credit-windows-1252.csv: a preamble, Windows-1252, a
+# money-out / money-in pair and a running balance (oldest first).
+id = "uk-example-savings"
+name = "Example Bank (savings)"
+region = "uk"
+currency = "GBP"
+encoding = "windows-1252"
+delimiter = ","
+skip_rows = 3
+date = { column = "Date", format = "%d/%m/%Y" }
+amount = { debit = "Paid out", credit = "Paid in" }
+description = { column = "Description" }
+balance = { column = "Balance" }
