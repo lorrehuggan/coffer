@@ -1,5 +1,8 @@
-//! Rule definitions: what a rule matches and what it does, validated before
-//! a rule is ever stored.
+//! Rules: what a rule matches and what it does, validated before a rule is
+//! ever stored; storing rules in priority order; and the engine that
+//! matches transactions and applies what rules set.
+//!
+//! # Definitions
 //!
 //! The `rule` and `rule_action` tables (`migrations/V1__initial_schema.sql`)
 //! check what SQL can: the enum keys, a non-empty pattern, `amount_min <=
@@ -12,16 +15,51 @@
 //! - a rule has at least one action, each kind at most once, and not both
 //!   `set_category` and `split_template` ([`RuleDefinition`]).
 //!
-//! This is only the definitions. Matching transactions, priority order and
-//! storage are the rules engine (ROADMAP M1.15) and its actions (M1.24).
+//! # Storage
+//!
+//! [`create`], [`create_at`], [`get`], [`list`], [`move_to`] and [`delete`]
+//! keep rules in evaluation order: priority ascending, then ID. A new rule
+//! goes first (decision record "rules", point 2); moving or placing a rule
+//! renumbers the priorities `0, 1, 2, …`. Deleting a rule leaves the values
+//! it set and clears their `rule_id` (point 7). Reading a rule validates it
+//! again, and a stored rule that no longer validates is an error naming its
+//! ID ([`StoreError::Invalid`]).
+//!
+//! # Matching
+//!
+//! [`RuleSet`] holds the stored rules compiled, in evaluation order. A rule
+//! matches a transaction ([`MatchInput`]) when:
+//!
+//! - it has no account, or the transaction's account is its account;
+//! - the signed `amount_minor` is within its [`AmountBounds`] (inclusive);
+//! - its pattern matches its [`MatchField`]. A field the row doesn't have
+//!   (no merchant, say) never matches. The description is matched with
+//!   whitespace collapsed, as `description_normalized` has it.
+//!
+//! Matching ignores case. `is`, `starts_with` and `contains` compare the
+//! pattern and the field after the same Unicode case folding (`Straße`
+//! equals `STRASSE`); `regex` uses the pattern's case-insensitive regex.
+//!
+//! Rules win field by field (point 1): in priority order, the first
+//! matching rule that sets a field sets it, and a later rule can still set
+//! another field. The result is an [`Outcome`]. This milestone applies
+//! `set_category` only; the other action kinds are ROADMAP M1.24.
+//!
+//! [`apply_to_batch`] runs the rules on an import batch inside the import's
+//! own database transaction. It never changes a category the user set or
+//! approved (point 3), and it overrides the preset's category map.
 //!
 //! Patterns and action values are user text (or an agent's, from an Inbox
 //! suggestion), so errors here never repeat them, and they must not be
-//! logged at `info` or above. Nothing in this module reads transaction text:
-//! a description can only ever be the thing a pattern is matched against.
+//! logged at `info` or above. Transaction text is untrusted: it is only
+//! ever the thing a pattern is matched against, and it is never logged.
 
 mod action;
+#[cfg(test)]
+mod db_tests;
+mod engine;
 mod pattern;
+mod store;
 
 use std::fmt;
 use std::str::FromStr;
@@ -30,7 +68,11 @@ pub use action::{
     ActionText, ActionValueError, ExcludeReason, RuleAction, Share, SplitLine, SplitTemplate,
     TagList,
 };
+pub use engine::{MatchInput, Outcome, RuleSet, SetBy, apply_to_batch};
 pub use pattern::{MAX_PATTERN_LEN, Pattern, PatternError, REGEX_NEST_LIMIT, REGEX_SIZE_LIMIT};
+pub use store::{
+    InvalidRule, StoreError, StoredRule, create, create_at, delete, get, list, move_to,
+};
 
 /// A key that isn't one of an enum's stored keys.
 ///

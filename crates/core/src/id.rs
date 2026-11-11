@@ -69,3 +69,7 @@ row_id!(
     /// A `transfer_group` row.
     TransferGroupId
 );
+row_id!(
+    /// A `rule` row.
+    RuleId
+);
