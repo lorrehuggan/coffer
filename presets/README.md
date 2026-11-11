@@ -69,8 +69,9 @@ Unknown keys are an error, so a typo fails loudly instead of being ignored.
 |---|---|---|
 | `encoding` | `"auto"` | `"auto"` (a byte order mark, otherwise UTF-8), `"utf-8"`, `"utf-16le"`, `"utf-16be"`, `"windows-1252"` (also reads Latin-1) or `"iso-8859-15"`. Coffer never guesses: an export that isn't UTF-8 must say so here |
 | `delimiter` | detected | `","`, `";"`, `"\t"` or `"\|"`. State it if detection could tie |
-| `skip_rows` | `0` | Lines before the header (an account summary) |
+| `skip_rows` | `0` | Lines before the header (an account summary), counted as lines in the file: a summary cell with a line break inside its quotes is two. A count that ends inside such a cell fails the file |
 | `header` | `true` | Whether the first line after `skip_rows` names the columns |
+| `multiline_fields` | `false` | Whether the export puts line breaks inside quoted fields (a note over several lines). Leave it off otherwise: a row over several lines is then flagged, since it usually means a stray quote has swallowed the rows after it. A quote still open at the end of the file is flagged either way |
 | `decimal` | `"."` | The decimal mark: `"."` for `1,234.56`, `","` for `1.234,56` |
 
 ### Columns

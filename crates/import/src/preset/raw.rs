@@ -29,6 +29,8 @@ pub(super) struct RawPreset {
     pub skip_rows: usize,
     #[serde(default = "yes")]
     pub header: bool,
+    #[serde(default)]
+    pub multiline_fields: bool,
     pub date: RawDate,
     pub time: Option<RawTime>,
     pub amount: RawAmount,

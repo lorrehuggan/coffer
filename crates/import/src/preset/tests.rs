@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use coffer_core::money::{Currency, DecimalMark};
+use coffer_core::statement::RowProblem;
 
 use super::*;
 use crate::csv::{DateFormat, Delimiter, TimeFormat};
@@ -286,6 +287,46 @@ fn minimal_preset_takes_the_defaults() {
         named("Description"),
     );
     assert_eq!(preset.mapping(), &expected);
+    assert!(!preset.mapping().multiline_fields, "rows are one line each");
+}
+
+#[test]
+fn multiline_fields_lets_quoted_fields_hold_line_breaks() {
+    let text = "Date,Amount,Description\n01/11/2026,-1.00,\"two\nlines\"\n";
+    let file = SourceFile::from_bytes("s.csv", text);
+
+    let one_line = Preset::from_toml(MINIMAL).unwrap();
+    let statement = one_line.importer().import(&file).unwrap();
+    assert_eq!(
+        statement
+            .flagged()
+            .map(|(_, problem)| problem)
+            .collect::<Vec<_>>(),
+        [&RowProblem::MultiLineRow { lines: 2 }]
+    );
+
+    let preset = Preset::from_toml(&format!("multiline_fields = true\n{MINIMAL}")).unwrap();
+    assert!(preset.mapping().multiline_fields);
+    let statement = preset.importer().import(&file).unwrap();
+    assert!(!statement.has_flagged());
+    assert_eq!(
+        statement.lines().next().unwrap().1.description_raw,
+        "two\nlines"
+    );
+
+    assert!(
+        toml_error(&format!("multiline_fields = \"yes\"\n{MINIMAL}")).contains("multiline_fields")
+    );
+}
+
+#[test]
+fn unread_columns_ignore_a_trailing_empty_header_cell() {
+    let preset = Preset::from_toml(MINIMAL).unwrap();
+    let file = SourceFile::from_bytes("s.csv", "Date,Amount,Description,\n01/11/2026,-1.00,a\n");
+    let parsed = preset.importer().parse(&file).unwrap();
+    assert_eq!(parsed.width(), 3);
+    assert_eq!(preset.unread_columns(&parsed), Vec::<&str>::new());
+    assert_eq!(preset.importer().detect(&file), Detection::Source);
 }
 
 #[test]

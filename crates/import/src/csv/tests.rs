@@ -436,6 +436,247 @@ fn trailing_delimiters_on_rows_are_fine() {
 }
 
 #[test]
+fn a_header_ending_with_a_delimiter_fits_the_rows() {
+    let statement = import(
+        simple_mapping(),
+        "Date,Amount,Description,\n01/11/2026,-1.00,A\n01/11/2026,-2.00,B,\n01/11/2026,-3.00,C,x\n",
+    )
+    .unwrap();
+    assert_eq!(
+        statement.lines().count(),
+        2,
+        "with or without the empty field"
+    );
+    assert_eq!(
+        problems(&statement),
+        [(
+            4,
+            RowProblem::ColumnCount {
+                expected: 3,
+                found: 4
+            }
+        )],
+        "a value under the unnamed column isn't dropped silently"
+    );
+
+    let parsed = importer(simple_mapping())
+        .parse(&SourceFile::from_bytes(
+            "s.csv",
+            "Date,,Amount,Description,,\n",
+        ))
+        .unwrap();
+    assert_eq!(parsed.width(), 4, "only trailing empty cells are left out");
+
+    let mut mapping = simple_mapping();
+    mapping.balance = Some(Column::Index(3));
+    assert_eq!(
+        import(mapping, "Date,Amount,Description,\n")
+            .unwrap_err()
+            .to_string(),
+        "the file has no column 4"
+    );
+}
+
+/// The rows a stray quote swallows aren't read as text: the row it starts
+/// in is flagged, at its own line, with how far it runs.
+#[test]
+fn a_stray_quote_flags_the_rows_it_merges() {
+    let unclosed = "Date,Amount,Description\n\
+                    01/11/2026,-1.00,\"oops\n\
+                    02/11/2026,-2.00,b\n\
+                    03/11/2026,-3.00,c\n";
+    let statement = import(simple_mapping(), unclosed).unwrap();
+    assert_eq!(statement.lines().count(), 0);
+    assert_eq!(
+        problems(&statement),
+        [(2, RowProblem::UnclosedQuote { lines: 3 })]
+    );
+
+    let between_two = "Date,Amount,Description\n\
+                       01/11/2026,-1.00,\"a\n\
+                       02/11/2026,-2.00,b\n\
+                       03/11/2026,-3.00,c\"\n\
+                       04/11/2026,-4.00,d\n";
+    let statement = import(simple_mapping(), between_two).unwrap();
+    assert_eq!(
+        problems(&statement),
+        [(2, RowProblem::MultiLineRow { lines: 3 })],
+        "even with the right number of columns"
+    );
+    let read: Vec<_> = lines(&statement)
+        .into_iter()
+        .map(|(n, line)| (n, line.amount.minor()))
+        .collect();
+    assert_eq!(read, [(5, -400)]);
+
+    let mut mapping = simple_mapping();
+    mapping.delimiter = Some(Delimiter::Comma);
+    let statement = import(mapping, "Date,Amount,Description\r01/11/2026,-1.00,\"open").unwrap();
+    assert_eq!(
+        problems(&statement),
+        [(2, RowProblem::UnclosedQuote { lines: 1 })],
+        "an unclosed quote on the last line is flagged too"
+    );
+}
+
+#[test]
+fn multiline_fields_reads_line_breaks_in_quoted_fields() {
+    let mut mapping = simple_mapping();
+    mapping.multiline_fields = true;
+    let text = "Date,Amount,Description\r\n\
+                01/11/2026,-1.00,\"two\r\nlines\"\r\n\
+                02/11/2026,-2.00,b\r\n";
+    let statement = import(mapping.clone(), text).unwrap();
+    assert!(!statement.has_flagged());
+    let read: Vec<_> = lines(&statement)
+        .into_iter()
+        .map(|(n, line)| (n, line.description_raw))
+        .collect();
+    assert_eq!(read, [(2, "two\r\nlines".to_owned()), (4, "b".to_owned())]);
+
+    let unclosed = "Date,Amount,Description\n01/11/2026,-1.00,\"oops\n02/11/2026,-2.00,b\n";
+    assert_eq!(
+        problems(&import(mapping, unclosed).unwrap()),
+        [(2, RowProblem::UnclosedQuote { lines: 2 })],
+        "a quote still open at the end of the file is never text"
+    );
+}
+
+#[test]
+fn a_quote_inside_an_unquoted_field_is_a_character() {
+    let statement = import(
+        simple_mapping(),
+        "Date,Amount,Description\n01/11/2026,-1.00,6\" pizza\n02/11/2026,-2.00,12\" sub",
+    )
+    .unwrap();
+    assert!(!statement.has_flagged());
+    let read: Vec<_> = lines(&statement)
+        .into_iter()
+        .map(|(_, line)| line.description_raw)
+        .collect();
+    assert_eq!(read, ["6\" pizza", "12\" sub"]);
+}
+
+#[test]
+fn a_broken_header_fails_the_file() {
+    assert_eq!(
+        import(
+            simple_mapping(),
+            "Date,Amount,\"Description\n01/11/2026,-1.00,a\n"
+        )
+        .unwrap_err()
+        .to_string(),
+        "the file isn't a readable csv file: no delimiter splits the rows into columns"
+    );
+    let mut mapping = simple_mapping();
+    mapping.delimiter = Some(Delimiter::Comma);
+    assert_eq!(
+        import(
+            mapping.clone(),
+            "Date,Amount,\"Description\n01/11/2026,-1.00,a\n"
+        )
+        .unwrap_err()
+        .to_string(),
+        "the file isn't a readable csv file (line 1): the header row has a quote that's never closed"
+    );
+    let two_line_header = "Date,Amount,\"Desc\nription\"\n01/11/2026,-1.00,a\n";
+    assert_eq!(
+        import(mapping.clone(), two_line_header)
+            .unwrap_err()
+            .to_string(),
+        "the file isn't a readable csv file (line 1): the header row runs over more than one line"
+    );
+    mapping.multiline_fields = true;
+    mapping.description = vec![named("Desc\nription")];
+    assert!(import(mapping, two_line_header).is_ok());
+}
+
+#[test]
+fn lone_carriage_returns_end_lines() {
+    let text = "Date,Amount,Description\r01/11/2026,-1.00,a\r\r02/11/2026,-2.00,b\r";
+    let statement = import(simple_mapping(), text).unwrap();
+    let read: Vec<_> = lines(&statement)
+        .into_iter()
+        .map(|(n, line)| (n, line.amount.minor()))
+        .collect();
+    assert_eq!(read, [(2, -100), (4, -200)]);
+
+    let mut mapping = simple_mapping();
+    mapping.skip_rows = 2;
+    let statement = import(mapping, &format!("Account\rSummary\r{text}")).unwrap();
+    let read: Vec<_> = lines(&statement).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(read, [4, 6], "skipped lines are counted");
+}
+
+/// `skip_rows` counts physical lines, so a summary cell with a line break
+/// in it is two. Counted as one, the skip would end inside the cell and
+/// the rest of it would be read as the header or the first row: the file
+/// fails instead, at the line the cell opens on.
+#[test]
+fn a_skip_ending_inside_a_quoted_field_fails_the_file() {
+    let text = "Account,\"Example\nCurrent Account\"\n\
+                Date,Amount,Description\n\
+                01/11/2026,-1.00,a\n";
+    let mut mapping = simple_mapping();
+    mapping.skip_rows = 2;
+    let read: Vec<_> = lines(&import(mapping.clone(), text).unwrap())
+        .into_iter()
+        .map(|(n, line)| (n, line.amount.minor()))
+        .collect();
+    assert_eq!(read, [(4, -100)]);
+
+    mapping.skip_rows = 1;
+    let error = "the file isn't a readable csv file (line 1): \
+                 the lines to skip end inside a quoted field";
+    assert_eq!(
+        import(mapping.clone(), text).unwrap_err().to_string(),
+        error
+    );
+    mapping.delimiter = Some(Delimiter::Comma);
+    assert_eq!(import(mapping, text).unwrap_err().to_string(), error);
+
+    // Without a header, the cell's closing quote opened a field that took
+    // in the first rows, flagged at a summary line.
+    let mut mapping = CsvMapping::new(
+        Currency::GBP,
+        date_column(Column::Index(0), "%d/%m/%Y"),
+        AmountColumns::Signed(Column::Index(1)),
+        Column::Index(2),
+    );
+    mapping.has_header = false;
+    mapping.skip_rows = 1;
+    let text = "Summary,\"Example\n\"\n\
+                01/11/2026,-1.00,a\n\
+                02/11/2026,-2.00,\"b\"\n\
+                03/11/2026,-3.00,c\n";
+    assert_eq!(
+        import(mapping.clone(), text).unwrap_err().to_string(),
+        error
+    );
+    mapping.skip_rows = 2;
+    let read: Vec<_> = lines(&import(mapping, text).unwrap())
+        .into_iter()
+        .map(|(n, line)| (n, line.amount.minor()))
+        .collect();
+    assert_eq!(read, [(3, -100), (4, -200), (5, -300)]);
+}
+
+#[test]
+fn quotes_in_skipped_free_text_are_characters() {
+    let text = "Account: 6\" pizza fund\r\n\
+                Note: a \"quoted\" word, \"unclosed\r\n\
+                Date,Amount,Description\r\n\
+                01/11/2026,-1.00,a\r\n";
+    let mut mapping = simple_mapping();
+    mapping.skip_rows = 2;
+    let read: Vec<_> = lines(&import(mapping, text).unwrap())
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    assert_eq!(read, [4]);
+}
+
+#[test]
 fn header_only_and_empty_files() {
     let statement = import(simple_mapping(), "Date,Amount,Description\n").unwrap();
     assert!(statement.rows().is_empty(), "no transactions in the period");
@@ -541,6 +782,40 @@ fn detection() {
             ("Simple".to_owned(), Detection::Extension),
             ("Test".to_owned(), Detection::Extension),
         ]
+    );
+
+    // A stray quote in a row doesn't change what the header says.
+    assert_eq!(
+        ranked(&SourceFile::from_bytes(
+            "s.csv",
+            "Date,Amount,Description\n01/11/2026,-1.00,\"oops\n02/11/2026,-2.00,b\n"
+        ))[0],
+        ("Simple".to_owned(), Detection::Source)
+    );
+    // Without a header, a merged row is all the importer has to go on.
+    let mut headerless = CsvMapping::new(
+        Currency::GBP,
+        date_column(Column::Index(0), "%d/%m/%Y"),
+        AmountColumns::Signed(Column::Index(1)),
+        Column::Index(2),
+    );
+    headerless.has_header = false;
+    headerless.delimiter = Some(Delimiter::Comma);
+    let headerless = importer(headerless);
+    assert_eq!(
+        headerless.detect(&SourceFile::from_bytes(
+            "s.csv",
+            "01/11/2026,-1.00,\"oops\n02/11/2026,-2.00,b\n"
+        )),
+        Detection::Extension
+    );
+    assert_eq!(
+        headerless.detect(&SourceFile::from_bytes(
+            "s.csv",
+            "01/11/2026,-1.00,\"a\n02/11/2026\"\n03/11/2026,-3.00,c\n"
+        )),
+        Detection::Format,
+        "the width comes from the first row that's one line"
     );
     assert_eq!(signed.name(), "Test");
     assert_eq!(signed.format(), SourceFormat::Csv);

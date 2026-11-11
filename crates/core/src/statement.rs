@@ -146,6 +146,26 @@ pub enum RowProblem {
     /// description). None of it is trusted.
     #[error("the row has {found} columns, but the file has {expected}")]
     ColumnCount { expected: usize, found: usize },
+
+    /// A text row runs over `lines` physical lines (a quoted field with
+    /// line breaks) in a file whose rows are one line each, so a stray or
+    /// unclosed quote has probably merged the rows after it into this one.
+    /// None of it is trusted; the row sits at the line it starts on.
+    #[error(
+        "the row runs over {lines} lines, but each row should be one line: \
+         a quote in it may not be closed"
+    )]
+    MultiLineRow { lines: u64 },
+
+    /// A quoted field is still open at the end of the file, so everything
+    /// from the row's start to the end, `lines` physical lines, was read
+    /// into it. Never read as text, whatever the file allows.
+    #[error(
+        "a quote in the row is never closed, so the row takes in the rest of the file \
+         ({lines} {})",
+        if *lines == 1 { "line" } else { "lines" }
+    )]
+    UnclosedQuote { lines: u64 },
 }
 
 /// One transaction as the file states it, normalized.
@@ -521,6 +541,19 @@ mod tests {
             }
             .to_string(),
             "the row has 10 columns, but the file has 9"
+        );
+        assert_eq!(
+            RowProblem::MultiLineRow { lines: 3 }.to_string(),
+            "the row runs over 3 lines, but each row should be one line: \
+             a quote in it may not be closed"
+        );
+        assert_eq!(
+            RowProblem::UnclosedQuote { lines: 1 }.to_string(),
+            "a quote in the row is never closed, so the row takes in the rest of the file (1 line)"
+        );
+        assert_eq!(
+            RowProblem::UnclosedQuote { lines: 4 }.to_string(),
+            "a quote in the row is never closed, so the row takes in the rest of the file (4 lines)"
         );
         assert_eq!(SourceLocation::Line(14).to_string(), "line 14");
         assert_eq!(SourceLocation::Entry(3).to_string(), "entry 3");

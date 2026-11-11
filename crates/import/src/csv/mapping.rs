@@ -133,6 +133,16 @@ pub struct CsvMapping {
     /// Whether the first line after `skip_rows` names the columns. Without
     /// a header, every column must be a [`Column::Index`].
     pub has_header: bool,
+    /// Whether the export really has line breaks inside quoted fields (a
+    /// note over several lines). Off by default: a row over several lines
+    /// is then flagged ([`RowProblem::MultiLineRow`]), since it's usually
+    /// a stray or unclosed quote that has merged the rows after it. On or
+    /// off, a quote still open at the end of the file is flagged
+    /// ([`RowProblem::UnclosedQuote`]).
+    ///
+    /// [`RowProblem::MultiLineRow`]: coffer_core::statement::RowProblem::MultiLineRow
+    /// [`RowProblem::UnclosedQuote`]: coffer_core::statement::RowProblem::UnclosedQuote
+    pub multiline_fields: bool,
     pub date: DateColumn,
     /// When filled in, overrides any time in the date format.
     pub time: Option<TimeColumn>,
@@ -158,7 +168,8 @@ pub struct CsvMapping {
 
 impl CsvMapping {
     /// A mapping with a header row, a detected delimiter, automatic
-    /// encoding, `.` as the decimal mark and no optional columns.
+    /// encoding, one line per row, `.` as the decimal mark and no optional
+    /// columns.
     pub fn new(
         currency: Currency,
         date: DateColumn,
@@ -171,6 +182,7 @@ impl CsvMapping {
             delimiter: None,
             skip_rows: 0,
             has_header: true,
+            multiline_fields: false,
             date,
             time: None,
             amount,

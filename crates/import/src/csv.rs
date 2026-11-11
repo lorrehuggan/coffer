@@ -17,7 +17,10 @@
 //! - **Amounts** are read exactly with the mapping's decimal mark, from a
 //!   signed column or a money-out/money-in pair.
 //! - **Rows are never dropped.** A row that splits into the wrong number of
-//!   columns, or whose fields can't be read, is flagged in its place.
+//!   columns, or whose fields can't be read, is flagged in its place. So is
+//!   a row over several lines, unless the mapping allows line breaks in
+//!   quoted fields, and always one with a quote left open at the end of
+//!   the file: a stray quote merges the rows after it into one.
 
 mod dates;
 mod encoding;
@@ -88,8 +91,9 @@ impl Detect for CsvImporter {
     /// [`Detection::Source`] when the file has every column the mapping
     /// names in its header; [`Detection::Format`] when it reads as CSV with
     /// at least two columns (and, without a header, every column the
-    /// mapping counts on); [`Detection::Extension`] for a `.csv`, `.tsv`
-    /// or `.txt` file that doesn't.
+    /// mapping counts on in a row whose split can be trusted);
+    /// [`Detection::Extension`] for a `.csv`, `.tsv` or `.txt` file that
+    /// doesn't.
     fn detect(&self, file: &SourceFile) -> Detection {
         let by_extension = match file.extension() {
             Some(extension) if EXTENSIONS.contains(&extension.as_str()) => Detection::Extension,
@@ -98,7 +102,10 @@ impl Detect for CsvImporter {
         let Ok(parsed) = self.parse(file) else {
             return by_extension;
         };
-        let found = Positions::find(&self.mapping, &parsed).is_ok();
+        // Without a header, the width comes from a row: one merged by a
+        // stray quote says nothing about the format.
+        let found = Positions::find(&self.mapping, &parsed).is_ok()
+            && (self.mapping.has_header || parsed.first_sound_record().is_some());
         match (self.mapping.has_header, found) {
             (true, true) => Detection::Source,
             (false, true) => Detection::Format,
@@ -122,7 +129,10 @@ impl Importer for CsvImporter {
             statement = statement.with_preset(preset_id);
         }
         for record in parsed.records() {
-            let line = positions.line(&self.mapping, &record.fields);
+            let line = match record.structure_problem(self.mapping.multiline_fields) {
+                Some(problem) => Err(problem),
+                None => positions.line(&self.mapping, &record.fields),
+            };
             statement.push(record.location(), line);
         }
         Ok(statement)

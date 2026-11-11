@@ -463,18 +463,53 @@ the same debit and credit column, a named column without a header row).
   is strict (no replacement characters), and NULs in the text (UTF-16 without a BOM)
   fail the file. A preset or the user states non-UTF-8 encodings.
 - **Delimiter**: stated, or detected from the first 50 records among `,` `;` tab `|`.
-  The first record sets the width (at least 2). The candidate under which most rows fit
-  that width wins, then the wider one; a tie is refused, so the mapping has to say.
+  Records whose split can't be trusted (below: an unclosed quote, or several lines when
+  the mapping doesn't allow it) are left out, since how a stray quote merges lines
+  depends on the delimiter. The first remaining record sets the width (at least 2). The
+  candidate under which most other records have the same shape (the same count, or
+  extra trailing empty fields on either side) wins, then the wider one; a tie is
+  refused, so the mapping has to say.
 - **Layout**: `skip_rows` raw lines before the header (account summaries), then an
   optional header. Named columns match header cells exactly after trimming; a missing or
   duplicated name fails the file (`ImportError::MissingColumn` / `DuplicateColumn`; the
   name comes from the mapping, so it can be shown). Files without a header use 0-based
-  positions. Line numbers are physical lines (counted from byte offsets, since the `csv`
-  crate's own count is wrong across CRLF), so flagged rows can be found in the file.
+  positions. Line numbers are physical lines, counted from byte offsets with `\r\n`,
+  `\n` and a lone `\r` (old Mac exports) each ending one line, both there and in
+  `skip_rows` (the `csv` crate's own count only knows `\n`), so flagged rows can be found
+  in the file.
+- **A skip can't end inside a quoted field** (decided 2026-11-11). `skip_rows` stays
+  physical lines, not records: a preamble is often not CSV (free text, stray quotes, other
+  column counts), and a record count would let one stray quote swallow the header. But a
+  summary cell with a line break in its quotes is two lines, and a count that ends
+  between them would read the rest of the cell as the header or first row (a confusing
+  missing-column error, or rows merged and flagged at a summary line). So the skipped
+  lines are read as CSV and, if they end inside a quoted field, the file fails
+  (`ImportError::Malformed`, at the line the field opens on). Only a `"` at the start of a
+  field opens one (the `csv` crate's rule), so `Account: 6" pizza fund` is text. Field
+  starts depend on the delimiter, and a closing quote at the start of a line opens a field
+  under any other, so the check uses the delimiter the file is read with: stated or
+  sniffed from the text after the skip. Only when sniffing fails does an open field under
+  any candidate count, since the broken skip is then the likelier cause and says more.
 - **A row with the wrong column count is flagged** (`RowProblem::ColumnCount`), not
   read: an unquoted delimiter in a description shifts every later field, and reading it
-  would import a wrong amount. Extra trailing empty fields are fine (some banks end
-  every row, but not the header, with a delimiter).
+  would import a wrong amount. The file's width is the header's cells up to its last
+  non-empty one, or without a header the first trustworthy row's count. Extra trailing
+  empty fields on a row are fine, so a delimiter at the end of the rows, of the header,
+  or of both reads; a value under an unnamed trailing header cell is flagged as an extra
+  column rather than ignored.
+- **One record per line unless the mapping says otherwise** (decided 2026-11-11). An
+  unclosed quote makes the `csv` crate read the rest of the file as one field, and two
+  stray quotes merge the lines between them, sometimes into a record with the right
+  column count, so transactions would vanish into a description. So each record knows
+  how many physical lines it takes and whether a quoted field is still open at the end
+  of the file (`CsvRecord::lines`, `unclosed_quote`, following the `csv` crate's rules:
+  a field is quoted only when it starts with `"`, so `6" pizza` stays literal).
+  `CsvMapping::multiline_fields` (preset `multiline_fields`, default `false`) says
+  whether the export really has line breaks inside quoted fields. Off, a data row over
+  several lines is flagged `RowProblem::MultiLineRow { lines }` at the line it starts on;
+  on, it's read. Either way a quote still open at the end of the file is flagged
+  `RowProblem::UnclosedQuote { lines }`, never read as text. A header row like that
+  fails the file (its columns can't be trusted).
 - **Dates round-trip.** Formats are `strftime` patterns, checked when built
   (`DateFormat::new`: needs a year, month and day; may include a time; no time zones).
   chrono parses leniently (`%Y` reads `26` as year 26), so each value must format back
@@ -496,9 +531,12 @@ the same debit and credit column, a named column without a header row).
 - **Detection**: `Source` when the header has every column the mapping names,
   `Format` for other readable CSV with at least two columns, `Extension` for an
   unreadable `.csv`/`.tsv`/`.txt`. Two presets that both find their columns tie, and the
-  caller asks.
+  caller asks. A stray quote in a data row doesn't change what the header says, so such
+  a file still detects (and its import flags the row); a header-less file needs at least
+  one trustworthy row for `Format`.
 - `CsvFile` (the `Parsed` type: encoding used, delimiter, header, records with line
-  numbers) is public for the mapping screen. Its `Debug` and `CsvRecord`'s show counts
+  numbers and line counts) is public for the mapping screen. Its `Debug` and
+  `CsvRecord`'s show counts
   only.
 
 ### Presets
@@ -543,6 +581,10 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
   and time formats, encoding, delimiter, currency, category keys) are checked while
   deserializing, so the error points at the line; the whole mapping is then checked by
   `CsvImporter::new`. `amount` and `description` take exactly one of their forms.
+- **`multiline_fields`** (default `false`, decided 2026-11-11) maps to
+  `CsvMapping::multiline_fields`: set it only for an export that really writes line
+  breaks inside quoted fields (multi-line notes), since otherwise a row over several
+  lines is the sign of a stray quote and is flagged (see "The CSV importer").
 - **Positions count from 1** in TOML (`column = 3`), as the error messages do;
   `CsvMapping` stays 0-based.
 - **Bundled.** `crates/import/build.rs` compiles every `presets/**/*.toml` into the binary
@@ -585,8 +627,10 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
   overloads for the same reason.
 - **Import reads amounts exactly or not at all.** `Money::parse_decimal` takes the
   preset's decimal mark (`.` or `,`); thousands may be grouped by the other mark, a
-  space (including no-break spaces) or an apostrophe, in groups of three; the sign is a
-  leading `-`, `−` or `+`, or parentheses. Extra decimals are accepted only when they
+  space (including no-break spaces) or an apostrophe, in groups of three and never
+  after a leading zero (`0,123` with a `.` mark is refused, not read as 123: it's a
+  decimal in the other style); the sign is a leading `-`, `−` or `+`, or parentheses.
+  Extra decimals are accepted only when they
   are zeros (`12.340` GBP): anything else would mean rounding, so it's refused and the
   row is flagged. Currency symbols, codes and trailing minus signs are the importer's
   to deal with (a preset feature if a bank needs one). Parse errors don't contain the

@@ -50,6 +50,7 @@ impl Positions {
                     let header = header.ok_or_else(missing)?;
                     let mut matches = header
                         .iter()
+                        .take(width)
                         .enumerate()
                         .filter(|(_, cell)| *cell == name.trim())
                         .map(|(index, _)| index);

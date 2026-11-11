@@ -183,9 +183,10 @@ impl Money {
     /// Reads an amount from bank text, exactly.
     ///
     /// Accepts digits with one decimal mark, thousands grouped by the other
-    /// mark, a space or an apostrophe (`1,234.56`, `1.234,56`, `1 234,56`),
-    /// and a sign: a leading `-`, `−` (U+2212) or `+`, or parentheses
-    /// (`(12.34)` is −12.34). Surrounding whitespace is ignored. Fewer
+    /// mark, a space or an apostrophe (`1,234.56`, `1.234,56`, `1 234,56`;
+    /// never after a leading zero, so `0,123` isn't 123), and a sign: a
+    /// leading `-`, `−` (U+2212) or `+`, or parentheses (`(12.34)` is
+    /// −12.34). Surrounding whitespace is ignored. Fewer
     /// decimals than the currency has are fine (`12.5` GBP is 1250); more
     /// are allowed only when they are zeros, since anything else would mean
     /// rounding. Currency symbols and codes are the importer's to remove.
@@ -272,8 +273,12 @@ impl Money {
 }
 
 /// The digits of the whole part of an amount, with any thousands grouping
-/// checked and removed: the first group has 1–3 digits, every later one 3,
-/// all separated by the same character.
+/// checked and removed: the first group has 1–3 digits and doesn't start
+/// with a zero, every later one has 3, all separated by the same character.
+///
+/// The zero rule keeps `0,123` from being read as 123 when the mark is a
+/// point: nobody groups a leading zero, so the text is a decimal in the
+/// other style and the mapping's mark is wrong.
 fn whole_digits(whole: &str, mark: DecimalMark) -> Result<Vec<u8>, ParseAmountError> {
     use ParseAmountError::Malformed;
 
@@ -299,6 +304,9 @@ fn whole_digits(whole: &str, mark: DecimalMark) -> Result<Vec<u8>, ParseAmountEr
         let (first, rest) = groups.split_first().expect("split yields one group");
         if !(1..=3).contains(&first.len()) || rest.iter().any(|group| group.len() != 3) {
             return Err(Malformed("thousands separators in the wrong place"));
+        }
+        if first.starts_with('0') {
+            return Err(Malformed("thousands grouped after a leading zero"));
         }
     }
     Ok(groups.concat().into_bytes())
@@ -465,6 +473,11 @@ mod tests {
             (",123.45", Point),
             ("123,.45", Point),
             ("1,234 567.89", Point),
+            ("0,123", Point),
+            ("0,123.45", Point),
+            ("012,345.67", Point),
+            ("0.123", Comma),
+            ("0 123,45", Comma),
             ("12.34,5", Comma),
             ("1,234,56", Comma),
             ("١٢", Point),

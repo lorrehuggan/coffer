@@ -130,6 +130,7 @@ impl Preset {
             delimiter: raw.delimiter.map(|d| d.0),
             skip_rows: raw.skip_rows,
             has_header: raw.header,
+            multiline_fields: raw.multiline_fields,
             date: DateColumn {
                 column: raw.date.column.0,
                 format: raw.date.format.0,
