@@ -6,11 +6,12 @@
 //! core deduplicates, reconciles and commits. Import is deterministic: no
 //! model or network calls. [`csv::CsvImporter`] reads delimited text through
 //! a [`csv::CsvMapping`]; [`preset::Presets`] loads the bank presets that
-//! produce those mappings. The OFX importer arrives in M1.10
-//! (`docs/ROADMAP.md`).
+//! produce those mappings. [`ofx::OfxImporter`] reads OFX 1.x (SGML) and
+//! 2.x (XML) files, QFX included.
 
 pub mod csv;
 mod importer;
+pub mod ofx;
 pub mod preset;
 mod source;
 

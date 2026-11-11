@@ -1100,7 +1100,6 @@ dependencies = [
  "coffer-core",
  "csv",
  "encoding_rs",
- "ofx-kit",
  "serde",
  "tempfile",
  "thiserror 2.0.21",
@@ -5142,19 +5141,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ofx-kit"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7791d70d46453cce61d3482c866ad5fc793ddd097a82ace43827dd3dd0d400ff"
-dependencies = [
- "encoding_rs",
- "quick-xml",
- "rust_decimal",
- "thiserror 2.0.21",
- "time",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6451,23 +6437,6 @@ dependencies = [
  "siphasher",
  "toml 0.8.23",
  "triomphe",
-]
-
-[[package]]
-name = "rust_decimal"
-version = "1.43.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7653272e75dcac41dc199fbea6f5797633994fafd339943c06c9af16bf29cd3a"
-dependencies = [
- "arrayvec",
- "borsh",
- "bytes",
- "num-traits",
- "rand 0.8.8",
- "rand 0.9.5",
- "serde",
- "serde_json",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -8093,7 +8062,6 @@ checksum = "a0181c14ddd6c7b8b0b0132a5f1ea2f32be0d893cd3ea97b6e3b28886b8a3d1c"
 dependencies = [
  "cfg-if",
  "rustversion",
- "serde",
  "wasm-bindgen-macro",
  "wasm-bindgen-shared",
 ]

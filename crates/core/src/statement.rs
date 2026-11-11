@@ -166,6 +166,17 @@ pub enum RowProblem {
         if *lines == 1 { "line" } else { "lines" }
     )]
     UnclosedQuote { lines: u64 },
+
+    /// The row has the same external ID as an earlier row of the file, so
+    /// the ID doesn't identify it and dedupe can't rely on it. The earlier
+    /// row is read as usual; this one waits for the user.
+    #[error("the external ID is the same as {first}'s")]
+    DuplicateExternalId { first: SourceLocation },
+
+    /// The row is something Coffer doesn't import as a transaction, such
+    /// as an OFX correction to an earlier transaction.
+    #[error("Coffer can't import this row: {reason}")]
+    Unsupported { reason: &'static str },
 }
 
 /// One transaction as the file states it, normalized.
@@ -554,6 +565,20 @@ mod tests {
         assert_eq!(
             RowProblem::UnclosedQuote { lines: 4 }.to_string(),
             "a quote in the row is never closed, so the row takes in the rest of the file (4 lines)"
+        );
+        assert_eq!(
+            RowProblem::DuplicateExternalId {
+                first: SourceLocation::Entry(2)
+            }
+            .to_string(),
+            "the external ID is the same as entry 2's"
+        );
+        assert_eq!(
+            RowProblem::Unsupported {
+                reason: "it corrects an earlier transaction"
+            }
+            .to_string(),
+            "Coffer can't import this row: it corrects an earlier transaction"
         );
         assert_eq!(SourceLocation::Line(14).to_string(), "line 14");
         assert_eq!(SourceLocation::Entry(3).to_string(), "entry 3");

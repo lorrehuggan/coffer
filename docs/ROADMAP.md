@@ -463,7 +463,12 @@ Import real statements into a local database from the command line.
   fixture in `fixtures/presets/`. Contributor reference: `presets/README.md`
   (`ARCHITECTURE.md` → "Presets"). `[sub_account_transfer]` waits for M1.17
 - ⬜ M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export)
-- ⬜ M1.10 OFX/QFX importer (SGML 1.x and XML 2.x), `FITID` IDs, `LEDGERBAL` balances
+- ✅ M1.10 OFX/QFX importer (SGML 1.x and XML 2.x), `FITID` IDs, `LEDGERBAL` balances.
+  `coffer_import::ofx`: `OfxImporter` over Coffer's own tolerant SGML/XML reader (`ofx-kit`
+  dropped: it fails whole files on one bad row and guesses encodings). Bank and credit
+  card statements; several statements in one file are refused unless one is chosen
+  (`OfxImporter::for_statement`); repeated `FITID`s and `CORRECTACTION` rows are flagged.
+  Synthetic fixtures in `fixtures/ofx/` (`ARCHITECTURE.md` → "The OFX importer")
 - ✅ M1.11 Deduplication: source ID when present (OFX `FITID`, CSV ID column);
   fingerprint with occurrence index otherwise.
   `coffer_core::import`: a source ID is matched by ID only (a conflicting date or amount

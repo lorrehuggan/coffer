@@ -477,7 +477,7 @@ Versions live in `[workspace.dependencies]` in the root `Cargo.toml`; crates opt
 | Area | Crates | Notes |
 |---|---|---|
 | Storage | `rusqlite` (`bundled`), `refinery` | `rusqlite` pinned to 0.40 until `refinery` supports 0.41. `refinery` checksums applied migrations, enforcing "never edit a shipped migration". No connection pool: one connection per process, WAL + `busy_timeout` + `BEGIN IMMEDIATE`; the app and the CLI open with `Database::open`, which creates the database if needed and runs migrations (all pending ones in one transaction); `coffer mcp` opens with `Database::open_existing`, which never creates or migrates and refuses a missing or older database, telling the user to open Coffer or run a CLI command. Both check an existing file first (a SQLite database, not a newer schema, applied migrations matching the embedded ones) and leave a refused file untouched: no permission change, WAL switch or write. SQLCipher later = `bundled-sqlcipher-vendored-openssl` |
-| Import | `csv`, `serde`, `encoding_rs`, `ofx-kit`, `chrono`, `toml` | Encoding comes from the preset (or a BOM); without either only UTF-8 is accepted, and a file that doesn't decode is refused, never guessed. The BOM is stripped before `csv`. `ofx-kit` is young and single-maintainer: pinned exactly and kept behind the `Importer` trait (fallback: `ofx-rs`). Dates must round-trip through their format string |
+| Import | `csv`, `serde`, `encoding_rs`, `chrono`, `toml` | Encoding comes from the preset, the OFX header or a BOM; without any, only UTF-8 is accepted, and a file that doesn't decode is refused, never guessed. The BOM is stripped before `csv`. Dates must round-trip through their format string. OFX is read by Coffer's own tolerant SGML/XML reader, not `ofx-kit` (dropped in M1.10, see "The OFX importer") |
 | Money / FX | none | Own `Money { minor: i64, currency }` (`coffer_core::money`, M1.5) with a hand-written, test-frozen exponent table. FX in `i128` fixed point with one explicit rounding. Decimal types from format crates are converted to minor units at the import boundary, never stored. See "Money" below |
 | Rules | `regex`, `aho-corasick`, `serde_json` | `regex` is linear-time, so user rules can't hang the app. `serde_json` (already in the tree, MIT OR Apache-2.0) decodes `rule_action.value_json` strictly in core |
 | Plumbing | `thiserror` (libs), `anyhow` (binary), `clap`, `tracing`, `tracing-subscriber`, `directories`, `uuid` (v7) | Logs go to stderr |
@@ -714,6 +714,96 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
 - **Every bundled preset has a fixture** at `fixtures/presets/<region>/<bank>.*` that it
   detects as `Source` and imports; a test enforces it.
 - **Not yet:** `[sub_account_transfer]` (pot transfers) is M1.17 and refused until then.
+
+### The OFX importer
+
+M1.10, decided 2026-11-11. `coffer_import::ofx`: `OfxImporter` reads OFX 1.x (SGML) and
+2.x (XML) bank (`STMTRS`) and credit card (`CCSTMTRS`) statements. QFX is OFX with
+Intuit's extra tags and reads the same way.
+
+- **Own reader, not `ofx-kit`.** `ofx-kit` (planned in M1.1) fails the whole document on
+  one bad `STMTTRN` (an unreadable amount, a missing `FITID`), so it can't flag rows; it
+  rewrites `,` to `.` in amounts, falls back to Windows-1252 when UTF-8 fails (a guess),
+  and puts file text in its errors. It was removed with `rust_decimal`, its only user.
+  The reader is a few hundred lines in `ofx/markup.rs`, handles both syntaxes, and
+  keeps every value as text so amounts go through `Money::parse_decimal`.
+- **Markup.** A start tag followed by text is a value, closed or not (SGML leaves values
+  unclosed; XML and some SGML files close them). A start tag followed by another tag is
+  an aggregate if it's a known OFX aggregate, an empty value if it's a known value, and
+  otherwise an aggregate only if the file closes that name somewhere. Entities
+  (`&amp;`, numeric) are decoded; a bare `&` is kept ("M&S"). Comments, CDATA,
+  processing instructions and attributes are handled. Tag names are uppercased.
+- **Structure is strict.** An aggregate left open, a closing tag for an aggregate that
+  isn't open, text where only elements belong, more than one top-level element, a file
+  that ends early (a truncated download), a `STMTTRN` outside a statement or inside
+  another, and a statement-level value given twice (`CURDEF`, `LEDGERBAL`) fail the
+  file with a line number. Guessing would move transactions between statements or lose
+  them.
+- **Encoding is never guessed.** A BOM wins. Otherwise OFX 1.x `ENCODING:UTF-8` (or
+  `UNICODE`) is UTF-8; `ENCODING:USASCII` takes `CHARSET` (`1252` and Latin-1 are
+  Windows-1252, `8859-15` is Latin-9, `NONE` is ASCII read as UTF-8, so other bytes
+  fail). OFX 2.x uses the XML declaration's `encoding`, else UTF-8, as does a file
+  without a header. Decoding is strict, as for CSV; another charset is refused
+  (`ImportError::Unsupported`). A file whose header states the wrong charset reads
+  wrongly or fails; that is the bank's statement, not a guess.
+- **One statement per import.** `Statement` is one account in one currency, so a file
+  with several statements (some banks put every account in one download) isn't split
+  silently: `OfxImporter::new()` refuses it with `ImportError::MultipleStatements`, and
+  `OfxFile::statements()` lists them (kind, currency, transaction count, last four
+  characters of the account number) for the user to pick, then
+  `OfxImporter::for_statement(index)` imports that one. Investment statements
+  (`INVSTMTRS`) are listed but refused (`Unsupported`); holdings are L.14. Other
+  message-set responses (closing statements, sign-on) are not transactions and are
+  skipped.
+- **Statement fields.** `CURDEF` is the statement's currency; missing or unknown fails
+  the file. `LEDGERBAL` (`BALAMT` as of `DTASOF`'s date) is the statement's
+  `DatedBalance`; one that can't be read fails the file, like a balance in another
+  currency. `AVAILBAL` isn't used: it is the ledger balance less holds, or a card's
+  available credit, so it would fail reconciliation. `BANKTRANLIST`'s `DTSTART`/`DTEND`
+  and the account number are not stored.
+- **Dates are taken as written.** `DTPOSTED` is `YYYYMMDD`, optionally `HHMM`, `HHMMSS`
+  or `HHMMSS.XXX`, then optionally `[offset:zone]`. The date and time are the bank's
+  local ones and the offset is not applied: converting to UTC would move evening
+  transactions to another day than the bank's statement and CSV exports show, and break
+  dedupe against them. A time is kept whenever the value has one (many banks write a
+  placeholder such as `120000`; hiding it is the app's choice, not the importer's).
+  Fractions of a second are dropped. `DTUSER` and `DTAVAIL` are not read.
+- **Amounts** are `TRNAMT` through `Money::parse_decimal`, never rounded. OFX allows `.`
+  or `,` as the decimal mark and no grouping, so a value with a comma and no point uses
+  the comma (`1,234` is then too precise for GBP and flagged, not read as 1234). Signs
+  are as the file states them: on a credit card a purchase is negative and a balance
+  owed is negative.
+- **Currencies.** A `CURRENCY` aggregate means `TRNAMT` is in its `CURSYM`, so the amount
+  is read in that currency and `Statement::push` flags it when it isn't the statement's
+  (converting with `CURRATE` would round). `ORIGCURRENCY` means `TRNAMT` is already in the
+  statement's currency; the original amount isn't derived from the rate, for the same
+  reason, so `original_amount` stays empty. Both on one transaction is flagged.
+- **Text.** `NAME` (or `PAYEE`'s `NAME`) is the merchant. The description is `NAME`,
+  `EXTDNAME` and `MEMO` joined with spaces, except that a piece that starts with the text
+  so far replaces it (a 32-character `NAME` cut from the `MEMO`) and a piece the text
+  already starts with is left out (the same text twice). No text at all is an empty
+  description, as in CSV. `PAYEE`'s address, `CHECKNUM`, `REFNUM`, `SIC`, `PAYEEID` and
+  `BANKACCTTO`/`CCACCTTO` are not read. `TRNTYPE` is the source type, as written.
+- **`FITID`** is the external ID, trimmed; an empty or missing one is `None`, which
+  leaves the row to fingerprint dedupe (M1.11). A `FITID` repeated within the file can't
+  identify its rows and `(account_id, external_id)` is unique in the database, so every
+  occurrence after the first is flagged (`RowProblem::DuplicateExternalId`, naming the
+  first); the first is read as usual. Nothing is deduplicated here.
+- **Flagged, not skipped:** a missing or unreadable `DTPOSTED` or `TRNAMT`, a value given
+  twice, an unknown `CURSYM`, an amount in another currency, a repeated `FITID`, and a
+  correction (`CORRECTACTION`, `RowProblem::Unsupported`): applying a `REPLACE` or
+  `DELETE` to an earlier transaction would edit imported data, so the user sees it
+  instead.
+- **Locations.** Transactions are `SourceLocation::Entry(n)`, the n-th `STMTTRN` in the
+  whole file in document order (so entries in a second statement don't restart at 1).
+  File-level errors give the line.
+- **Detection** is `Format` when the file starts like OFX (an `OFXHEADER` block, an XML
+  declaration or `<?OFX …?>` followed by OFX, or a bare `<OFX>`), whatever its name;
+  `Extension` for another `.ofx` or `.qfx`. OFX has no per-bank presets, so never
+  `Source`. A generic CSV mapping doesn't tie with it on OFX files (tested).
+- `OfxFile` (the `Parsed` type: version, encoding used, statements) and `OfxStatement`
+  show no account number or transaction contents in `Debug`; the parse tree's `Debug`
+  shows value lengths only.
 
 ### Dedupe, reconciliation and the commit
 

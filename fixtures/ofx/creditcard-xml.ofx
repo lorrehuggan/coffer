@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?OFX OFXHEADER="200" VERSION="220" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>
+<OFX>
+  <SIGNONMSGSRSV1>
+    <SONRS>
+      <STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS>
+      <DTSERVER>20261201120000.000[-5:EST]</DTSERVER>
+      <LANGUAGE>ENG</LANGUAGE>
+      <FI><ORG>EXAMPLE CARD CO</ORG><FID>00000</FID></FI>
+    </SONRS>
+  </SIGNONMSGSRSV1>
+  <CREDITCARDMSGSRSV1>
+    <CCSTMTTRNRS>
+      <TRNUID>0</TRNUID>
+      <STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS>
+      <CCSTMTRS>
+        <CURDEF>USD</CURDEF>
+        <CCACCTFROM><ACCTID>XXXXXXXXXXXX0000</ACCTID></CCACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20261101000000.000[-5:EST]</DTSTART>
+          <DTEND>20261130235959.000[-5:EST]</DTEND>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20261103120000.000[-5:EST]</DTPOSTED>
+            <TRNAMT>-23.50</TRNAMT>
+            <FITID>CC-2026-0001</FITID>
+            <NAME>Example Books</NAME>
+            <MEMO></MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20261105153012.000[-5:EST]</DTPOSTED>
+            <TRNAMT>-4.75</TRNAMT>
+            <FITID>CC-2026-0002</FITID>
+            <PAYEE>
+              <NAME>Example Coffee Co</NAME>
+              <ADDR1>1 Fake Street</ADDR1>
+              <CITY>Springfield</CITY>
+              <STATE>XX</STATE>
+              <POSTALCODE>00000</POSTALCODE>
+              <PHONE>555-0100</PHONE>
+            </PAYEE>
+            <MEMO>Store 42</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>CREDIT</TRNTYPE>
+            <DTPOSTED>20261110</DTPOSTED>
+            <TRNAMT>200.00</TRNAMT>
+            <FITID>CC-2026-0003</FITID>
+            <NAME>PAYMENT - THANK YOU</NAME>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20261118000000.000[-5:EST]</DTPOSTED>
+            <TRNAMT>-61.20</TRNAMT>
+            <FITID>CC-2026-0004</FITID>
+            <NAME>Example Hardware &amp; Garden</NAME>
+            <CURRENCY><CURRATE>1.0</CURRATE><CURSYM>USD</CURSYM></CURRENCY>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20261125000000.000[-5:EST]</DTPOSTED>
+            <TRNAMT>-9.99</TRNAMT>
+            <FITID>CC-2026-0005</FITID>
+            <NAME>Example Streaming</NAME>
+            <EXTDNAME>Example Streaming Service Monthly</EXTDNAME>
+          </STMTTRN>
+        </BANKTRANLIST>
+        <LEDGERBAL>
+          <BALAMT>-1234.56</BALAMT>
+          <DTASOF>20261130235959.000[-5:EST]</DTASOF>
+        </LEDGERBAL>
+        <AVAILBAL>
+          <BALAMT>3765.44</BALAMT>
+          <DTASOF>20261130235959.000[-5:EST]</DTASOF>
+        </AVAILBAL>
+      </CCSTMTRS>
+    </CCSTMTTRNRS>
+  </CREDITCARDMSGSRSV1>
+</OFX>

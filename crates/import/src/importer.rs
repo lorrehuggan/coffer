@@ -55,6 +55,17 @@ pub enum ImportError {
 
     #[error(transparent)]
     BalanceCurrency(#[from] BalanceCurrencyMismatch),
+
+    /// The file holds more than one statement (several accounts in one
+    /// OFX download). A statement is one account, so the caller asks which
+    /// to import.
+    #[error("the file holds {count} statements; choose which one to import")]
+    MultipleStatements { count: usize },
+
+    /// The file is readable, but holds something Coffer doesn't import,
+    /// such as an OFX investment statement.
+    #[error("Coffer can't import {what}")]
+    Unsupported { what: &'static str },
 }
 
 /// What an importer is and which files it reads: the part of an importer

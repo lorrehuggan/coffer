@@ -31,8 +31,9 @@ checks; `account`: minimal accounts and entered balances; `id`: row IDs; M1.11â€
 migration `V3__import_flags.sql`).
 `crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
 importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
-(`preset`: `Preset`, `Presets::bundled`; M1.8), but no presets in `presets/` or OFX yet;
-synthetic CSV fixtures are in `fixtures/csv/`; `crates/mcp` is a stub. The GUI is in `crates/app` (package `coffer-app`, lib
+(`preset`: `Preset`, `Presets::bundled`; M1.8) and the OFX/QFX importer (`ofx`:
+`OfxImporter`, own SGML/XML reader; M1.10), but no presets in `presets/` yet; synthetic
+fixtures are in `fixtures/csv/` and `fixtures/ofx/`; `crates/mcp` is a stub. The GUI is in `crates/app` (package `coffer-app`, lib
 `coffer_app`, binary `coffer`) and doesn't open the database yet. `coffer` opens the Transactions screen on fixture data
 (`crates/app/src/transactions.rs`), and `coffer --showcase` opens the component showcase.
 `cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with

@@ -30,8 +30,6 @@ refinery = { version = "0.10.0", default-features = false, features = ["rusqlite
 csv = "1.4"
 serde = { version = "1", features = ["derive"] }
 encoding_rs = "0.8.44"
-# Young single-maintainer crate: pinned exactly, used only behind the Importer trait.
-ofx-kit = "=0.3.1"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 toml = "1.2"
 

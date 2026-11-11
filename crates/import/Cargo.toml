@@ -12,7 +12,6 @@ coffer-core.workspace = true
 csv.workspace = true
 serde.workspace = true
 encoding_rs.workspace = true
-ofx-kit.workspace = true
 chrono.workspace = true
 toml.workspace = true
 thiserror.workspace = true

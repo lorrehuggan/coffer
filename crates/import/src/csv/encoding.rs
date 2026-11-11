@@ -35,7 +35,7 @@ pub enum TextEncoding {
 }
 
 impl TextEncoding {
-    fn encoding(self) -> &'static encoding_rs::Encoding {
+    pub(crate) fn encoding(self) -> &'static encoding_rs::Encoding {
         match self {
             TextEncoding::Auto | TextEncoding::Utf8 => encoding_rs::UTF_8,
             TextEncoding::Utf16Le => encoding_rs::UTF_16LE,
