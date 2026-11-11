@@ -31,6 +31,8 @@
 //! Dependencies).
 
 mod migrations;
+#[cfg(test)]
+mod schema_tests;
 
 use std::ffi::OsString;
 use std::fs::OpenOptions;

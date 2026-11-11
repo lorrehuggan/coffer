@@ -319,8 +319,10 @@ decided by the user on the designer's recommendation:
    up at the next valuation. Linking payments to a loan balance can come later.
 3. **Closing sets `closed_on`.** `account.closed_on` (a date; a new migration) applies to
    every kind of account. Closing a valuation account also writes a £0 `valuation`
-   snapshot on that date, which reopening removes. An account with transactions keeps
-   D6.1's close-only rule.
+   snapshot on that date, which reopening removes. The closing date must be later than
+   the account's last valuation, so the £0 never replaces a value the user entered and
+   reopening loses nothing; the close dialog offers the day after the last valuation as
+   the earliest date. An account with transactions keeps D6.1's close-only rule.
 4. **Only an account without transactions can be deleted.** A valuation account or a
    new empty one can be deleted together with its snapshots. Deleting can't be undone,
    so the confirmation says how many values go with it.
@@ -441,11 +443,61 @@ kind = "pot"
 
 ## Data model (initial)
 
+The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
+`crates/core/src/db/schema_tests.rs` check them):
+
+- Every table is `STRICT`, so a money column (`*_minor`, INTEGER) refuses a fractional
+  value. Currency codes are three capital letters; the ISO 4217 list is checked in Rust.
+- Dates are `YYYY-MM-DD`, times `HH:MM:SS`, months `YYYY-MM`, timestamps UTC
+  `YYYY-MM-DDTHH:MM:SS.SSSZ`, each checked to round-trip through SQLite's date functions.
+  Enums are TEXT keys listed in a `CHECK`; booleans are 0/1.
+- IDs are `INTEGER PRIMARY KEY AUTOINCREMENT`, so an ID is never reused after a delete
+  (an undone import) and an old suggestion or log entry can't come to name another row.
+- Foreign keys have no `ON DELETE` action and are all indexed: deleting is explicit in
+  core, never a side effect. Deleting a rule clears `transaction.rule_id` in core.
+- A trigger refuses edits to an imported or mirrored row's source fields (account, batch,
+  date, time, amount, currency, merchant, descriptions, external ID, fingerprint, source
+  category and type, original amount, note); a transaction's `id`, `origin` and
+  `created_at` never change.
+- Partial unique indexes enforce dedupe, source ID first: `(account_id, external_id)`,
+  and `(account_id, fingerprint)` among rows without an external ID (a row with a source
+  ID is never matched by fingerprint, since the occurrence index depends on the file's
+  order). Manual rows carry neither key. An insert that collides with a stored row is
+  refused by a trigger before SQLite resolves the conflict, so `INSERT OR REPLACE` can't
+  swap a row past the read-only trigger, and core never uses `REPLACE` or upserts on
+  `"transaction"` (a test scans for them); `INSERT OR IGNORE` on a duplicate is an error
+  too, because core dedupes first.
+- Triggers also keep categories to two levels with keys that match their place (a
+  top-level key is one part, a subcategory's is `<parent key>.<part>`) and make a
+  category's `key` and `parent_id` read-only (keys are stable; only the label changes),
+  keep a transaction in its account's currency, keep `asset`/`liability` accounts to
+  `valuation` snapshots only (and valuations to those accounts), put a pot under a
+  `current` or `savings` account in the same currency and keep it there once it holds
+  transactions or balances, fix an account's currency once it has transactions, balances,
+  pots or a rule with an amount bound (and keep such a rule from moving to an account in
+  another currency), keep an imported row and a file's balance on the
+  batch's account (a mirrored row or balance on a pot of it), and make an import batch
+  read-only except for `status`. Undo deletes a batch's transactions and balances, then
+  sets `undone` in the same DB transaction: a batch can't become `undone` while rows
+  reference it, never returns to `committed`, and an undone batch takes no rows.
+- An account has at most one entered balance (`batch_id` empty: `statement`, `manual`,
+  `valuation`) per date, since each asserts the same end-of-day balance; a correction
+  edits it. Balances from files may repeat a date across overlapping exports, and a
+  mismatch is a failed check, not a refused insert.
+- `transaction` is an SQL keyword, so the table name is always quoted (`"transaction"`).
+- Tables arrive with the roadmap item that needs them. M1.4 created the ones below up to
+  and including `report`, except `change_batch`/`change_item`, `transaction_split`,
+  `ledger_line`, `tag`, `merchant_alias`, `transaction_link`, `duplicate_candidate` and
+  the schedule tables; `mcp_client`, `mcp_access_log` and `setting` come with M2.
+
 - `account(id, parent_id?, name, institution, kind [current|savings|credit_card|pot|cash|
   asset|liability|...], currency, opening_balance_minor?, opening_date?,
-  reconciled_through?, closed_on?)` — pots are child accounts of their parent;
+  reconciled_through?, closed_on?)` — pots are child accounts of their parent; a pot's
+  parent is a `current` or `savings` account in the same currency;
   `asset` and `liability` accounts hold `valuation` snapshots only, no transactions
-- `import_batch(id, account_id, source_file, format, preset_id?, imported_at, status)`
+- `import_batch(id, account_id, source_file, format [csv|ofx|qif|camt053|mt940],
+  preset_id?, imported_at, status [committed|undone])` — `source_file` is the file name
+  without its directory; QFX is `ofx`
 - `change_batch(id, kind [rule_apply|duplicate_merge|bulk_edit], created_at,
   status [applied|undone])` and `change_item(batch_id, transaction_id, field, old_value,
   new_value)` — undo for changes to existing transactions
@@ -457,7 +509,7 @@ kind = "pot"
   excluded_reason? [duplicate|bank_error|disputed|other], excluded_note?, excluded_at?,
   origin [imported|mirrored|manual], created_at)` — `mirrored` rows are the generated
   pot-side half of a sub-account transfer, and undoing their import batch removes them too;
-  `manual` rows have no batch; `note` is the imported note (read-only), `user_note` the
+  `manual` rows have no batch and no `external_id` or `fingerprint`; `note` is the imported note (read-only), `user_note` the
   user's; `category_id` is empty when the transaction is split. The three `excluded_*`
   fields are set and cleared together (`excluded_note` is required for `other`);
   `created_at` is when the row entered the database (the batch commit for imported rows)
@@ -472,15 +524,20 @@ kind = "pot"
   reimbursements target a purchase; settlements target a share label
 - `duplicate_candidate(id, transaction_a, transaction_b, reason,
   status [pending|merged|dismissed], change_batch_id?)`
-- `balance_snapshot(account_id, date, balance_minor,
-  source [ofx|csv|statement|manual|valuation], note?)` — each one is an assertion; an
-  account's first is its starting point and every later one is a check; `note` is user
-  text, not sent over MCP by default
-- `category(id, parent_id?, key, label)` — two levels, stable keys, translatable labels
-- `rule(id, priority, match_kind, pattern, amount_min?, amount_max?, account_id?)` and
-  `rule_action(rule_id, kind [set_category|set_merchant|add_tag|set_note|exclude|
-  split_template|my_share], value_json)` — an `exclude` action's value is a reason key
-- `transfer_group(id, status [suggested|confirmed|rejected])`
+- `balance_snapshot(id, account_id, batch_id?, date, balance_minor,
+  source [ofx|csv|statement|manual|valuation], note?, created_at)` — each one is an
+  assertion; an account's first is its starting point and every later one is a check;
+  `note` is user text, not sent over MCP by default. `ofx` and `csv` snapshots belong to
+  their import batch and are removed when it is undone; the others have no batch
+- `category(id, parent_id?, key, label)` — two levels, stable keys
+  (`food.groceries` under `food`; key and parent read-only), translatable labels
+- `rule(id, priority, match_field [merchant|description|source_category|source_type],
+  match_kind [is|starts_with|contains|regex], pattern, amount_min?, amount_max?,
+  account_id?, created_at)` and `rule_action(id, rule_id, kind [set_category|
+  set_merchant|add_tag|set_note|exclude|split_template|my_share], value_json)` — one
+  action per kind per rule; an `exclude` action's value is a reason key; `priority` isn't
+  unique (ties go by ID)
+- `transfer_group(id, status [suggested|confirmed|rejected], created_at)`
 - `schedule(id, account_id, merchant_display, category_id?, cadence, next_date,
   amount_minor, currency, tolerance_minor, tolerance_days, status [active|paused|ended])`,
   `schedule_skip(schedule_id, occurrence_date, skipped_at)` and
@@ -489,8 +546,11 @@ kind = "pot"
 - `budget(id, category_id, month?, amount_minor, currency, rollover,
   group_kind [fixed|non_monthly|flex], opening_set_aside_minor?, created_at)` — rollover
   is derived from `ledger_line`, never stored; `opening_set_aside_minor` is what a
-  non-monthly budget had already saved when it was created
-- `fx_rate(date, base, quote, rate, source)`
+  non-monthly budget had already saved when it was created. `month` empty is the standing
+  budget and `YYYY-MM` overrides one month. Fixed and flex amounts are monthly; a
+  non-monthly amount is yearly
+- `fx_rate(date, base, quote, rate_e9, source [ecb|manual])` — 1 `base` = `rate_e9` /
+  10⁹ `quote`: fixed point, so no float enters a conversion
 - `suggestion(id, kind [categorization|rule|transfer_pair|merchant_alias|refund_link],
   payload_json, rationale, source_client, created_at, status [pending|approved|rejected])`
   — `source_client = coffer` for suggestions the app files itself

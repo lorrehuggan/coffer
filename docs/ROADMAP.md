@@ -404,8 +404,23 @@ Import real statements into a local database from the command line.
   an edited, unknown or skipped migration is refused. `Database::open_existing` (for
   `coffer mcp`) never creates or migrates: a missing database, a pending migration, a
   newer schema or a changed history is refused. `COFFER_DATA_DIR` overrides the data dir
-- ⬜ M1.4 Schema: accounts, import batches, transactions, balance snapshots, categories,
-  rules, transfer groups, budgets, FX rates, suggestions, reports
+- ✅ M1.4 Schema: accounts, import batches, transactions, balance snapshots, categories,
+  rules, transfer groups, budgets, FX rates, suggestions, reports.
+  `crates/core/migrations/V1__initial_schema.sql`: `STRICT` tables, checked dates and
+  currency codes, enum `CHECK`s, no `ON DELETE` actions, indexed foreign keys, triggers
+  for read-only imported source fields and two-level categories, partial unique indexes
+  for dedupe, FX rates as `rate_e9` fixed point (`ARCHITECTURE.md` → "Data model").
+  Constraints carry the invariants: dedupe keys are source ID first (fingerprint only
+  for rows without one), inserts never replace a stored row, and triggers enforce
+  account currency, pot structure, valuation-only `asset`/`liability` accounts and
+  read-only import batches. Triggers also enforce category keys against their parent
+  (keys and parents read-only), keep a pot that holds transactions or balances under its
+  parent, fix an account's currency once a rule with amount bounds names it (and keep such a rule
+  in that currency), and enforce
+  undo (an `undone` batch has no rows, takes none and never returns to `committed`); a
+  partial unique index allows one entered balance per account and day. Tables for later
+  items (splits, tags, links, duplicates, change batches, schedules, MCP clients) come
+  with those items
 - ⬜ M1.5 Money type: integer minor units + ISO 4217 currency (no floats anywhere)
 - ⬜ M1.6 `Importer` trait (detect → parse → normalize)
 - ⬜ M1.7 CSV importer: encoding detection, delimiter, header/skip rows, date formats
