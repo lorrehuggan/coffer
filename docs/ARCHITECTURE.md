@@ -274,6 +274,18 @@ the designer's recommendation:
    tags, notes or names, which don't change a balance, so Apply and Undo inside a locked
    period aren't flagged. An Exclude action with reason `duplicate` does change a
    balance, and is flagged like any other change there.
+9. **Rule definitions are validated in core before they're stored** (`coffer_core::rule`).
+   A `regex` pattern must compile case-insensitively within a 1 MiB compiled-size limit
+   and a nesting depth of 32. Every pattern is at most 1,000 bytes. Errors never repeat
+   the pattern. Each action's `value_json` has one strict shape, which refuses unknown or
+   repeated fields, wrong types and floats: `set_category` is a category key string;
+   `set_merchant` and `set_note` are non-blank strings; `add_tag` is a non-empty array of
+   distinct tag names; `exclude` is a reason key, never `other` (a rule carries no note);
+   `split_template` is an array of two or more `{"category", "basis_points"}` lines in
+   distinct categories, each above 0 and summing to exactly 10000; `my_share` is
+   `{"basis_points": 0..=10000}`. Shares are integer basis points, and the engine turns
+   them into minor units. Amount bounds are inclusive and compare against the signed
+   `amount_minor`. A test keeps the Rust enum keys equal to the schema's CHECK lists.
 
 ### Decision record: Settings, AI access and backups (2026-11-10)
 
@@ -364,7 +376,7 @@ Versions live in `[workspace.dependencies]` in the root `Cargo.toml`; crates opt
 | Storage | `rusqlite` (`bundled`), `refinery` | `rusqlite` pinned to 0.40 until `refinery` supports 0.41. `refinery` checksums applied migrations, enforcing "never edit a shipped migration". No connection pool: one connection per process, WAL + `busy_timeout` + `BEGIN IMMEDIATE`; the app and the CLI open with `Database::open`, which creates the database if needed and runs migrations (all pending ones in one transaction); `coffer mcp` opens with `Database::open_existing`, which never creates or migrates and refuses a missing or older database, telling the user to open Coffer or run a CLI command. Both check an existing file first (a SQLite database, not a newer schema, applied migrations matching the embedded ones) and leave a refused file untouched: no permission change, WAL switch or write. SQLCipher later = `bundled-sqlcipher-vendored-openssl` |
 | Import | `csv`, `serde`, `encoding_rs`, `ofx-kit`, `chrono`, `toml` | Encoding comes from the preset (or a BOM); without either only UTF-8 is accepted, and a file that doesn't decode is refused, never guessed. The BOM is stripped before `csv`. `ofx-kit` is young and single-maintainer: pinned exactly and kept behind the `Importer` trait (fallback: `ofx-rs`). Dates must round-trip through their format string |
 | Money / FX | none | Own `Money { minor: i64, currency }` (`coffer_core::money`, M1.5) with a hand-written, test-frozen exponent table. FX in `i128` fixed point with one explicit rounding. Decimal types from format crates are converted to minor units at the import boundary, never stored. See "Money" below |
-| Rules | `regex`, `aho-corasick` | `regex` is linear-time, so user rules can't hang the app |
+| Rules | `regex`, `aho-corasick`, `serde_json` | `regex` is linear-time, so user rules can't hang the app. `serde_json` (already in the tree, MIT OR Apache-2.0) decodes `rule_action.value_json` strictly in core |
 | Plumbing | `thiserror` (libs), `anyhow` (binary), `clap`, `tracing`, `tracing-subscriber`, `directories`, `uuid` (v7) | Logs go to stderr |
 | MCP | `rmcp` (`transport-io`), `tokio` (current-thread), `schemars` | Only the `mcp` crate / `coffer mcp` path uses tokio; `core` stays synchronous |
 
@@ -679,7 +691,8 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   account_id?, created_at)` and `rule_action(id, rule_id, kind [set_category|
   set_merchant|add_tag|set_note|exclude|split_template|my_share], value_json)` — one
   action per kind per rule; an `exclude` action's value is a reason key; `priority` isn't
-  unique (ties go by ID)
+  unique (ties go by ID). Patterns and `value_json` shapes are checked in core
+  (`rule::RuleDefinition`; see "Decision record: rules", point 9)
 - `transfer_group(id, status [suggested|confirmed|rejected], created_at)`
 - `schedule(id, account_id, merchant_display, category_id?, cadence, next_date,
   amount_minor, currency, tolerance_minor, tolerance_days, status [active|paused|ended])`,

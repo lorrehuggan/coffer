@@ -9,4 +9,5 @@ pub mod category;
 pub mod db;
 pub mod money;
 pub mod paths;
+pub mod rule;
 pub mod statement;

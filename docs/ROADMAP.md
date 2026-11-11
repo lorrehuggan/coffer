@@ -470,7 +470,10 @@ Import real statements into a local database from the command line.
   committed silently. Manual balance anchor for accounts whose exports have none
 - ⬜ M1.13 Import batches with undo
 - ⬜ M1.14 Default two-level category set with stable keys
-- ⬜ M1.15 Rules engine (contains / regex / amount range / account), priority ordering
+- ⬜ M1.15 Rules engine (contains / regex / amount range / account), priority ordering.
+  The validated rule types exist in `coffer_core::rule` (match field and kind, regex
+  pattern with size limits, amount bounds, typed action values, cross-action checks); the
+  engine, matching and ordering are still to do
 - ⬜ M1.16 Transfer-pair detection (opposite amounts, own accounts, N-day window)
 - ⬜ M1.17 Sub-accounts (Monzo Pots, Starling Spaces, Revolut Vaults): preset-driven detection,
   auto-created pot accounts, mirrored pot-side entries auto-paired as transfers
@@ -489,7 +492,10 @@ Import real statements into a local database from the command line.
   Raw fields are never changed
 - ⬜ M1.24 Rule actions beyond setting a category: set merchant, add tag, set note, exclude,
   split template, my share. Each transaction records the rule that categorised it. Applying
-  a rule to past transactions shows a preview and commits as an undoable change batch
+  a rule to past transactions shows a preview and commits as an undoable change batch.
+  Each action kind's `value_json` shape is typed and validated in
+  `coffer_core::rule::RuleAction`; still to do: applying the actions, including
+  converting basis-point shares to minor units
 - ⬜ M1.25 Refunds, reimbursements and shared costs: `transaction_link`
   (`refund`/`reimbursement`/`settlement`). A refund nets against the purchase's category
   instead of counting as income; a reimbursable purchase stays outstanding until linked;

@@ -22,7 +22,8 @@ dir, WAL, permissions, migrations; M1.3), the initial schema
 (`crates/core/migrations/V1__initial_schema.sql`, M1.4; no Rust API over it yet) and the
 money types (`money`: `Currency`, `Money`, exact decimal parsing; M1.5) and the
 normalized import output (`statement`: `Statement`, `StatementLine`, flagged rows; M1.6)
-and category keys (`category`: `CategoryKey`; M1.8).
+and category keys (`category`: `CategoryKey`; M1.8) and validated rule types (`rule`:
+`RuleDefinition`, `Pattern`, `RuleAction`; no engine yet, M1.15).
 `crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
 importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 (`preset`: `Preset`, `Presets::bundled`; M1.8), but no presets in `presets/` or OFX yet;

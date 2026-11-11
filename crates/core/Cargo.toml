@@ -18,8 +18,8 @@ directories.workspace = true
 uuid.workspace = true
 regex.workspace = true
 aho-corasick.workspace = true
+# Strict encode/decode of `rule_action.value_json` (`rule::RuleAction`).
+serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-# Checks the serde impls on `Currency` and `DecimalMark`.
-serde_json.workspace = true
