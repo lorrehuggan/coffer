@@ -10,6 +10,7 @@ use crate::category::CategoryKey;
 use crate::db::Database;
 use crate::id::{AccountId, BatchId, RuleId, TransactionId};
 use crate::money::Currency;
+use crate::tag::TagName;
 
 // Definitions ------------------------------------------------------------------
 
@@ -475,7 +476,7 @@ fn key(text: &str) -> Option<String> {
 #[test]
 fn a_rule_round_trips() {
     let mut f = Fixture::new();
-    let tags = TagList::new(vec![ActionText::new("work").unwrap()]).unwrap();
+    let tags = TagList::new(vec![TagName::new("work").unwrap()]).unwrap();
     let rule = RuleDefinition::new(
         MatchField::Description,
         pattern(MatchKind::Regex, r"^tfl\s+travel"),
