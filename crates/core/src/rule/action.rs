@@ -9,14 +9,15 @@
 //! |------------------|-----------------------------------------------------------|
 //! | `set_category`   | `"food.groceries"`: a category key                         |
 //! | `set_merchant`   | `"Uber"`: the display merchant                             |
-//! | `add_tag`        | `["work", "travel"]`: one or more distinct tag names        |
+//! | `add_tag`        | `["work", "travel"]`: tag names, distinct ignoring case     |
 //! | `set_note`       | `"Claim on expenses"`: the user note                       |
 //! | `exclude`        | `"bank_error"`: a reason key other than `other`            |
 //! | `split_template` | `[{"category": "food", "basis_points": 6000}, …]`          |
 //! | `my_share`       | `{"basis_points": 5000}`                                   |
 //!
 //! Shares are integer basis points (1/100 of a percent, `10000` is all of
-//! it), never floats.
+//! it), never floats. Tag names are [`TagName`]s, checked as the `tag`
+//! module checks them; decoding trims them.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -29,6 +30,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{ActionKind, UnknownKey, key_enum};
 use crate::category::{CategoryKey, CategoryKeyError};
+use crate::tag::{self, TagName, TagNameError};
 
 key_enum! {
     /// Why a row is excluded, as `transaction.excluded_reason` stores it.
@@ -44,8 +46,9 @@ key_enum! {
     }
 }
 
-/// Text a rule sets on a transaction: a display merchant, a note or a tag
-/// name. Not blank (not empty or only whitespace), and stored as given.
+/// Text a rule sets on a transaction: a display merchant or a note. Not
+/// blank (not empty or only whitespace), and stored as given. Tag names are
+/// [`TagName`]s.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ActionText(String);
 
@@ -72,28 +75,29 @@ impl fmt::Debug for ActionText {
     }
 }
 
-/// The tag names an `add_tag` action adds: at least one, no repeats.
+/// The tag names an `add_tag` action adds: at least one, no name twice
+/// ignoring case (tag names are unique ignoring case, so `Work` and `work`
+/// are one tag).
 ///
 /// Tags are named, not referenced by ID, so a rule can name a tag that
 /// doesn't exist yet; creating it is the rules engine's job.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TagList(Vec<ActionText>);
+pub struct TagList(Vec<TagName>);
 
 impl TagList {
-    /// Checks `tags` is non-empty with no name twice.
-    pub fn new(tags: Vec<ActionText>) -> Result<TagList, ActionValueError> {
+    /// Checks `tags` is non-empty with no name twice, ignoring case.
+    pub fn new(tags: Vec<TagName>) -> Result<TagList, ActionValueError> {
         if tags.is_empty() {
             return Err(ActionValueError::NoTags);
         }
-        let mut seen = HashSet::new();
-        if !tags.iter().all(|tag| seen.insert(tag.as_str())) {
+        if tag::has_repeat(&tags) {
             return Err(ActionValueError::DuplicateTag);
         }
         Ok(TagList(tags))
     }
 
     /// The tag names, in the order given.
-    pub fn tags(&self) -> &[ActionText] {
+    pub fn tags(&self) -> &[TagName] {
         &self.0
     }
 }
@@ -223,15 +227,19 @@ pub enum ActionValueError {
     #[error(transparent)]
     Category(#[from] CategoryKeyError),
 
-    /// A merchant, note or tag name is empty or only whitespace.
+    /// A merchant or note is empty or only whitespace.
     #[error("the text is blank")]
     BlankText,
+
+    /// A tag name is blank, too long or has a control character.
+    #[error(transparent)]
+    TagName(#[from] TagNameError),
 
     /// An `add_tag` action names no tags.
     #[error("add at least one tag")]
     NoTags,
 
-    /// An `add_tag` action names a tag twice.
+    /// An `add_tag` action names a tag twice, ignoring case.
     #[error("a tag is named twice")]
     DuplicateTag,
 
@@ -365,7 +373,7 @@ impl RuleAction {
             ActionKind::AddTag => {
                 let tags = parse::<Vec<String>>(kind, value_json)?
                     .iter()
-                    .map(|tag| ActionText::new(tag))
+                    .map(|tag| TagName::new(tag))
                     .collect::<Result<_, _>>()?;
                 RuleAction::AddTag(TagList::new(tags)?)
             }
@@ -397,13 +405,9 @@ impl RuleAction {
             RuleAction::SetMerchant(text) | RuleAction::SetNote(text) => {
                 serde_json::to_string(text.as_str())
             }
-            RuleAction::AddTag(tags) => serde_json::to_string(
-                &tags
-                    .tags()
-                    .iter()
-                    .map(ActionText::as_str)
-                    .collect::<Vec<_>>(),
-            ),
+            RuleAction::AddTag(tags) => {
+                serde_json::to_string(&tags.tags().iter().map(TagName::as_str).collect::<Vec<_>>())
+            }
             RuleAction::Exclude(reason) => serde_json::to_string(reason.as_str()),
             RuleAction::SplitTemplate(template) => serde_json::to_string(
                 &template
@@ -435,6 +439,10 @@ mod tests {
         ActionText::new(text).unwrap()
     }
 
+    fn tag(name: &str) -> TagName {
+        TagName::new(name).unwrap()
+    }
+
     fn share(bp: u64) -> Share {
         Share::new(bp).unwrap()
     }
@@ -452,7 +460,7 @@ mod tests {
             ),
             (RuleAction::SetMerchant(text("Uber")), r#""Uber""#),
             (
-                RuleAction::AddTag(TagList::new(vec![text("work"), text("gift aid")]).unwrap()),
+                RuleAction::AddTag(TagList::new(vec![tag("work"), tag("gift aid")]).unwrap()),
                 r#"["work","gift aid"]"#,
             ),
             (
@@ -646,7 +654,7 @@ mod tests {
         }
         assert_eq!(
             RuleAction::decode(ActionKind::AddTag, r#"["work"," "]"#),
-            Err(ActionValueError::BlankText)
+            Err(ActionValueError::TagName(TagNameError::Blank))
         );
         assert_eq!(ActionText::new(" "), Err(ActionValueError::BlankText));
     }
@@ -662,6 +670,36 @@ mod tests {
             Err(ActionValueError::DuplicateTag)
         );
         assert_eq!(TagList::new(vec![]), Err(ActionValueError::NoTags));
+        // Tag names are unique ignoring case, so these name one tag twice.
+        for json in [
+            r#"["Work","work"]"#,
+            r#"["CAFÉ","café"]"#,
+            r#"["work"," WORK "]"#,
+        ] {
+            assert_eq!(
+                RuleAction::decode(ActionKind::AddTag, json),
+                Err(ActionValueError::DuplicateTag),
+                "{json}"
+            );
+        }
+    }
+
+    #[test]
+    fn tag_names_are_checked_like_the_tag_module_checks_them() {
+        // Trimmed on decode, so the canonical form has no padding.
+        let action = RuleAction::decode(ActionKind::AddTag, r#"[" work "]"#).unwrap();
+        assert_eq!(action.value_json(), r#"["work"]"#);
+        assert_eq!(
+            RuleAction::decode(ActionKind::AddTag, r#"["line\nbreak"]"#),
+            Err(ActionValueError::TagName(TagNameError::ControlCharacter))
+        );
+        let long = format!(r#"["{}"]"#, "x".repeat(tag::MAX_TAG_NAME_LEN + 1));
+        assert_eq!(
+            RuleAction::decode(ActionKind::AddTag, &long),
+            Err(ActionValueError::TagName(TagNameError::TooLong {
+                max: tag::MAX_TAG_NAME_LEN
+            }))
+        );
     }
 
     #[test]

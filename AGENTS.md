@@ -29,12 +29,18 @@ store and the `RuleSet` engine, `set_category` only; M1.15) and transfer-pair de
 (`transfer`, M1.16) and sub-accounts (`sub_account`: pots found by the bank's ID,
 auto-created, rows mirrored and paired as confirmed transfers; M1.17, migration
 `V4__sub_account_key.sql`) and the import commit (`import`: preview → backup → commit →
-undo with dedupe and reconciliation, then preset categories, the pot mirror, rules and
-transfer pairing in the same DB transaction; `balance`: balance checks; `account`:
+undo with dedupe and reconciliation, then preset categories, the pot mirror, merchant
+names, rules and transfer pairing in the same DB transaction; `balance`: balance checks; `account`:
 minimal accounts and entered balances; `id`: row IDs; M1.11–M1.13, migration
 `V3__import_flags.sql`) and local backups (`backup`: `VACUUM INTO` snapshots in
 `<data dir>/backups`, rotation, checked restore; taken before import commits and
-migrations; M1.28).
+migrations; M1.28) and splits (`split`: lines summing exactly to the parent, the
+`ledger_line` view; M1.20, `V5__transaction_split.sql`) and tags and user notes (`tag`,
+`note`; private tags; M1.21, `V6__tags.sql`) and manual rows and exclusions (`manual`,
+`exclusion`; M1.22, no migration) and merchant names (`merchant`: deterministic
+clean-up, aliases, `merchant_display_source`; run in the import commit before rules;
+M1.23, `V7__merchant_alias.sql`). Undo and manual deletes clear split lines and tag
+links. None of M1.20–M1.23 has CLI commands yet.
 `crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
 importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 (`preset`: `Preset`, `Presets::bundled`; M1.8) and the first preset, `presets/uk/monzo.toml`

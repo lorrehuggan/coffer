@@ -21,7 +21,9 @@ pub struct MatchInput<'a> {
     pub account_id: AccountId,
     /// The signed amount in minor units (negative is money out).
     pub amount_minor: i64,
-    /// The bank's merchant name (`transaction.merchant`), if any.
+    /// The bank's merchant name (`transaction.merchant`), if any, as
+    /// stored. Rules match it [cleaned](crate::merchant::clean), never with
+    /// a merchant alias or a display name applied.
     pub merchant: Option<&'a str>,
     /// The bank's description as imported (`transaction.description_raw`).
     /// Rules match it with whitespace collapsed, as
@@ -321,11 +323,13 @@ impl CompiledRule {
     }
 }
 
-/// A transaction's fields as rules see them: the description with
-/// whitespace collapsed, and each field folded once, when a rule first
-/// needs it.
+/// A transaction's fields as rules see them: the merchant
+/// [cleaned](crate::merchant::clean), the description with whitespace
+/// collapsed, and each field folded once. The merchant is cleaned and each
+/// field folded when a rule first needs it.
 struct Prepared<'a> {
     input: &'a MatchInput<'a>,
+    merchant: OnceCell<Option<String>>,
     description: String,
     folded: [OnceCell<Option<String>>; 4],
 }
@@ -334,6 +338,7 @@ impl<'a> Prepared<'a> {
     fn new(input: &'a MatchInput<'a>) -> Prepared<'a> {
         Prepared {
             input,
+            merchant: OnceCell::new(),
             description: collapse_whitespace(input.description),
             folded: Default::default(),
         }
@@ -342,7 +347,13 @@ impl<'a> Prepared<'a> {
     /// The field as a regex sees it. `None` when the row has no value.
     fn text(&self, field: MatchField) -> Option<&str> {
         match field {
-            MatchField::Merchant => self.input.merchant,
+            // The cleaned bank text, before any merchant alias: names never
+            // change which rules match (decision record "Inbox impact
+            // preview", point 5).
+            MatchField::Merchant => self
+                .merchant
+                .get_or_init(|| self.input.merchant.map(crate::merchant::clean))
+                .as_deref(),
             MatchField::Description => Some(&self.description),
             MatchField::SourceCategory => self.input.source_category,
             MatchField::SourceType => self.input.source_type,
@@ -366,7 +377,7 @@ impl<'a> Prepared<'a> {
 /// Whitespace collapsed to single spaces and trimmed, like
 /// [`normalize_description`](crate::statement::normalize_description) but
 /// keeping the case, so a regex sees the letters the bank wrote.
-fn collapse_whitespace(text: &str) -> String {
+pub(crate) fn collapse_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -375,7 +386,7 @@ fn collapse_whitespace(text: &str) -> String {
 /// folding without tables: `Straße`, `STRASSE` and `strasse` all fold to
 /// `strasse`, and final `ς` to `σ`. Plain patterns and the fields they test
 /// are folded the same way.
-fn fold(text: &str) -> String {
+pub(crate) fn fold(text: &str) -> String {
     text.chars()
         .flat_map(char::to_lowercase)
         .flat_map(char::to_uppercase)

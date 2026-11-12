@@ -62,6 +62,10 @@ row_id!(
     TransactionId
 );
 row_id!(
+    /// A `transaction_split` row: one line of a split transaction.
+    SplitId
+);
+row_id!(
     /// A `balance_snapshot` row.
     BalanceId
 );
@@ -72,4 +76,12 @@ row_id!(
 row_id!(
     /// A `rule` row.
     RuleId
+);
+row_id!(
+    /// A `tag` row.
+    TagId
+);
+row_id!(
+    /// A `merchant_alias` row.
+    MerchantAliasId
 );

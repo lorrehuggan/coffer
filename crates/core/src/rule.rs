@@ -33,7 +33,10 @@
 //! - it has no account, or the transaction's account is its account;
 //! - the signed `amount_minor` is within its [`AmountBounds`] (inclusive);
 //! - its pattern matches its [`MatchField`]. A field the row doesn't have
-//!   (no merchant, say) never matches. The description is matched with
+//!   (no merchant, say) never matches. The merchant is matched
+//!   [cleaned](crate::merchant::clean) (card numbers, processor prefixes and
+//!   the like removed), before any merchant alias applies, so merchant names
+//!   never change which rules match. The description is matched with
 //!   whitespace collapsed, as `description_normalized` has it.
 //!
 //! Matching ignores case. `is`, `starts_with` and `contains` compare the
@@ -69,6 +72,7 @@ pub use action::{
     TagList,
 };
 pub use engine::{MatchInput, Outcome, RuleSet, SetBy, apply_to_batch};
+pub(crate) use engine::{collapse_whitespace, fold};
 pub use pattern::{MAX_PATTERN_LEN, Pattern, PatternError, REGEX_NEST_LIMIT, REGEX_SIZE_LIMIT};
 pub use store::{
     InvalidRule, StoreError, StoredRule, create, create_at, delete, get, list, move_to,
