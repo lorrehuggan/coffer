@@ -1,0 +1,23 @@
+# Reads signed-amount.csv: every optional column, IDs and a category map.
+id = "uk-example-current"
+name = "Example Bank (current account)"
+region = "uk"
+currency = "GBP"
+encoding = "utf-8"
+delimiter = ","
+external_id = { column = "Transaction ID" }
+date = { column = "Date", format = "%d/%m/%Y" }
+time = { column = "Time", format = "%H:%M:%S" }
+amount = { column = "Amount" }
+row_currency = { column = "Currency" }
+original_amount = { column = "Local amount", currency_column = "Local currency" }
+merchant = { column = "Name" }
+description = { column = "Description" }
+source_category = { column = "Category" }
+source_type = { column = "Type" }
+note = { column = "Notes" }
+
+[category_map]
+"Eating out" = "food.eating_out"
+"Groceries" = "food.groceries"
+"Bills" = "bills"

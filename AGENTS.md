@@ -26,20 +26,28 @@ and categories (`category`: `CategoryKey`, M1.8; `CategoryKind`, `DEFAULT_CATEGO
 and `CategoryTree` via `Database::categories`, seeded by `V2__default_categories.sql`,
 M1.14) and rules (`rule`: validated `RuleDefinition`, `Pattern`, `RuleAction`; the
 store and the `RuleSet` engine, `set_category` only; M1.15) and transfer-pair detection
-(`transfer`, M1.16) and the import commit (`import`: preview → commit → undo with dedupe
-and reconciliation, then preset categories, rules and transfer pairing in the same DB
-transaction; `balance`: balance checks; `account`: minimal accounts and entered
-balances; `id`: row IDs; M1.11–M1.13, migration `V3__import_flags.sql`).
+(`transfer`, M1.16) and sub-accounts (`sub_account`: pots found by the bank's ID,
+auto-created, rows mirrored and paired as confirmed transfers; M1.17, migration
+`V4__sub_account_key.sql`) and the import commit (`import`: preview → backup → commit →
+undo with dedupe and reconciliation, then preset categories, the pot mirror, rules and
+transfer pairing in the same DB transaction; `balance`: balance checks; `account`:
+minimal accounts and entered balances; `id`: row IDs; M1.11–M1.13, migration
+`V3__import_flags.sql`) and local backups (`backup`: `VACUUM INTO` snapshots in
+`<data dir>/backups`, rotation, checked restore; taken before import commits and
+migrations; M1.28).
 `crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
 importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 (`preset`: `Preset`, `Presets::bundled`; M1.8) and the first preset, `presets/uk/monzo.toml`
-(M1.9) and the OFX/QFX importer (`ofx`: `OfxImporter`, own SGML/XML reader; M1.10);
-synthetic fixtures are in `fixtures/csv/`, `fixtures/presets/` and `fixtures/ofx/`; `crates/mcp` is a stub. The GUI is in `crates/app` (package `coffer-app`, lib
+(M1.9, with `[sub_account_transfer]` for pots since M1.17) and the OFX/QFX importer
+(`ofx`: `OfxImporter`, own SGML/XML reader; M1.10); synthetic fixtures are in
+`fixtures/csv/` (test-only mappings in `fixtures/csv/mappings/`), `fixtures/presets/` and
+`fixtures/ofx/`, with end-to-end importer-path tests in `crates/import/tests/` and
+`crates/app/tests/` (M1.19); `crates/mcp` is a stub. The GUI is in `crates/app` (package `coffer-app`, lib
 `coffer_app`, binary `coffer`); the GUI doesn't open the database yet. `coffer` opens the
 Transactions screen on fixture data (`crates/app/src/transactions.rs`), and
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
-`import`, `accounts` (`list`, `add`) and `undo-import`; the other commands don't exist
-yet.
+`import`, `accounts` (`list`, `add`), `undo-import`, `backup` (`--list`) and
+`restore <file> [--yes]` (M1.28); the other commands don't exist yet.
 `cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with
 Paper. Shared files stay at the root: `assets/` (fonts, brand) and `design/` (tokens).
 Check the tree before assuming a module exists.

@@ -179,6 +179,13 @@ pub enum RowProblem {
     /// as an OFX correction to an earlier transaction.
     #[error("Coffer can't import this row: {reason}")]
     Unsupported { reason: &'static str },
+
+    /// The preset recognises the row as a transfer to or from a sub-account
+    /// (a pot), but the column with the sub-account's ID is blank. Without
+    /// the ID the pot side can't be recorded, and half a transfer isn't
+    /// imported.
+    #[error("the row is a {kind} transfer, but the {kind}'s ID is missing")]
+    SubAccountKeyMissing { kind: SubAccountKind },
 }
 
 /// One transaction as the file states it, normalized.
@@ -215,6 +222,11 @@ pub struct StatementLine {
     /// category with `category_source = 'preset_map'`, and a matching rule
     /// overrides it.
     pub category: Option<CategoryKey>,
+    /// The sub-account (pot) at the other end, when the preset recognises
+    /// the row as a transfer between the account and one of its pots. Not
+    /// a source field: the commit mirrors the row onto the pot
+    /// ([`crate::sub_account`]).
+    pub sub_account: Option<SubAccountRef>,
 }
 
 impl StatementLine {
@@ -233,6 +245,7 @@ impl StatementLine {
             note: None,
             balance_after: None,
             category: None,
+            sub_account: None,
         }
     }
 
@@ -241,6 +254,53 @@ impl StatementLine {
     pub fn description_normalized(&self) -> String {
         normalize_description(&self.description_raw)
     }
+}
+
+/// What kind of sub-account a transfer row names. Only pots so far; Starling
+/// Spaces and Revolut Vaults will be pots too, read by their own presets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SubAccountKind {
+    /// A Monzo Pot (and the like): an `account` of kind `pot` under the
+    /// account the file is imported into.
+    Pot,
+}
+
+impl SubAccountKind {
+    pub const ALL: [SubAccountKind; 1] = [SubAccountKind::Pot];
+
+    /// The key a preset writes (`kind = "pot"`).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SubAccountKind::Pot => "pot",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<SubAccountKind> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == key)
+    }
+}
+
+impl fmt::Display for SubAccountKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The sub-account at the other end of a transfer row: which pot, by the
+/// bank's ID for it.
+///
+/// `key` is how the pot is found again (`account.sub_account_key`, unique
+/// under its parent); `name` is only what a new pot is called. Pots are
+/// never matched by name, since the user can rename them.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SubAccountRef {
+    pub kind: SubAccountKind,
+    /// The bank's stable ID for the pot (Monzo's `pot_…`), trimmed and never
+    /// empty.
+    pub key: String,
+    /// The pot's name on this row, when the file gives one. It can differ
+    /// between rows for the same key (the user renamed the pot).
+    pub name: Option<String>,
 }
 
 /// Whitespace collapsed to single spaces and trimmed, then uppercased:

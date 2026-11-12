@@ -37,7 +37,7 @@ pub use dates::{DateFormat, FormatError, TimeFormat};
 pub use encoding::TextEncoding;
 pub use mapping::{
     AmountColumns, Column, CsvMapping, DateColumn, Delimiter, MappingError, OriginalAmountColumns,
-    SplitSigns, TimeColumn,
+    SplitSigns, SubAccountTransfer, TimeColumn,
 };
 pub use reader::{CsvFile, CsvRecord};
 

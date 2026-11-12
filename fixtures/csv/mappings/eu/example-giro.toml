@@ -1,0 +1,13 @@
+# Reads semicolon-decimal-comma.csv: the delimiter is detected, the BOM
+# sets the encoding, decimal commas, a per-row currency and a description
+# from two columns.
+id = "eu-example-giro"
+name = "Example Bank (Girokonto)"
+region = "eu"
+currency = "EUR"
+date = { column = "Buchungstag", format = "%d.%m.%Y" }
+amount = { column = "Betrag" }
+decimal = ","
+row_currency = { column = "Währung" }
+merchant = { column = "Auftraggeber" }
+description = { columns = ["Auftraggeber", "Verwendungszweck"] }

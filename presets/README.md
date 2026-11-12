@@ -115,7 +115,21 @@ the default categories listed in `docs/ARCHITECTURE.md` → "Categories" (a test
 it): they are the ones every Coffer database has. Map a bank category to a group
 (`travel`) when no subcategory fits. Unmapped categories are left for rules or the user.
 
-### Not yet
+### Sub-accounts
 
-Sub-account transfers (Monzo Pots, Starling Spaces, `[sub_account_transfer]`) come with
-M1.17. Until then a preset using them is refused.
+`[sub_account_transfer]` recognises transfers between the account and its pots (Monzo
+Pots), so each one is also recorded on the pot as a confirmed transfer:
+
+```toml
+[sub_account_transfer]
+kind = "pot"                                      # the only kind so far
+when = { column = "Type", is = "Pot transfer" }   # exact value, case included; the row's value is trimmed
+key = { column = "Description" }                  # the pot's stable ID at the bank
+name = { column = "Name" }                        # optional: what a new pot is called
+```
+
+Pots are found by `key`, never by name; a new key creates a pot under the account
+imported into, named from `name` (else the key). A matching row with an empty key is
+flagged. The columns count as read, so don't list them in `ignore`. Unknown keys are
+refused, and positions count from 1. Starling Spaces and Revolut Vaults will be new
+`kind`s.

@@ -65,6 +65,15 @@ pub enum Error {
     #[error("there is no transfer group {0}")]
     GroupNotFound(TransferGroupId),
 
+    #[error(
+        "transactions {0} and {1} aren't two sides of one transfer: they must be on different \
+         accounts, in one currency, with opposite amounts"
+    )]
+    NotAPair(TransactionId, TransactionId),
+
+    #[error("transaction {0} is already in a transfer group")]
+    AlreadyGrouped(TransactionId),
+
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 }
@@ -304,6 +313,73 @@ pub fn detect(
         });
     }
     Ok(pairs)
+}
+
+/// Records transactions `a` and `b` as one `confirmed` transfer group and
+/// returns it: for a pair that is known to be a transfer rather than found
+/// by detection, such as an imported row and its mirrored pot-side row
+/// ([`crate::sub_account::mirror`]). [`detect_for_batch`] then leaves both
+/// alone, since they're in a group.
+///
+/// The two must be on different accounts, in one currency, with opposite
+/// amounts ([`Error::NotAPair`]; either may be the outflow), and neither
+/// may be in a transfer group already ([`Error::AlreadyGrouped`]). Unlike
+/// detection, it doesn't look at dates, exclusions or closed accounts: the
+/// caller knows the pair. Two zero amounts are opposite.
+///
+/// Like [`detect_for_batch`], it writes through `conn` without a
+/// transaction of its own.
+pub fn record_confirmed_pair(
+    conn: &Connection,
+    a: TransactionId,
+    b: TransactionId,
+) -> Result<TransferGroupId, Error> {
+    let mut load = conn.prepare_cached(
+        "SELECT account_id, amount_minor, currency, transfer_group_id \
+         FROM \"transaction\" WHERE id = ?1",
+    )?;
+    let mut side = |id: TransactionId| {
+        load.query_row([id], |row| {
+            Ok(Side {
+                account: row.get(0)?,
+                amount: row.get(1)?,
+                currency: row.get(2)?,
+                group: row.get(3)?,
+            })
+        })
+        .optional()?
+        .ok_or(Error::TransactionNotFound(id))
+    };
+    let (first, second) = (side(a)?, side(b)?);
+    let opposite = first.amount.checked_neg() == Some(second.amount);
+    if first.account == second.account || first.currency != second.currency || !opposite {
+        return Err(Error::NotAPair(a, b));
+    }
+    for (id, side) in [(a, &first), (b, &second)] {
+        if side.group.is_some() {
+            return Err(Error::AlreadyGrouped(id));
+        }
+    }
+    conn.execute(
+        "INSERT INTO transfer_group (status) VALUES (?1)",
+        [TransferStatus::Confirmed.as_str()],
+    )?;
+    let group = TransferGroupId::new(conn.last_insert_rowid());
+    let assigned = conn.execute(
+        "UPDATE \"transaction\" SET transfer_group_id = ?1 \
+         WHERE id IN (?2, ?3) AND transfer_group_id IS NULL",
+        params![group, a, b],
+    )?;
+    debug_assert_eq!(assigned, 2, "both sides were free when read");
+    Ok(group)
+}
+
+/// What [`record_confirmed_pair`] checks of each side.
+struct Side {
+    account: AccountId,
+    amount: i64,
+    currency: Currency,
+    group: Option<TransferGroupId>,
 }
 
 /// Detects pairs for import `batch` in a DB transaction of its own, for a

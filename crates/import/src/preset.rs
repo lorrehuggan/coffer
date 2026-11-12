@@ -17,6 +17,10 @@
 //!   (`import_batch.preset_id`), so it never changes once a preset ships.
 //!   It's the region, then the file name, then optionally more:
 //!   `presets/uk/monzo.toml` can be `uk-monzo` or `uk-monzo-current`.
+//! - **Sub-accounts.** `[sub_account_transfer]` says which rows are
+//!   transfers to or from a pot (a column's exact value) and which columns
+//!   hold the pot's stable ID and name ([`SubAccountTransfer`]). The import
+//!   mirrors those rows onto the pot (`coffer_core::sub_account`).
 
 mod raw;
 
@@ -29,7 +33,7 @@ use coffer_core::money::DecimalMark;
 use crate::AnyImporter;
 use crate::csv::{
     AmountColumns, Column, CsvFile, CsvImporter, CsvMapping, DateColumn, MappingError,
-    OriginalAmountColumns, SplitSigns, TextEncoding, TimeColumn,
+    OriginalAmountColumns, SplitSigns, SubAccountTransfer, TextEncoding, TimeColumn,
 };
 use raw::{PresetColumn, RawAmount, RawColumn, RawDescription, RawPreset};
 
@@ -152,6 +156,13 @@ impl Preset {
             }),
             note: column(raw.note),
             balance: column(raw.balance),
+            sub_account_transfer: raw.sub_account_transfer.map(|transfer| SubAccountTransfer {
+                kind: transfer.kind.into(),
+                match_column: transfer.when.column.0,
+                match_value: transfer.when.is.0,
+                key: transfer.key.column.0,
+                name: column(transfer.name),
+            }),
         };
 
         check_ignore(&mapping, &raw.ignore)?;
@@ -214,6 +225,12 @@ impl Preset {
     /// The bank's category names mapped to Coffer's category keys.
     pub fn category_map(&self) -> &BTreeMap<String, CategoryKey> {
         self.importer.category_map()
+    }
+
+    /// How the preset recognises transfers to and from a sub-account (a
+    /// pot), if the export has them (`[sub_account_transfer]`).
+    pub fn sub_account_transfer(&self) -> Option<&SubAccountTransfer> {
+        self.mapping().sub_account_transfer.as_ref()
     }
 
     /// The category key for a row's source category, matched exactly

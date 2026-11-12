@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, bail};
 use clap::Args;
-use coffer_core::account::{self, Account};
+use coffer_core::account::{self, Account, AccountKind};
 use coffer_core::balance::CheckResult;
 use coffer_core::db::Database;
 use coffer_core::import::{
@@ -39,7 +39,8 @@ pub struct ImportArgs {
     pub file: PathBuf,
 
     /// The account to import into: its ID or exact name. Needed unless
-    /// exactly one open account in the file's currency can take it.
+    /// exactly one open account in the file's currency can take it (pots
+    /// don't count: their transfers come in with their parent's file).
     #[arg(long, value_name = "ID|NAME")]
     pub account: Option<String>,
 
@@ -157,6 +158,14 @@ pub fn run(
                 "Categorised: {} by the preset, {} by rules. Transfer pairs suggested: {}.",
                 summary.categorized_by_preset, summary.categorized_by_rules, summary.transfer_pairs
             )?;
+            if summary.mirrored > 0 {
+                writeln!(
+                    out,
+                    "Pots: {} mirrored onto pots as confirmed transfers, {} created.",
+                    plural(summary.mirrored, "transfer"),
+                    plural(summary.pots_created, "pot")
+                )?;
+            }
             writeln!(out, "To undo it: coffer undo-import {}", summary.batch)?;
             Ok(())
         }
@@ -343,7 +352,9 @@ fn statement_lines(statements: &[OfxStatement]) -> String {
 }
 
 /// The account named by `--account`, or the only one that can take the
-/// file.
+/// file. A pot is never chosen without `--account`: its transfers come in
+/// with its parent's export and are mirrored onto it, so once a Monzo
+/// import has created pots, the next import still finds the one account.
 fn choose_account(
     db: &Database,
     wanted: Option<&str>,
@@ -363,6 +374,7 @@ fn choose_account(
         .iter()
         .filter(|account| {
             account.kind.holds_transactions()
+                && account.kind != AccountKind::Pot
                 && account.currency == currency
                 && account.closed_on.is_none()
         })
@@ -415,6 +427,9 @@ fn write_preview(
                     format!("already recorded (balance {id})")
                 }
                 FileBalanceStatus::Repeated => "repeated in the file".to_owned(),
+                FileBalanceStatus::Locked => {
+                    "in the locked period, left out (unlock the account to record it)".to_owned()
+                }
             };
             writeln!(
                 out,
@@ -459,6 +474,27 @@ fn write_preview(
     }
     for check in &reconciliation.checks {
         writeln!(out, "  {}", describe_check(check))?;
+    }
+
+    let pots = preview.sub_accounts();
+    if !pots.is_empty() {
+        writeln!(
+            out,
+            "Pots:      {} mirrored onto {} as confirmed transfers",
+            plural(pots.mirrored_rows, "transfer"),
+            plural(pots.new_pots.len() + pots.existing_pots.len(), "pot")
+        )?;
+        // A new pot's name is what the account will be called, so it is
+        // shown; its key (the bank's ID) is not.
+        for pot in &pots.new_pots {
+            writeln!(out, "  creates pot \"{}\"", pot.name)?;
+        }
+        for &pot in &pots.closed_pots {
+            writeln!(
+                out,
+                "  pot {pot} is closed, but still gets its transfers from this file"
+            )?;
+        }
     }
 
     let flagged: Vec<_> = preview

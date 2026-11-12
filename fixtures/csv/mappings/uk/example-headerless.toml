@@ -1,0 +1,15 @@
+# Reads headerless-preamble.csv: two preamble lines, no header row, so
+# columns are positions from 1; `%d %b %Y` dates; a running balance.
+id = "uk-example-headerless"
+name = "Example Bank (no header)"
+region = "uk"
+currency = "GBP"
+encoding = "utf-8"
+delimiter = ","
+skip_rows = 2
+header = false
+date = { column = 1, format = "%d %b %Y" }
+source_type = { column = 2 }
+description = { column = 3 }
+amount = { column = 4 }
+balance = { column = 5 }

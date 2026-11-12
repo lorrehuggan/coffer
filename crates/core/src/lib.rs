@@ -6,6 +6,7 @@
 //! It must not depend on GPUI, MCP, or any network or AI crate.
 
 pub mod account;
+pub mod backup;
 pub mod balance;
 pub mod category;
 pub mod db;
@@ -15,4 +16,5 @@ pub mod money;
 pub mod paths;
 pub mod rule;
 pub mod statement;
+pub mod sub_account;
 pub mod transfer;

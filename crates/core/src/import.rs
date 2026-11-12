@@ -49,13 +49,17 @@ use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::account::{self, Account, date_key};
+use crate::backup;
 use crate::balance::{Assertion, DailyMovements};
 use crate::category::CategoryKey;
 use crate::db::Database;
 use crate::id::{AccountId, BalanceId, BatchId, TransactionId};
 use crate::money::{Currency, Money};
 use crate::rule;
-use crate::statement::{RowProblem, SourceFormat, SourceLocation, Statement, StatementLine};
+use crate::statement::{
+    RowProblem, SourceFormat, SourceLocation, Statement, StatementLine, SubAccountRef,
+};
+use crate::sub_account::{self, MirrorPlan};
 use crate::transfer::{self, TransferWindow};
 
 pub use dedupe::{FINGERPRINT_VERSION, fingerprint};
@@ -112,6 +116,14 @@ pub enum Error {
 
     #[error("transfer detection: {0}")]
     Transfers(#[from] transfer::Error),
+
+    #[error("pots: {0}")]
+    SubAccounts(#[from] sub_account::Error),
+
+    /// The backup taken before the commit failed, so nothing was imported
+    /// (M1.28).
+    #[error("couldn't back up the database before importing, so nothing was imported: {0}")]
+    Backup(#[source] Box<backup::Error>),
 
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
@@ -251,6 +263,10 @@ pub enum FileBalanceStatus {
     AlreadyRecorded(BalanceId),
     /// The file gives the same balance for the same day twice.
     Repeated,
+    /// Dated on or before the account's `reconciled_through`: left out, like
+    /// a row in the locked period, so the import changes nothing there and
+    /// stays undoable without unlocking. Not checked either.
+    Locked,
 }
 
 /// A balance the file gives: the account's balance at the end of `date`.
@@ -296,6 +312,8 @@ struct Plan {
     outcomes: Vec<RowOutcome>,
     balances: Vec<FileBalance>,
     reconciliation: Reconciliation,
+    /// The pots the new rows' sub-account transfers go to (M1.17).
+    sub_accounts: MirrorPlan,
 }
 
 impl ImportPreview {
@@ -350,6 +368,13 @@ impl ImportPreview {
         &self.plan.reconciliation
     }
 
+    /// What the new rows' sub-account transfers do: the pots the commit
+    /// creates, the existing (and closed) pots that get rows, and how many
+    /// rows are mirrored onto them ([`sub_account::plan`]).
+    pub fn sub_accounts(&self) -> &MirrorPlan {
+        &self.plan.sub_accounts
+    }
+
     /// What the user has to confirm before [`commit`].
     pub fn needs_confirmation(&self) -> Confirmations {
         Confirmations {
@@ -398,6 +423,13 @@ pub struct CommitSummary {
     pub categorized_by_preset: usize,
     /// New rows a rule categorised (`category_source = 'rule'`).
     pub categorized_by_rules: usize,
+    /// Pot-side rows mirrored from the new rows' sub-account transfers
+    /// (`origin = 'mirrored'`), each paired with its row as a `confirmed`
+    /// transfer. Not counted in `transactions` or the category counts.
+    pub mirrored: usize,
+    /// Pots the commit created for sub-account keys the account had no pot
+    /// for.
+    pub pots_created: usize,
     /// Transfer pairs suggested for the new rows, each a `suggested`
     /// `transfer_group`.
     pub transfer_pairs: usize,
@@ -444,19 +476,39 @@ pub fn preview(
 ///    ([`StatementLine::category`]; `category_source = 'preset_map'`). A
 ///    key with no category (the user deleted it) leaves the row
 ///    uncategorised;
-/// 2. the rules run on the batch ([`rule::apply_to_batch`]); a matching
-///    `set_category` rule overrides the preset's category;
-/// 3. transfer pairs are suggested for the batch's rows
+/// 2. each new row the preset recognised as a sub-account transfer is
+///    mirrored onto its pot, which is created if the account has none with
+///    its key, and the two are paired as a `confirmed` transfer
+///    ([`sub_account::mirror`]; the preview lists it as
+///    [`ImportPreview::sub_accounts`]). The mirrored rows belong to the
+///    batch, so undo removes them;
+/// 3. the rules run on the batch ([`rule::apply_to_batch`]), mirrored rows
+///    included; a matching `set_category` rule overrides the preset's
+///    category;
+/// 4. transfer pairs are suggested for the batch's rows
 ///    ([`transfer::detect_for_batch`], [`TransferWindow::DEFAULT`]).
 ///
-/// A failure in any step rolls the whole import back. A backup (M1.28)
-/// belongs just before this; merchant names (M1.23) will run in the same
-/// transaction.
+/// A failure in any step rolls the whole import back. Merchant names
+/// (M1.23) will run in the same transaction.
+///
+/// Before its DB transaction (`VACUUM INTO` can't run inside one), the
+/// commit takes a backup of the database (reason `import`,
+/// [`backup::create`]), unless the preview has nothing new or lacks a
+/// confirmation, which commit refuses without writing anything. If the
+/// backup fails, nothing is imported ([`Error::Backup`]).
 pub fn commit(
     db: &mut Database,
     preview: &ImportPreview,
     confirmed: Confirmations,
 ) -> Result<Committed, Error> {
+    let needed = preview.needs_confirmation();
+    let is_confirmed = (!needed.flagged_rows || confirmed.flagged_rows)
+        && (!needed.balance_mismatch || confirmed.balance_mismatch);
+    if !preview.is_nothing_new() && is_confirmed {
+        backup::create(db, backup::Reason::Import)
+            .map_err(|error| Error::Backup(Box::new(error)))?;
+    }
+
     let tx = db.conn_mut().transaction()?;
     let account = load_account(&tx, preview.account.id)?;
     check_target(&account, &preview.statement)?;
@@ -467,10 +519,7 @@ pub fn commit(
     if preview.is_nothing_new() {
         return Ok(Committed::NothingNew);
     }
-    let needed = preview.needs_confirmation();
-    if (needed.flagged_rows && !confirmed.flagged_rows)
-        || (needed.balance_mismatch && !confirmed.balance_mismatch)
-    {
+    if !is_confirmed {
         return Err(Error::NotConfirmed(needed));
     }
 
@@ -499,8 +548,12 @@ pub fn commit(
         flags: 0,
         categorized_by_preset: 0,
         categorized_by_rules: 0,
+        mirrored: 0,
+        pots_created: 0,
         transfer_pairs: 0,
     };
+    // The new rows that are sub-account transfers, for the mirror below.
+    let mut pot_rows: Vec<(TransactionId, SubAccountRef)> = Vec::new();
     {
         let categories = category_ids(&tx)?;
         let mut insert_row = tx.prepare(
@@ -545,6 +598,12 @@ pub fn commit(
                         category,
                         category.map(|_| "preset_map"),
                     ])?;
+                    if let Some(sub_account) = &line.sub_account {
+                        pot_rows.push((
+                            TransactionId::new(tx.last_insert_rowid()),
+                            sub_account.clone(),
+                        ));
+                    }
                     summary.transactions += 1;
                 }
                 (RowOutcome::Flagged(problem), _) => {
@@ -592,16 +651,28 @@ pub fn commit(
         }
     }
 
+    // The pot side of sub-account transfers, before rules and transfer
+    // detection so both see the mirrored rows (which are then already in a
+    // confirmed pair, so detection leaves them alone).
+    let mirrored = sub_account::mirror(&tx, &account, batch, &pot_rows)?;
+    summary.mirrored = mirrored.mirrored_rows();
+    summary.pots_created = mirrored.created_pots.len();
+
     // Rules override the preset's categories, so they run after the rows
-    // are stored with them.
-    summary.categorized_by_rules = rule::apply_to_batch(&tx, batch)?;
-    let preset: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM \"transaction\" \
-         WHERE batch_id = ?1 AND category_source = 'preset_map'",
-        [batch],
-        |row| row.get(0),
-    )?;
-    summary.categorized_by_preset = usize::try_from(preset).unwrap_or(0);
+    // are stored with them. The counts are of the imported rows: a mirrored
+    // row is the same transfer seen from the pot.
+    rule::apply_to_batch(&tx, batch)?;
+    let categorized = |source: &str| -> Result<usize, Error> {
+        let n: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM \"transaction\" \
+             WHERE batch_id = ?1 AND origin = 'imported' AND category_source = ?2",
+            params![batch, source],
+            |row| row.get(0),
+        )?;
+        Ok(usize::try_from(n).unwrap_or(0))
+    };
+    summary.categorized_by_preset = categorized("preset_map")?;
+    summary.categorized_by_rules = categorized("rule")?;
     summary.transfer_pairs = transfer::detect_for_batch(&tx, batch, TransferWindow::DEFAULT)?.len();
 
     tx.commit()?;
@@ -613,6 +684,8 @@ pub fn commit(
         flags = summary.flags,
         categorized_by_preset = summary.categorized_by_preset,
         categorized_by_rules = summary.categorized_by_rules,
+        mirrored = summary.mirrored,
+        pots_created = summary.pots_created,
         transfer_pairs = summary.transfer_pairs,
         "committed an import"
     );
@@ -681,6 +754,11 @@ fn plan(conn: &Connection, account: &Account, statement: &Statement) -> Result<P
             FileBalanceStatus::Repeated
         } else if let Some(id) = recorded_balance(conn, account.id, date, balance)? {
             FileBalanceStatus::AlreadyRecorded(id)
+        } else if account
+            .reconciled_through
+            .is_some_and(|through| date <= through)
+        {
+            FileBalanceStatus::Locked
         } else {
             FileBalanceStatus::New
         };
@@ -727,6 +805,18 @@ fn plan(conn: &Connection, account: &Account, statement: &Statement) -> Result<P
         account.currency,
     );
 
+    // Only new rows are mirrored: a row already imported has its pot side.
+    let sub_accounts = sub_account::plan(
+        conn,
+        account,
+        statement
+            .rows()
+            .iter()
+            .zip(&outcomes)
+            .filter(|(_, outcome)| matches!(outcome, RowOutcome::New { .. }))
+            .filter_map(|(row, _)| row.outcome.as_ref().ok()),
+    )?;
+
     Ok(Plan {
         outcomes,
         balances,
@@ -734,6 +824,7 @@ fn plan(conn: &Connection, account: &Account, statement: &Statement) -> Result<P
             running: running.map(|(running, _)| running),
             checks,
         },
+        sub_accounts,
     })
 }
 
@@ -1035,9 +1126,11 @@ pub struct UndoPreview {
     /// edits go with the rows; importing the file again brings the rows
     /// back without them.
     pub edited: usize,
-    /// Transfer pairs that include one of the rows. They are dissolved: the
-    /// other side stays as an ordinary transaction, to be paired again when
-    /// the file is imported again.
+    /// Transfer pairs that include one of the rows and a row of another
+    /// batch (or a manual one). They are dissolved: the other side stays as
+    /// an ordinary transaction, to be paired again when the file is imported
+    /// again. A pot transfer and its mirrored row are both the batch's, so
+    /// they go together and aren't counted here.
     pub transfers: usize,
     /// Later imports into the same account still committed. Rows they
     /// skipped as already imported came from this batch and go with it;
@@ -1153,8 +1246,11 @@ fn plan_undo(conn: &Connection, batch: BatchId) -> Result<UndoPreview, Error> {
              OR excluded_reason IS NOT NULL)",
         )?,
         transfers: count(
-            "SELECT COUNT(DISTINCT transfer_group_id) FROM \"transaction\" \
-             WHERE batch_id = ?1 AND transfer_group_id IS NOT NULL",
+            "SELECT COUNT(DISTINCT t.transfer_group_id) FROM \"transaction\" t \
+             WHERE t.batch_id = ?1 AND t.transfer_group_id IS NOT NULL \
+             AND EXISTS (SELECT 1 FROM \"transaction\" o \
+                         WHERE o.transfer_group_id = t.transfer_group_id \
+                         AND o.batch_id IS NOT ?1)",
         )?,
         later_batches,
         batch: info,
