@@ -28,7 +28,8 @@
 //! (`crates/core/migrations/`), all in one transaction. When an existing
 //! database has migrations pending, it first takes a backup of it as it
 //! is (reason `migration`, [`crate::backup`]); if that fails, nothing is
-//! migrated.
+//! migrated. When the migrations it applies add merchant names (M1.23), it
+//! then names every existing transaction ([`crate::merchant`]).
 //!
 //! One connection per process, no pool (`docs/ARCHITECTURE.md` →
 //! Dependencies).
@@ -185,6 +186,19 @@ impl Database {
                 .map_err(|error| Error::Backup(Box::new(error)))?;
         }
         migrations::run(&mut conn, migrations)?;
+        // Rows imported before merchant names existed have none: name them
+        // once, right after the migration that adds names (M1.23). The
+        // migration has just created the alias table, so the names are the
+        // cleaned bank text. Its own transaction: refinery's is closed.
+        let adds_names = |migration: &refinery::Migration| {
+            SchemaVersion::from(migration.version()) == crate::merchant::SCHEMA_VERSION
+        };
+        if found > 0 && found < crate::merchant::SCHEMA_VERSION && migrations.iter().any(adds_names)
+        {
+            let tx = conn.transaction()?;
+            crate::merchant::AliasSet::default().recompute_all(&tx)?;
+            tx.commit()?;
+        }
         Ok(Self {
             conn,
             path: path.to_path_buf(),

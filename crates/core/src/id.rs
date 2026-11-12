@@ -81,3 +81,7 @@ row_id!(
     /// A `tag` row.
     TagId
 );
+row_id!(
+    /// A `merchant_alias` row.
+    MerchantAliasId
+);
