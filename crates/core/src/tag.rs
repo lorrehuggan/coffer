@@ -43,7 +43,8 @@ use std::fmt;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::db::Database;
-use crate::id::{TagId, TransactionId};
+use crate::id::{BatchId, TagId, TransactionId};
+use crate::rule::fold;
 
 /// The longest tag name, in characters (Unicode scalar values). The schema
 /// checks the same limit.
@@ -346,15 +347,26 @@ fn require_transaction(conn: &Connection, id: TransactionId) -> Result<(), Error
     .ok_or(Error::TransactionNotFound(id))
 }
 
-/// Text folded for caseless comparison, as rule matching folds it
-/// (`rule::engine`): each character lowercased, uppercased and lowercased
-/// again, approximating Unicode full case folding without tables.
-fn fold(text: &str) -> String {
-    text.chars()
-        .flat_map(char::to_lowercase)
-        .flat_map(char::to_uppercase)
-        .flat_map(char::to_lowercase)
-        .collect()
+/// Deletes `transaction`'s tag links, if any, and returns how many there
+/// were. The tags stay. For whoever deletes a transaction (a manual row):
+/// its links go first, or the foreign key refuses the delete. Opens no
+/// transaction of its own.
+pub fn clear(conn: &Connection, transaction: TransactionId) -> rusqlite::Result<usize> {
+    conn.execute(
+        "DELETE FROM transaction_tag WHERE transaction_id = ?1",
+        [transaction],
+    )
+}
+
+/// Deletes the tag links of every transaction of import `batch` (mirrored
+/// rows included) and returns how many there were. For undo, before it
+/// deletes the batch's transactions. Opens no transaction of its own.
+pub fn clear_batch(conn: &Connection, batch: BatchId) -> rusqlite::Result<usize> {
+    conn.execute(
+        "DELETE FROM transaction_tag WHERE transaction_id IN \
+         (SELECT id FROM \"transaction\" WHERE batch_id = ?1)",
+        [batch],
+    )
 }
 
 /// Whether `names` repeat a name, ignoring case.

@@ -32,11 +32,19 @@
 //!   the user's (`category_source = 'user'`). A row in a transfer pair whose
 //!   account or amount changes is no longer that pair: the group is
 //!   dissolved, like [`crate::import::undo`] does, and [`Updated`] says so.
-//! - **Deleting** a row dissolves its transfer group the same way.
+//! - **Deleting** a row dissolves its transfer group the same way, and
+//!   removes its split lines and tag links.
+//! - **Split rows** ([`crate::split`]): an edit that changes the amount or
+//!   currency of a split row, or gives it a category, is refused
+//!   ([`Error::Split`]); the split is removed or replaced first. Moving one
+//!   to another account in the same currency, or changing its date or text,
+//!   is fine.
 //!
-//! The display merchant (`merchant_display`) is left empty; merchant
-//! clean-up (M1.23) fills it. Nothing here logs transaction text, and error
-//! messages never quote it.
+//! The display merchant (`merchant_display`) is derived like an imported
+//! row's ([`crate::merchant`]): the merchant (or the description) cleaned,
+//! then the merchant aliases. It is set on create and on every edit, unless
+//! the user named the merchant themselves. Nothing here logs transaction
+//! text, and error messages never quote it.
 
 use chrono::{NaiveDate, NaiveTime};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -45,8 +53,11 @@ use crate::account::{self, Account, date_key};
 use crate::category::CategoryKey;
 use crate::db::Database;
 use crate::id::{AccountId, TransactionId, TransferGroupId};
+use crate::merchant;
 use crate::money::{Currency, Money};
+use crate::split;
 use crate::statement::normalize_description;
+use crate::tag;
 
 /// A manual transaction to create, or what to store in place of one.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -166,6 +177,17 @@ pub enum Error {
     )]
     ShareOutsideAmount,
 
+    /// The row is split: its amount and currency stay as they are and it
+    /// has no category of its own until the split is removed.
+    #[error(
+        "transaction {0} is split: remove or replace the split before changing its amount \
+         or giving it a category"
+    )]
+    Split(TransactionId),
+
+    #[error("merchant names: {0}")]
+    Merchant(#[from] merchant::Error),
+
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 }
@@ -195,6 +217,7 @@ pub fn create(db: &mut Database, entry: &ManualTransaction) -> Result<Transactio
         ],
     )?;
     let id = TransactionId::new(tx.last_insert_rowid());
+    merchant::apply_to_transaction(&tx, id)?;
     tx.commit()?;
     tracing::info!(transaction = %id, account = %entry.account, "added a manual transaction");
     Ok(id)
@@ -275,6 +298,13 @@ pub fn update(
 
     let new_category = category_id(&tx, entry.category.as_ref())?;
     let category_changed = new_category != stored.category_id;
+    // The schema refuses these too (`transaction_split_parent`); this says
+    // why in words.
+    let changes_amount =
+        entry.amount.minor() != stored.amount_minor || entry.amount.currency() != stored.currency;
+    if (changes_amount || new_category.is_some()) && split::is_split(&tx, id)? {
+        return Err(Error::Split(id));
+    }
     let dissolved_transfer = match stored.transfer_group {
         Some(group) if moves_money => {
             dissolve_transfer_group(&tx, group)?;
@@ -306,6 +336,7 @@ pub fn update(
             params![new_category, new_category.map(|_| "user"), id],
         )?;
     }
+    merchant::apply_to_transaction(&tx, id)?;
     tx.commit()?;
     tracing::info!(transaction = %id, account = %entry.account, "edited a manual transaction");
     Ok(Updated { dissolved_transfer })
@@ -331,11 +362,11 @@ pub fn delete(db: &mut Database, id: TransactionId) -> Result<Deleted, Error> {
 /// Clears everything that refers to transaction `id` before it is deleted,
 /// and returns the transfer group it dissolved.
 ///
-/// The one place a manual row's references go: tables that point at a
-/// transaction (split lines, tag links, refund links, duplicate candidates,
-/// schedule matches) are cleared here as they arrive. Until one is, a row
-/// it references can't be deleted: the foreign key fails the delete, and
-/// nothing changes.
+/// The one place a manual row's references go: split lines and tag links
+/// today; tables that point at a transaction later (refund links, duplicate
+/// candidates, schedule matches) are cleared here as they arrive. Until one
+/// is, a row it references can't be deleted: the foreign key fails the
+/// delete, and nothing changes.
 fn release_references(
     tx: &Transaction<'_>,
     id: TransactionId,
@@ -348,6 +379,8 @@ fn release_references(
     if let Some(group) = group {
         dissolve_transfer_group(tx, group)?;
     }
+    split::clear(tx, id)?;
+    tag::clear(tx, id)?;
     Ok(group)
 }
 

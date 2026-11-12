@@ -340,6 +340,15 @@ pub fn lines(db: &Database, transaction: TransactionId) -> Result<Vec<StoredSpli
     Ok(lines)
 }
 
+/// Whether `transaction` has split lines. Opens no transaction of its own.
+pub fn is_split(conn: &Connection, transaction: TransactionId) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM transaction_split WHERE transaction_id = ?1)",
+        [transaction],
+        |row| row.get(0),
+    )
+}
+
 /// Deletes `transaction`'s split lines, if any, and returns how many there
 /// were. Leaves the transaction itself alone. For whoever deletes a
 /// transaction (a manual row): its lines go first, or the foreign key

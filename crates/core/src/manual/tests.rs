@@ -156,7 +156,8 @@ fn creates_reads_edits_and_deletes_on_a_cash_and_a_current_account() {
         assert_eq!((batch, external_id, fingerprint), (None, None, None));
         assert_eq!(normalized, "MARKET STALL");
         assert_eq!(source.as_deref(), Some("user"));
-        assert_eq!(display, None);
+        // The display name is derived like an imported row's (M1.23).
+        assert_eq!(display.as_deref(), Some("Corner shop"));
 
         // Every field changes.
         let other = f.account("Other", kind);
@@ -172,9 +173,11 @@ fn creates_reads_edits_and_deletes_on_a_cash_and_a_current_account() {
         let updated = update(&mut f.db, id, &edited).unwrap();
         assert_eq!(updated.dissolved_transfer, None);
         assert_eq!(get(&f.db, id).unwrap(), edited);
-        let (_, _, _, _, normalized, source, _) = f.stored(id);
+        let (_, _, _, _, normalized, source, display) = f.stored(id);
         assert_eq!(normalized, "SOLD A BIKE");
         assert_eq!(source, None);
+        // No merchant now: the description is the name.
+        assert_eq!(display.as_deref(), Some("Sold a bike"));
 
         assert_eq!(delete(&mut f.db, id).unwrap().dissolved_transfer, None);
         assert!(!f.exists(id));

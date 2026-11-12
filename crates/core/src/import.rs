@@ -9,9 +9,10 @@
 //!    balances the file adds, and how they reconcile. It writes nothing.
 //! 2. [`commit`] does it, in one DB transaction: an `import_batch`, its
 //!    transactions, the file's balances and a record of its flagged rows.
-//!    In the same transaction it categorises the new rows (the preset's
-//!    category map, then the rules, which override it) and suggests
-//!    transfer pairs ([`crate::transfer`]).
+//!    In the same transaction it names the new rows' merchants
+//!    ([`crate::merchant`]), categorises them (the preset's category map,
+//!    then the rules, which override it) and suggests transfer pairs
+//!    ([`crate::transfer`]).
 //!    It first plans again inside that transaction and refuses with
 //!    [`Error::Stale`] if anything differs from the preview, so what the
 //!    user saw is what is stored. Flagged rows and a failed reconciliation
@@ -54,12 +55,15 @@ use crate::balance::{Assertion, DailyMovements};
 use crate::category::CategoryKey;
 use crate::db::Database;
 use crate::id::{AccountId, BalanceId, BatchId, TransactionId};
+use crate::merchant;
 use crate::money::{Currency, Money};
 use crate::rule;
+use crate::split;
 use crate::statement::{
     RowProblem, SourceFormat, SourceLocation, Statement, StatementLine, SubAccountRef,
 };
 use crate::sub_account::{self, MirrorPlan};
+use crate::tag;
 use crate::transfer::{self, TransferWindow};
 
 pub use dedupe::{FINGERPRINT_VERSION, fingerprint};
@@ -119,6 +123,9 @@ pub enum Error {
 
     #[error("pots: {0}")]
     SubAccounts(#[from] sub_account::Error),
+
+    #[error("merchant names: {0}")]
+    Merchants(#[from] merchant::Error),
 
     /// The backup taken before the commit failed, so nothing was imported
     /// (M1.28).
@@ -482,14 +489,18 @@ pub fn preview(
 ///    ([`sub_account::mirror`]; the preview lists it as
 ///    [`ImportPreview::sub_accounts`]). The mirrored rows belong to the
 ///    batch, so undo removes them;
-/// 3. the rules run on the batch ([`rule::apply_to_batch`]), mirrored rows
+/// 3. every row of the batch, mirrored rows included, gets its display
+///    merchant: the bank text cleaned, then the merchant aliases
+///    ([`merchant::apply_to_batch`]). Names never change which rules match
+///    (rules match the cleaned bank text), but a rule's `set_merchant`
+///    (M1.24) overrides them, so they come first;
+/// 4. the rules run on the batch ([`rule::apply_to_batch`]), mirrored rows
 ///    included; a matching `set_category` rule overrides the preset's
 ///    category;
-/// 4. transfer pairs are suggested for the batch's rows
+/// 5. transfer pairs are suggested for the batch's rows
 ///    ([`transfer::detect_for_batch`], [`TransferWindow::DEFAULT`]).
 ///
-/// A failure in any step rolls the whole import back. Merchant names
-/// (M1.23) will run in the same transaction.
+/// A failure in any step rolls the whole import back.
 ///
 /// Before its DB transaction (`VACUUM INTO` can't run inside one), the
 /// commit takes a backup of the database (reason `import`,
@@ -657,6 +668,10 @@ pub fn commit(
     let mirrored = sub_account::mirror(&tx, &account, batch, &pot_rows)?;
     summary.mirrored = mirrored.mirrored_rows();
     summary.pots_created = mirrored.created_pots.len();
+
+    // Display names before rules: a rule's `set_merchant` (M1.24) is the
+    // last word on a name. Rules match the cleaned bank text, not these.
+    merchant::apply_to_batch(&tx, batch)?;
 
     // Rules override the preset's categories, so they run after the rows
     // are stored with them. The counts are of the imported rows: a mirrored
@@ -1122,7 +1137,8 @@ pub struct UndoPreview {
     pub balances: usize,
     pub flags: usize,
     /// Rows with the user's own edits (category set by the user or an
-    /// approved suggestion, note, share, reimbursable, exclusion). The
+    /// approved suggestion, note, share, reimbursable, exclusion, a merchant
+    /// name the user set, a split, tags). The
     /// edits go with the rows; importing the file again brings the rows
     /// back without them.
     pub edited: usize,
@@ -1146,8 +1162,9 @@ pub fn undo_preview(db: &Database, batch: BatchId) -> Result<UndoPreview, Error>
 }
 
 /// Undoes an import in one DB transaction: deletes its transactions
-/// (mirrored pot rows included), its balances and its flags, dissolves
-/// transfer pairs that include its rows, and marks it `undone`. The batch
+/// (mirrored pot rows included) with their split lines and tag links, its
+/// balances and its flags, dissolves transfer pairs that include its rows,
+/// and marks it `undone`. The batch
 /// row stays, so the account's import history still lists it.
 pub fn undo(db: &mut Database, batch: BatchId) -> Result<UndoPreview, Error> {
     let tx = db.conn_mut().transaction()?;
@@ -1169,10 +1186,12 @@ pub fn undo(db: &mut Database, batch: BatchId) -> Result<UndoPreview, Error> {
         )?;
         tx.execute("DELETE FROM transfer_group WHERE id = ?1", [group])?;
     }
-    // Tables that reference a transaction (splits, tags, links, duplicate
-    // candidates, change items, schedule matches) are cleared here when
-    // they arrive. Until then a reference makes the delete fail, and the
-    // whole undo with it.
+    // Rows that reference a transaction go first (no `ON DELETE`): split
+    // lines and tag links. Links, duplicate candidates, change items and
+    // schedule matches are cleared here when they arrive; until then a
+    // reference makes the delete fail, and the whole undo with it.
+    split::clear_batch(&tx, batch)?;
+    tag::clear_batch(&tx, batch)?;
     tx.execute("DELETE FROM \"transaction\" WHERE batch_id = ?1", [batch])?;
     tx.execute("DELETE FROM balance_snapshot WHERE batch_id = ?1", [batch])?;
     tx.execute("DELETE FROM import_flag WHERE batch_id = ?1", [batch])?;
@@ -1243,7 +1262,9 @@ fn plan_undo(conn: &Connection, batch: BatchId) -> Result<UndoPreview, Error> {
             "SELECT COUNT(*) FROM \"transaction\" WHERE batch_id = ?1 AND ( \
              category_source IN ('user', 'ai_approved') OR user_note IS NOT NULL \
              OR my_share_minor IS NOT NULL OR share_label IS NOT NULL OR reimbursable = 1 \
-             OR excluded_reason IS NOT NULL)",
+             OR excluded_reason IS NOT NULL OR merchant_display_source = 'user' \
+             OR EXISTS (SELECT 1 FROM transaction_split s WHERE s.transaction_id = \"transaction\".id) \
+             OR EXISTS (SELECT 1 FROM transaction_tag g WHERE g.transaction_id = \"transaction\".id))",
         )?,
         transfers: count(
             "SELECT COUNT(DISTINCT t.transfer_group_id) FROM \"transaction\" t \
