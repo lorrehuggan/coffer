@@ -62,6 +62,10 @@ row_id!(
     TransactionId
 );
 row_id!(
+    /// A `transaction_split` row: one line of a split transaction.
+    SplitId
+);
+row_id!(
     /// A `balance_snapshot` row.
     BalanceId
 );

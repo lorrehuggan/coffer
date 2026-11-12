@@ -19,7 +19,8 @@
 //!   included;
 //! - neither is in a transfer group already, whatever its status (a
 //!   `rejected` group keeps its rows, so a rejected pair isn't suggested
-//!   again), and neither is excluded;
+//!   again), neither is excluded, and neither is split (a transfer can't
+//!   be split: [`crate::split`]);
 //! - neither is dated after its account's `closed_on`. A row on a closed
 //!   account dated after the closing is suspect, not a transfer.
 //!
@@ -450,8 +451,12 @@ fn load_group(conn: &Connection, id: TransferGroupId) -> Result<Option<TransferG
 const COLUMNS: &str = "t.id, t.account_id, t.date, t.time, t.amount_minor, t.currency";
 
 /// A transaction that can be one side of a new pair, on account `a`.
+/// A split row is spending or income by category, not a transfer, and the
+/// schema refuses it in a suggested group.
 const ELIGIBLE: &str = "(+t.transfer_group_id IS NULL AND t.excluded_reason IS NULL \
                         AND t.amount_minor <> 0 \
+                        AND NOT EXISTS (SELECT 1 FROM transaction_split s \
+                                        WHERE s.transaction_id = t.id) \
                         AND a.kind NOT IN ('asset', 'liability') \
                         AND (a.closed_on IS NULL OR a.closed_on >= t.date))";
 

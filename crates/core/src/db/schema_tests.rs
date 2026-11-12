@@ -15,7 +15,8 @@ use tempfile::TempDir;
 
 use super::Database;
 
-/// The tables M1.4 creates. A new table is added here with its migration.
+/// The tables the migrations create. A new table is added here with its
+/// migration.
 const TABLES: &[&str] = &[
     "account",
     "balance_snapshot",
@@ -29,8 +30,12 @@ const TABLES: &[&str] = &[
     "rule_action",
     "suggestion",
     "transaction",
+    "transaction_split",
     "transfer_group",
 ];
+
+/// The views the migrations create.
+const VIEWS: &[&str] = &["ledger_line"];
 
 struct Fixture {
     db: Database,
@@ -155,6 +160,39 @@ impl Fixture {
         self.conn().last_insert_rowid()
     }
 
+    /// Inserts split line `line_no` of `minor` into transaction `parent`.
+    fn split_line(
+        &self,
+        parent: i64,
+        line_no: i64,
+        minor: i64,
+        category: Option<i64>,
+    ) -> rusqlite::Result<i64> {
+        self.conn().execute(
+            "INSERT INTO transaction_split (transaction_id, line_no, amount_minor, category_id) \
+             VALUES (?1, ?2, ?3, ?4)",
+            params![parent, line_no, minor, category],
+        )?;
+        Ok(self.conn().last_insert_rowid())
+    }
+
+    /// Puts transactions `rows` in a new transfer group with `status`.
+    fn transfer_group(&self, status: &str, rows: &[i64]) -> i64 {
+        self.conn()
+            .execute("INSERT INTO transfer_group (status) VALUES (?1)", [status])
+            .unwrap();
+        let group = self.conn().last_insert_rowid();
+        for row in rows {
+            self.conn()
+                .execute(
+                    "UPDATE \"transaction\" SET transfer_group_id = ?1 WHERE id = ?2",
+                    [group, *row],
+                )
+                .unwrap();
+        }
+        group
+    }
+
     /// Inserts a manual transaction of -5.00 GBP on 2026-11-03.
     fn manual(&self, account: i64) -> i64 {
         self.conn()
@@ -196,6 +234,22 @@ fn creates_every_table() {
         .unwrap();
 
     assert_eq!(tables, TABLES);
+}
+
+#[test]
+fn creates_every_view() {
+    let fixture = Fixture::new();
+    let mut statement = fixture
+        .conn()
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'view' ORDER BY name")
+        .unwrap();
+    let views: Vec<String> = statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+
+    assert_eq!(views, VIEWS);
 }
 
 #[test]
@@ -1425,4 +1479,457 @@ fn ids_are_not_reused() {
         .unwrap();
 
     assert!(fixture.manual(account) > first);
+}
+
+#[test]
+fn split_lines_have_the_parents_sign() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let id = fixture.manual(account); // -500
+
+    fixture.split_line(id, 1, -300, None).unwrap();
+    assert_refused(fixture.split_line(id, 2, 200, None));
+    assert_refused(fixture.split_line(id, 2, 0, None));
+    // Line numbers are unique per transaction and start at 1.
+    assert_refused(fixture.split_line(id, 1, -200, None));
+    assert_refused(fixture.split_line(id, 0, -200, None));
+    let second = fixture.split_line(id, 2, -200, None).unwrap();
+    // Not a fraction, like every other amount.
+    assert_refused(fixture.conn().execute(
+        "UPDATE transaction_split SET amount_minor = -199.5 WHERE id = ?1",
+        [second],
+    ));
+    assert_refused(fixture.conn().execute(
+        "UPDATE transaction_split SET amount_minor = 200 WHERE id = ?1",
+        [second],
+    ));
+    fixture
+        .conn()
+        .execute(
+            "UPDATE transaction_split SET amount_minor = -150 WHERE id = ?1",
+            [second],
+        )
+        .unwrap();
+
+    // A zero transaction has no sign to split into.
+    fixture
+        .conn()
+        .execute(
+            "INSERT INTO \"transaction\" (account_id, date, amount_minor, currency, \
+             description_raw, description_normalized, origin) \
+             VALUES (?1, '2026-11-03', 0, 'GBP', 'Zero', 'ZERO', 'manual')",
+            [account],
+        )
+        .unwrap();
+    let zero = fixture.conn().last_insert_rowid();
+    assert_refused(fixture.split_line(zero, 1, -1, None));
+    assert_refused(fixture.split_line(zero, 1, 1, None));
+
+    // A refund splits into amounts back.
+    let refund = fixture.manual(account);
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET amount_minor = 500 WHERE id = ?1",
+            [refund],
+        )
+        .unwrap();
+    fixture.split_line(refund, 1, 100, None).unwrap();
+    assert_refused(fixture.split_line(refund, 2, -400, None));
+}
+
+#[test]
+fn split_lines_stay_with_their_transaction() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let first = fixture.manual(account);
+    let second = fixture.manual(account);
+    let line = fixture.split_line(first, 1, -300, None).unwrap();
+
+    assert_refused(fixture.conn().execute(
+        "UPDATE transaction_split SET transaction_id = ?1 WHERE id = ?2",
+        [second, line],
+    ));
+    assert_refused(fixture.conn().execute(
+        "UPDATE transaction_split SET id = 100 WHERE id = ?1",
+        [line],
+    ));
+    // Deleting the transaction is refused while it has lines; they go
+    // first.
+    assert_refused(
+        fixture
+            .conn()
+            .execute("DELETE FROM \"transaction\" WHERE id = ?1", [first]),
+    );
+    fixture
+        .conn()
+        .execute(
+            "DELETE FROM transaction_split WHERE transaction_id = ?1",
+            [first],
+        )
+        .unwrap();
+    fixture
+        .conn()
+        .execute("DELETE FROM \"transaction\" WHERE id = ?1", [first])
+        .unwrap();
+}
+
+#[test]
+fn a_split_lines_share_is_part_of_the_line() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let id = fixture.manual(account);
+    let line = fixture.split_line(id, 1, -300, None).unwrap();
+    let share = |minor: i64| {
+        fixture.conn().execute(
+            "UPDATE transaction_split SET my_share_minor = ?1 WHERE id = ?2",
+            params![minor, line],
+        )
+    };
+
+    share(-150).unwrap();
+    share(0).unwrap();
+    share(-300).unwrap();
+    assert_refused(share(150));
+    assert_refused(share(-301));
+    assert_refused(fixture.conn().execute(
+        "UPDATE transaction_split SET share_label = '' WHERE id = ?1",
+        [line],
+    ));
+}
+
+#[test]
+fn a_split_transaction_has_no_category_or_share_of_its_own() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let food = fixture.default_category("food");
+    let id = fixture.manual(account);
+
+    // Not while it has its own category or share.
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET category_id = ?1, category_source = 'user' \
+             WHERE id = ?2",
+            [food, id],
+        )
+        .unwrap();
+    assert_refused(fixture.split_line(id, 1, -300, Some(food)));
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET category_id = NULL, category_source = NULL, \
+             my_share_minor = -250 WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+    assert_refused(fixture.split_line(id, 1, -300, Some(food)));
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET my_share_minor = NULL, share_label = 'Sam' WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+    assert_refused(fixture.split_line(id, 1, -300, Some(food)));
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET share_label = NULL WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+    fixture.split_line(id, 1, -300, Some(food)).unwrap();
+
+    // Nor once it is split.
+    assert_refused(fixture.conn().execute(
+        "UPDATE \"transaction\" SET category_id = ?1, category_source = 'user' WHERE id = ?2",
+        [food, id],
+    ));
+    assert_refused(fixture.conn().execute(
+        "UPDATE \"transaction\" SET my_share_minor = -100 WHERE id = ?1",
+        [id],
+    ));
+    assert_refused(fixture.conn().execute(
+        "UPDATE \"transaction\" SET share_label = 'Sam' WHERE id = ?1",
+        [id],
+    ));
+    // Clearing them, and editing the other fields, is fine.
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET category_id = NULL, category_source = NULL, \
+             user_note = 'Weekly shop', reimbursable = 1, excluded_reason = 'disputed', \
+             excluded_at = '2026-11-12T10:00:00.000Z' WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+}
+
+/// The lines must keep summing to the amount, so a manual row's amount and
+/// currency are fixed while it is split.
+#[test]
+fn a_split_transactions_amount_is_fixed() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let euros = fixture.add_account(None, "Euro", "current", "EUR").unwrap();
+    let id = fixture.manual(account); // -500
+    fixture.split_line(id, 1, -300, None).unwrap();
+    fixture.split_line(id, 2, -200, None).unwrap();
+
+    assert_refused(fixture.conn().execute(
+        "UPDATE \"transaction\" SET amount_minor = -700 WHERE id = ?1",
+        [id],
+    ));
+    assert_refused(fixture.conn().execute(
+        "UPDATE \"transaction\" SET account_id = ?1, currency = 'EUR' WHERE id = ?2",
+        [euros, id],
+    ));
+    // The same amount, and the other source fields of a manual row, can be
+    // written.
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET amount_minor = -500, date = '2026-11-04', \
+             description_raw = 'Market', description_normalized = 'MARKET' WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+
+    // Without the split, the amount is the user's to change again.
+    fixture
+        .conn()
+        .execute(
+            "DELETE FROM transaction_split WHERE transaction_id = ?1",
+            [id],
+        )
+        .unwrap();
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET amount_minor = -700 WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_transfer_is_not_split() {
+    let fixture = Fixture::new();
+    let current = fixture.account("Current");
+    let savings = fixture.account("Savings");
+    let out = fixture.manual(current);
+    let back = fixture.manual(savings);
+
+    for status in ["suggested", "confirmed"] {
+        let group = fixture.transfer_group(status, &[out, back]);
+        assert_refused(fixture.split_line(out, 1, -300, None));
+        fixture
+            .conn()
+            .execute(
+                "UPDATE \"transaction\" SET transfer_group_id = NULL WHERE transfer_group_id = ?1",
+                [group],
+            )
+            .unwrap();
+    }
+
+    // A rejected pair is two ordinary transactions.
+    let rejected = fixture.transfer_group("rejected", &[out, back]);
+    fixture.split_line(out, 1, -300, None).unwrap();
+    assert_refused(fixture.conn().execute(
+        "UPDATE transfer_group SET status = 'confirmed' WHERE id = ?1",
+        [rejected],
+    ));
+    assert_refused(fixture.conn().execute(
+        "UPDATE transfer_group SET status = 'suggested' WHERE id = ?1",
+        [rejected],
+    ));
+
+    // A split row can leave its group, but not join a live one.
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET transfer_group_id = NULL WHERE id = ?1",
+            [out],
+        )
+        .unwrap();
+    fixture
+        .conn()
+        .execute(
+            "INSERT INTO transfer_group (status) VALUES ('confirmed')",
+            [],
+        )
+        .unwrap();
+    let confirmed = fixture.conn().last_insert_rowid();
+    assert_refused(fixture.conn().execute(
+        "UPDATE \"transaction\" SET transfer_group_id = ?1 WHERE id = ?2",
+        [confirmed, out],
+    ));
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET transfer_group_id = ?1 WHERE id = ?2",
+            [rejected, out],
+        )
+        .unwrap();
+}
+
+#[test]
+fn ledger_line_has_each_split_line_or_the_transaction() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let food = fixture.default_category("food");
+    let home = fixture.default_category("home");
+    let whole = fixture.manual(account); // -500
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET category_id = ?1, category_source = 'user', \
+             my_share_minor = -250, share_label = 'Sam' WHERE id = ?2",
+            [food, whole],
+        )
+        .unwrap();
+    let split = fixture.manual(account); // -500
+    let first = fixture.split_line(split, 1, -300, Some(food)).unwrap();
+    let second = fixture.split_line(split, 2, -200, Some(home)).unwrap();
+    fixture
+        .conn()
+        .execute(
+            "UPDATE transaction_split SET my_share_minor = -100, share_label = 'Alex' \
+             WHERE id = ?1",
+            [second],
+        )
+        .unwrap();
+    // Excluded rows and transfers stay in the view, to be filtered by
+    // whoever reads it.
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET excluded_reason = 'disputed', \
+             excluded_at = '2026-11-12T10:00:00.000Z' WHERE id = ?1",
+            [split],
+        )
+        .unwrap();
+    let other = fixture.account("Savings");
+    let moved = fixture.manual(other);
+    let group = fixture.transfer_group("confirmed", &[moved]);
+
+    type LedgerRow = (
+        i64,
+        Option<i64>,
+        Option<i64>,
+        i64,
+        String,
+        Option<i64>,
+        Option<i64>,
+        i64,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    );
+    let mut statement = fixture
+        .conn()
+        .prepare(
+            "SELECT transaction_id, split_id, line_no, amount_minor, currency, category_id, \
+             my_share_minor, my_amount_minor, share_label, excluded_reason, transfer_group_id, \
+             transfer_status FROM ledger_line ORDER BY transaction_id, line_no",
+        )
+        .unwrap();
+    let rows: Vec<LedgerRow> = statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+                row.get(9)?,
+                row.get(10)?,
+                row.get(11)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let gbp = || "GBP".to_owned();
+    let disputed = || Some("disputed".to_owned());
+
+    assert_eq!(
+        rows,
+        [
+            (
+                whole,
+                None,
+                None,
+                -500,
+                gbp(),
+                Some(food),
+                Some(-250),
+                -250,
+                Some("Sam".to_owned()),
+                None,
+                None,
+                None
+            ),
+            (
+                split,
+                Some(first),
+                Some(1),
+                -300,
+                gbp(),
+                Some(food),
+                None,
+                -300,
+                None,
+                disputed(),
+                None,
+                None
+            ),
+            (
+                split,
+                Some(second),
+                Some(2),
+                -200,
+                gbp(),
+                Some(home),
+                Some(-100),
+                -100,
+                Some("Alex".to_owned()),
+                disputed(),
+                None,
+                None
+            ),
+            (
+                moved,
+                None,
+                None,
+                -500,
+                gbp(),
+                None,
+                None,
+                -500,
+                None,
+                None,
+                Some(group),
+                Some("confirmed".to_owned())
+            ),
+        ]
+    );
+
+    // The view's amounts add up to the transactions'.
+    let totals: (i64, i64) = fixture
+        .conn()
+        .query_row(
+            "SELECT (SELECT sum(amount_minor) FROM ledger_line), \
+             (SELECT sum(amount_minor) FROM \"transaction\")",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(totals, (-1500, -1500));
 }
