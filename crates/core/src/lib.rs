@@ -9,6 +9,7 @@ pub mod account;
 pub mod backup;
 pub mod balance;
 pub mod category;
+pub mod change;
 pub mod db;
 pub mod exclusion;
 pub mod id;

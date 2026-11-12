@@ -22,6 +22,8 @@ const TABLES: &[&str] = &[
     "balance_snapshot",
     "budget",
     "category",
+    "change_batch",
+    "change_item",
     "fx_rate",
     "import_batch",
     "import_flag",

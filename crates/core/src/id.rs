@@ -13,7 +13,11 @@ use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
 macro_rules! row_id {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[derive(
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord,
+            serde::Serialize, serde::Deserialize,
+        )]
+        #[serde(transparent)]
         pub struct $name(i64);
 
         impl $name {
@@ -84,4 +88,8 @@ row_id!(
 row_id!(
     /// A `merchant_alias` row.
     MerchantAliasId
+);
+row_id!(
+    /// A `change_batch` row.
+    ChangeBatchId
 );

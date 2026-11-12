@@ -51,6 +51,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::account::{self, Account, date_key};
 use crate::category::CategoryKey;
+use crate::change;
 use crate::db::Database;
 use crate::id::{AccountId, TransactionId, TransferGroupId};
 use crate::merchant;
@@ -381,6 +382,7 @@ fn release_references(
     }
     split::clear(tx, id)?;
     tag::clear(tx, id)?;
+    change::clear(tx, id)?;
     Ok(group)
 }
 

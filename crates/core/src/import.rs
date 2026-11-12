@@ -53,6 +53,7 @@ use crate::account::{self, Account, date_key};
 use crate::backup;
 use crate::balance::{Assertion, DailyMovements};
 use crate::category::CategoryKey;
+use crate::change;
 use crate::db::Database;
 use crate::id::{AccountId, BalanceId, BatchId, TransactionId};
 use crate::merchant;
@@ -1192,6 +1193,7 @@ pub fn undo(db: &mut Database, batch: BatchId) -> Result<UndoPreview, Error> {
     // reference makes the delete fail, and the whole undo with it.
     split::clear_batch(&tx, batch)?;
     tag::clear_batch(&tx, batch)?;
+    change::clear_batch(&tx, batch)?;
     tx.execute("DELETE FROM \"transaction\" WHERE batch_id = ?1", [batch])?;
     tx.execute("DELETE FROM balance_snapshot WHERE batch_id = ?1", [batch])?;
     tx.execute("DELETE FROM import_flag WHERE batch_id = ?1", [batch])?;
