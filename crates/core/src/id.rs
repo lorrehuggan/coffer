@@ -73,3 +73,7 @@ row_id!(
     /// A `rule` row.
     RuleId
 );
+row_id!(
+    /// A `tag` row.
+    TagId
+);

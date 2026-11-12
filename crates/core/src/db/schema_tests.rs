@@ -15,7 +15,8 @@ use tempfile::TempDir;
 
 use super::Database;
 
-/// The tables M1.4 creates. A new table is added here with its migration.
+/// The tables M1.4 and later migrations create. A new table is added here
+/// with its migration.
 const TABLES: &[&str] = &[
     "account",
     "balance_snapshot",
@@ -28,7 +29,9 @@ const TABLES: &[&str] = &[
     "rule",
     "rule_action",
     "suggestion",
+    "tag",
     "transaction",
+    "transaction_tag",
     "transfer_group",
 ];
 
@@ -1414,6 +1417,108 @@ fn suggestions_and_reports() {
 
 /// IDs aren't reused after a delete, so an old suggestion or log entry
 /// can't come to name a different transaction.
+#[test]
+fn tag_names_are_checked_and_unique_ignoring_case() {
+    let fixture = Fixture::new();
+    let insert = |name: &str, private: i64| {
+        fixture.conn().execute(
+            "INSERT INTO tag (name, private) VALUES (?1, ?2)",
+            params![name, private],
+        )
+    };
+
+    insert("Work", 0).unwrap();
+    insert("Clinic", 1).unwrap();
+    // NOCASE folds ASCII: core folds the rest (`coffer_core::tag`).
+    assert_refused(insert("WORK", 0));
+    assert_refused(insert("work", 1));
+    for blank in ["", " ", "\t"] {
+        assert_refused(insert(blank, 0));
+    }
+    for padded in [" Home", "Home ", "\nHome", "Home\t"] {
+        assert_refused(insert(padded, 0));
+    }
+    insert(&"x".repeat(64), 0).unwrap();
+    assert_refused(insert(&"y".repeat(65), 0));
+    assert_refused(insert("Home", 2));
+    assert_refused(
+        fixture
+            .conn()
+            .execute("UPDATE tag SET name = 'clinic' WHERE name = 'Work'", []),
+    );
+    // Renaming, including to its own name in another case, is fine.
+    fixture
+        .conn()
+        .execute(
+            "UPDATE tag SET name = 'WORK', private = 1 WHERE name = 'Work'",
+            [],
+        )
+        .unwrap();
+}
+
+#[test]
+fn tag_links_are_unique_fixed_and_explicitly_deleted() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let batch = fixture.batch(account);
+    let imported = fixture.imported(account, batch, None, "fp-1");
+    let manual = fixture.manual(account);
+    let tag = |name: &str| {
+        fixture
+            .conn()
+            .execute("INSERT INTO tag (name) VALUES (?1)", [name])
+            .unwrap();
+        fixture.conn().last_insert_rowid()
+    };
+    let (work, home) = (tag("Work"), tag("Home"));
+    let link = |transaction: i64, tag: i64| {
+        fixture.conn().execute(
+            "INSERT INTO transaction_tag (transaction_id, tag_id) VALUES (?1, ?2)",
+            [transaction, tag],
+        )
+    };
+
+    // Several tags on a row, and a tag on several rows, of any origin.
+    link(imported, work).unwrap();
+    link(imported, home).unwrap();
+    link(manual, work).unwrap();
+    assert_refused(link(imported, work));
+    assert_refused(link(imported, 99));
+    assert_refused(link(99, work));
+
+    // A link is added or removed, never moved.
+    for sql in [
+        "UPDATE transaction_tag SET transaction_id = ?1 WHERE tag_id = ?2",
+        "UPDATE transaction_tag SET tag_id = ?2 WHERE transaction_id = ?1",
+    ] {
+        assert_refused(fixture.conn().execute(sql, [manual, home]));
+    }
+
+    // No ON DELETE: a tag or a transaction with links can't be deleted
+    // until core deletes the links.
+    assert_refused(
+        fixture
+            .conn()
+            .execute("DELETE FROM tag WHERE id = ?1", [work]),
+    );
+    assert_refused(
+        fixture
+            .conn()
+            .execute("DELETE FROM \"transaction\" WHERE id = ?1", [manual]),
+    );
+    fixture
+        .conn()
+        .execute(
+            "DELETE FROM transaction_tag WHERE transaction_id = ?1",
+            [manual],
+        )
+        .unwrap();
+    fixture
+        .conn()
+        .execute("DELETE FROM \"transaction\" WHERE id = ?1", [manual])
+        .unwrap();
+}
+
 #[test]
 fn ids_are_not_reused() {
     let fixture = Fixture::new();
