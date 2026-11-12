@@ -137,6 +137,35 @@ fn matching_ignores_case_beyond_ascii() {
 }
 
 #[test]
+fn the_merchant_is_matched_cleaned() {
+    // `MatchField::Merchant` is the cleaned bank name (`merchant::clean`):
+    // processor prefixes, payment words, card numbers and trailing dates
+    // and references are gone before any pattern sees it.
+    let is = || merchant(MatchKind::Is, "acme coffee", "food.eating_out");
+    assert!(hits(is(), &with_merchant("SQ *ACME COFFEE")));
+    assert!(hits(is(), &with_merchant("CONTACTLESS ACME COFFEE 12/11")));
+    assert!(hits(is(), &with_merchant("ACME COFFEE CARD 1234")));
+    assert!(hits(is(), &with_merchant("ACME  COFFEE  3297")));
+    let starts = || merchant(MatchKind::StartsWith, "SQ *", "shopping");
+    assert!(!hits(starts(), &with_merchant("SQ *ACME COFFEE")));
+    let regex = || merchant(MatchKind::Regex, r"^acme coffee$", "food.eating_out");
+    assert!(hits(
+        regex(),
+        &with_merchant("PAYPAL *ACME COFFEE 4029357733")
+    ));
+    // The description is not cleaned: only collapsed.
+    let description = || {
+        on(
+            MatchField::Description,
+            MatchKind::StartsWith,
+            "sq *",
+            "shopping",
+        )
+    };
+    assert!(hits(description(), &input("SQ *ACME COFFEE")));
+}
+
+#[test]
 fn description_is_matched_with_whitespace_collapsed() {
     let contains = || {
         on(
@@ -774,6 +803,41 @@ fn applying_with_no_rules_changes_nothing() {
     let row = f.row(batch, "ACME", None);
     assert_eq!(f.apply(batch), 0);
     assert_eq!(f.categorised(row), (None, None, None));
+}
+
+#[test]
+fn merchant_names_dont_change_which_rules_match() {
+    let mut f = Fixture::new();
+    let rule = f.create(&merchant(MatchKind::Is, "acme coffee", "food.eating_out"));
+    // A name for the bank text, and one typed on a row: neither is what
+    // rules see.
+    crate::merchant::add(
+        &mut f.db,
+        &crate::merchant::AliasDefinition::new(
+            crate::merchant::AliasKind::Prefix,
+            "ACME",
+            crate::merchant::DisplayName::new("Something Else").unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let batch = f.batch();
+    let aliased = f.row(batch, "SQ *ACME COFFEE", None);
+    let renamed = f.row(batch, "ACME COFFEE 12/11", None);
+    crate::merchant::apply_to_batch(f.db.conn(), batch).unwrap();
+    crate::merchant::set_user_name(
+        &mut f.db,
+        renamed,
+        &crate::merchant::DisplayName::new("Not Acme").unwrap(),
+    )
+    .unwrap();
+    let not_matched = f.row(batch, "SOMETHING ELSE", None);
+
+    assert_eq!(f.apply(batch), 2);
+    let by_rule = (key("food.eating_out"), key("rule"), Some(rule));
+    assert_eq!(f.categorised(aliased), by_rule);
+    assert_eq!(f.categorised(renamed), by_rule);
+    assert_eq!(f.categorised(not_matched), (None, None, None));
 }
 
 #[test]

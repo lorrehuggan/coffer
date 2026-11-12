@@ -12,6 +12,7 @@ pub mod category;
 pub mod db;
 pub mod id;
 pub mod import;
+pub mod merchant;
 pub mod money;
 pub mod paths;
 pub mod rule;

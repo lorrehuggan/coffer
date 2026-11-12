@@ -73,3 +73,7 @@ row_id!(
     /// A `rule` row.
     RuleId
 );
+row_id!(
+    /// A `merchant_alias` row.
+    MerchantAliasId
+);

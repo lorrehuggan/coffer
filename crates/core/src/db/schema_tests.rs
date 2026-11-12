@@ -15,7 +15,8 @@ use tempfile::TempDir;
 
 use super::Database;
 
-/// The tables M1.4 creates. A new table is added here with its migration.
+/// The tables the migrations create. A new table is added here with its
+/// migration.
 const TABLES: &[&str] = &[
     "account",
     "balance_snapshot",
@@ -24,6 +25,7 @@ const TABLES: &[&str] = &[
     "fx_rate",
     "import_batch",
     "import_flag",
+    "merchant_alias",
     "report",
     "rule",
     "rule_action",
@@ -1425,4 +1427,64 @@ fn ids_are_not_reused() {
         .unwrap();
 
     assert!(fixture.manual(account) > first);
+}
+
+#[test]
+fn merchant_aliases_are_checked() {
+    let fixture = Fixture::new();
+    let alias = |kind: &str, pattern: &str, name: rusqlite::types::Value| {
+        fixture.conn().execute(
+            "INSERT INTO merchant_alias (match_kind, pattern, display_name) VALUES (?1, ?2, ?3)",
+            params![kind, pattern, name],
+        )
+    };
+    let text = |text: &str| rusqlite::types::Value::Text(text.to_owned());
+
+    alias("exact", "ACME", text("Acme")).unwrap();
+    alias("prefix", "ACME ", text("Acme")).unwrap();
+    alias("regex", "^acme", text("Acme")).unwrap();
+    assert_refused(alias("contains", "ACME", text("Acme")));
+    assert_refused(alias("exact", "", text("Acme")));
+    assert_refused(alias("exact", "  ", text("Acme")));
+    assert_refused(alias("exact", "ACME", text("")));
+    assert_refused(alias("exact", "ACME", text(" Acme")));
+    assert_refused(alias("exact", "ACME", text("Acme ")));
+    // STRICT: a name is text.
+    assert!(
+        alias(
+            "exact",
+            "ACME",
+            rusqlite::types::Value::Blob(b"Acme".to_vec())
+        )
+        .is_err()
+    );
+}
+
+/// `merchant_display_source` says who set the name: NULL (derived), a
+/// rule or the user. A set name is never blank. Both stay editable on
+/// imported rows: they are user-facing fields.
+#[test]
+fn merchant_display_source_is_checked() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let batch = fixture.batch(account);
+    let id = fixture.imported(account, batch, None, "fp-1");
+    let set = |name: &str, source: &str| {
+        fixture.conn().execute(
+            &format!(
+                "UPDATE \"transaction\" SET merchant_display = {name}, \
+                 merchant_display_source = {source} WHERE id = ?1"
+            ),
+            [id],
+        )
+    };
+
+    set("'Coffee'", "NULL").unwrap();
+    set("NULL", "NULL").unwrap();
+    set("'Coffee'", "'user'").unwrap();
+    set("'Coffee shop'", "'rule'").unwrap();
+    assert_refused(set("'Coffee'", "'agent'"));
+    assert_refused(set("NULL", "'user'"));
+    assert_refused(set("''", "'user'"));
+    assert_refused(set("'  '", "'rule'"));
 }
