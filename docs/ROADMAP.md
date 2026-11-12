@@ -522,22 +522,36 @@ Import real statements into a local database from the command line.
   The bug it found (a file balance inside a locked period was recorded, making the batch
   impossible to undo) is fixed (`ARCHITECTURE.md` → "Decision record: importer paths
   and locked balances")
-- ⬜ M1.20 Split transactions: `transaction_split` lines that sum exactly to the parent
+- ✅ M1.20 Split transactions: `transaction_split` lines that sum exactly to the parent
   (checked in core); reports and budgets read the `ledger_line` view, so a split purchase
-  counts in each of its categories
-- ⬜ M1.21 Tags (several per transaction, private tags never leave the app) and a
-  user-editable note beside the read-only imported one
-- ⬜ M1.22 Manual transactions and cash accounts (`origin = manual`). Imported source fields
-  stay read-only: fix a bad row by undoing its batch, or exclude it with a recorded reason
-- ⬜ M1.23 Merchant clean-up: deterministic cleaning of bank text (card references,
+  counts in each of its categories. `coffer_core::split`, `V5__transaction_split.sql`;
+  a split parent has no category, amount or currency change while split, transfers
+  aren't split, and undo and manual deletes remove the lines (`ARCHITECTURE.md` → "Decision record: splits, tags and notes, manual rows, merchant
+  names")
+- ✅ M1.21 Tags (several per transaction, private tags never leave the app) and a
+  user-editable note beside the read-only imported one. `coffer_core::tag` and
+  `coffer_core::note`, `V6__tags.sql`; names unique ignoring case, shared with rules'
+  `add_tag`; undo and manual deletes remove the links (`ARCHITECTURE.md` → "Decision record: splits, tags and notes, manual rows, merchant
+  names")
+- ✅ M1.22 Manual transactions and cash accounts (`origin = manual`). Imported source fields
+  stay read-only: fix a bad row by undoing its batch, or exclude it with a recorded reason.
+  `coffer_core::manual` (any account that holds transactions; locks and `closed_on`
+  respected) and `coffer_core::exclusion`; no migration (`ARCHITECTURE.md` → "Decision record: splits, tags and notes, manual rows, merchant
+  names")
+- ✅ M1.23 Merchant clean-up: deterministic cleaning of bank text (card references,
   "CONTACTLESS", processor prefixes) into `merchant_display`, plus a merchant alias table.
-  Raw fields are never changed
+  Raw fields are never changed. `coffer_core::merchant`, `V7__merchant_alias.sql` (with
+  `merchant_display_source`); runs in `import::commit` before rules, aliases apply at
+  once to derived names, and rules match the cleaned merchant (`ARCHITECTURE.md` → "Decision record: splits, tags and notes, manual rows, merchant
+  names")
 - ⬜ M1.24 Rule actions beyond setting a category: set merchant, add tag, set note, exclude,
   split template, my share. Each transaction records the rule that categorised it. Applying
   a rule to past transactions shows a preview and commits as an undoable change batch.
   Each action kind's `value_json` shape is typed and validated in
   `coffer_core::rule::RuleAction`; still to do: applying the actions, including
-  converting basis-point shares to minor units
+  converting basis-point shares to minor units (`set_merchant` writes
+  `merchant_display_source = 'rule'`; `split_template` goes through `split::replace`;
+  `add_tag` finds or creates tags; applying to history skips split rows)
 - ⬜ M1.25 Refunds, reimbursements and shared costs: `transaction_link`
   (`refund`/`reimbursement`/`settlement`). A refund nets against the purchase's category
   instead of counting as income; a reimbursable purchase stays outstanding until linked;

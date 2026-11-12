@@ -33,7 +33,7 @@ Built for one user first; released as open source (UK, US, euro area at launch).
 | Splits | A transaction can be split into lines that sum exactly to its amount, in its currency (enforced in core, in the same DB transaction as the edit). Reports, budgets and MCP read the `ledger_line` view: one row per split line, or the transaction itself when it isn't split |
 | Tags and notes | Many tags per transaction, alongside categories. Tag names are user text: MCP sees them only at `standard` access, and never for tags marked private. The imported note stays read-only; the user's note is a separate field. Neither note is exposed over MCP by default |
 | Manual entries and corrections | Manual rows have `origin = manual` and no import batch. Imported source fields (date, amount, raw description, external ID) are never edited: a bad import is undone, or a row is excluded with a recorded reason and stays visible under an "excluded" filter. User-facing fields (category, display merchant, tags, notes, splits) are editable. Manual rows are the user's own data: every field is editable and they can be deleted. Exclusion reasons and their effect on balances: see the decision record "Transactions additions" |
-| Merchant names | `merchant_display` is derived: deterministic clean-up of the raw text, then the merchant alias table, then rule actions. It can be recomputed at any time; the raw text is untouched |
+| Merchant names | `merchant_display` is derived: deterministic clean-up of the raw text, then the merchant alias table, then rule actions. It can be recomputed at any time; the raw text is untouched. A name set by a rule or the user (`merchant_display_source`) is never recomputed. See "Decision record: splits, tags and notes, manual rows, merchant names" |
 | Refunds, reimbursements, shared costs | `transaction_link` ties a refund to its purchase (it nets against the purchase's category instead of counting as income), a reimbursement to the expense it repays, and a settlement to a share label. `my_share_minor` (default: the full amount) gives personal and gross views; the difference builds an owed-to-me balance per local share label. Share labels never leave the app. Still single-user: no one else's accounts are modelled |
 | Duplicates | Exact duplicates are prevented at import (source ID, then fingerprint). Near-duplicates (same account and amount within ±N days, different text) become `duplicate_candidate` rows for review. Merging excludes one row, never deletes it, and can be undone |
 | Reconciliation | Every `balance_snapshot` is an assertion checked against the computed balance; a failure reports the window since the last passing assertion. `account.reconciled_through` locks history: imports, manual edits, merges or undos touching locked dates are flagged and need an explicit unlock |
@@ -430,11 +430,12 @@ reconciliation and the commit".
 7. **Undo removes the batch's rows with everything on them.** `import::undo` deletes the
    batch's transactions (mirrored pot rows included), balances and flags and marks it
    `undone`, in one DB transaction. The user's edits on those rows (category, notes,
-   share, exclusion; later splits, tags and links) go with them: `undo_preview` counts
-   the edited rows so the confirmation can say so, and importing the file again brings
-   the rows back without the edits. Tables that will reference a transaction must be
-   cleared by undo when they arrive; until then a reference makes the undo fail as a
-   whole.
+   share, exclusion, splits, tags, a user-set name; later links) go with them:
+   `undo_preview` counts the edited rows so the confirmation can say so, and importing
+   the file again brings the rows back without the edits. Undo deletes split lines and
+   tag links first (M1.20, M1.21); tables that will reference a transaction must be
+   cleared by undo when they arrive, and until then a reference makes the undo fail as
+   a whole.
 8. **Undo dissolves transfer pairs.** A `transfer_group` with one of the batch's rows is
    deleted and its other rows become ordinary transactions again, to be paired again
    when the file is re-imported (M1.16). A pair with one side gone isn't a transfer.
@@ -606,6 +607,88 @@ presets, dedupe, reconciliation, commit, undo, CLI; `crates/import/tests/*_paths
 2. **Test presets aren't bundled.** Mappings that read the generic CSV fixtures live in
    `fixtures/csv/mappings/<region>/*.toml` and are loaded by the tests only.
 
+### Decision record: splits, tags and notes, manual rows, merchant names (2026-11-12)
+
+M1.20–M1.23 (M1 wave 3). Migrations `V5__transaction_split.sql`, `V6__tags.sql` and
+`V7__merchant_alias.sql`; M1.22 needed none. Points 1 and 2 were decided by the user.
+
+1. **A new, edited or deleted merchant alias applies at once, to derived names only.**
+   `transaction.merchant_display_source` (V7) is NULL when the name is derived (the
+   bank text cleaned, then the aliases), `rule` when a rule action set it (M1.24) and
+   `user` when the user did (`merchant::set_user_name`). Alias changes recompute every
+   derived row in the same DB transaction, with no batch (rules decision point 5), and
+   never touch a `rule` or `user` name. A set name can't be blank.
+2. **Manual rows are allowed on every account that holds transactions**: current,
+   savings, credit card, pot and cash; never on `asset`/`liability` (accounts decision
+   point 2). A manual row has no dedupe keys, so one entered ahead of the bank's export
+   is matched later by near-duplicate review, not by the import.
+3. **Splits** (`coffer_core::split`). Two or more lines, numbered from 1, each non-zero
+   with the parent's sign, summing exactly to the parent's amount in its currency; lines
+   may be uncategorised. Setting a split replaces all lines (their IDs change) and clears
+   the parent's category, `rule_id`, share and share label: each line carries its own.
+   `reimbursable`, notes and the exclusion stay on the parent. Removing a split leaves the
+   row uncategorised. The schema guards what one row can: while a transaction has lines
+   it takes no category or share and its amount and currency don't change (a manual
+   row's edit is refused in words first, `manual::Error::Split`). A row in a suggested
+   or confirmed transfer can't be split, a group holding a split row can't become one,
+   and transfer detection skips split rows. A row in a `rejected` group, or an excluded
+   row, can be split. Applying rules to history (M1.24) must skip split rows.
+4. **`ledger_line` doesn't filter.** It has every transaction (or its lines), with
+   `excluded_reason`, `transfer_status` and `my_amount_minor` (the share, or the whole
+   amount) for each report to filter and sum by; the balance, the excluded filter and
+   transfer views read the same rows.
+5. **Tags** (`coffer_core::tag`). Names are trimmed, keep their case, are at most 64
+   characters with no control characters, and are unique ignoring case with the same
+   folding as rule matching (`Straße` and `STRASSE` are one tag; SQL `NOCASE` backs it up
+   for ASCII). `rule::TagList` uses the same `TagName`, so an `add_tag` value repeating a
+   name in another case is refused. Adding a tag twice does nothing; deleting a tag
+   removes its links. `transaction_tag` is a `WITHOUT ROWID` link table whose rows are
+   only inserted or deleted. Private tags never leave the app: anything that does (MCP,
+   exports) reads `tag::public_tags_of` / `without_private`.
+6. **User notes** (`coffer_core::note`). Trimmed, line breaks kept, at most 2,000
+   characters (checked in Rust); blank clears. Any origin can carry one; the imported
+   `note` stays read-only.
+7. **Manual rows** (`coffer_core::manual`). Create, read, edit (every field the entry
+   holds; other user fields stay) and delete `origin = manual` rows; imported and
+   mirrored rows are refused. Locks guard balances only (rules decision point 8): a
+   change to the account, date, time, amount, merchant or description, or a create or
+   delete, on or before `reconciled_through` (old or new date) is refused; a
+   category-only edit there isn't. A row can't be dated after its account's
+   `closed_on`. Changing a paired row's account or amount, or deleting it, dissolves its
+   transfer group. Deleting clears its split lines and tag links first
+   (`manual::release_references`, where later referencing tables join).
+8. **Exclusion** (`coffer_core::exclusion`) applies to any row, with the reason, note
+   and date of "Transactions additions" point 1. Excluding again changes the reason and
+   resets the date. Only a change into or out of `duplicate` is refused inside a lock,
+   since only `duplicate` moves the balance.
+9. **Merchant clean-up** (`merchant::clean`) is deterministic and keeps the bank's case
+   (title-casing gets McDonald's, IKEA and eBay wrong and can't be undone; comparisons
+   ignore case). It strips processor prefixes (`SQ *`, `SUMUP *`, `IZ *`, `ZETTLE_`,
+   `PAYPAL *`, `CRV*`, `SP `…), payment words (CONTACTLESS, CARD PAYMENT, APPLE PAY…),
+   card references and masked numbers, and trailing dates, times, references and long
+   digit runs, repeating until nothing changes; it never empties a name. The source text
+   is the bank's merchant, else the raw description. `SP ` also strips a real name that
+   starts with "SP "; an alias fixes such a case.
+10. **Aliases** match the cleaned text ignoring case and runs of whitespace: `exact`, then
+    the longest `prefix` (a trailing space marks a word boundary; ties go to the older
+    alias), then the first `regex` by ID (oldest first; no order column yet: adding one
+    is a plain `ALTER TABLE`). Regexes are validated like rule patterns. Duplicate
+    aliases are refused. `merchant_alias.created_at` gives the inspector its date.
+11. **Rules match the cleaned merchant.** `MatchField::Merchant` compares
+    `clean(merchant)`, as the rules decision said, so names never change which rules
+    match. This changed existing behaviour: a merchant rule written against processor
+    noise (`starts_with "SQ *"`) no longer matches; one written against the clean name
+    now matches the noisy rows. The description field is unchanged.
+12. **Names run before rules in the import commit** (after the pot mirror, so mirrored
+    rows are named too), so a rule's `set_merchant` (M1.24) has the last word. Opening a
+    database from before V7 names every existing row once, right after the migrations,
+    in its own DB transaction (refinery's can't run Rust); if that fails,
+    `merchant::recompute_all` repairs it.
+13. **Undo and deletes clear what references a transaction.** `import::undo` and
+    `manual::delete` delete split lines (`split::clear_batch` / `clear`) and tag links
+    (`tag::clear_batch` / `clear`) before the rows. `undo_preview`'s `edited` count
+    includes rows with a split, tags or a user-set name.
+
 ## Architecture
 
 ```
@@ -675,14 +758,16 @@ own QIF parser. Avoid GPL crates (`ofxy`, `tree_magic_mini`'s GPL data feature).
    balances dated then); take a backup (M1.28); commit in one DB transaction; record an
    `import_batch` so an import can be undone.
 7. **Post-process** (deterministic, no model, inside the commit's DB transaction): map
-   source categories via the preset; apply rules (which can match merchant, raw
-   description, source category, source type, amount, account) and their actions, a
-   rule's category overriding the preset's; run transfer-pair detection; clean merchant
-   text and apply merchant aliases into `merchant_display`; match schedule occurrences;
-   queue near-duplicate candidates; record balances and check assertions. Before all of
-   these, sub-account transfers are mirrored onto their pots (M1.17). The mirror, the
-   preset map, rules and transfer detection run today ("Decision record: sub-accounts";
-   "Decision record: rules engine, transfer detection and the CLI").
+   source categories via the preset; mirror sub-account transfers onto their pots
+   (M1.17); clean merchant text and apply merchant aliases into `merchant_display`
+   (M1.23); apply rules (which can match the cleaned merchant, raw description, source
+   category, source type, amount, account) and their actions, a rule's category
+   overriding the preset's and its merchant overriding the alias; run transfer-pair
+   detection; match schedule occurrences; queue near-duplicate candidates; record
+   balances and check assertions. Everything up to transfer detection runs today
+   ("Decision record: sub-accounts"; "Decision record: rules engine, transfer detection
+   and the CLI"; "Decision record: splits, tags and notes, manual rows, merchant
+   names").
 
 ### The `Importer` trait
 
@@ -1046,12 +1131,13 @@ M1.11–M1.13, decided 2026-11-11 (decision record "import commit, dedupe and un
   the batch's `imported_at`), its new balances (`csv` or `ofx`) and its `import_flag`
   rows, in one DB transaction. In the same transaction it stores each new row's preset
   category (`category_source = preset_map`), mirrors sub-account transfers onto their
-  pots (`sub_account::mirror`), runs the rules on the batch (`rule::apply_to_batch`),
+  pots (`sub_account::mirror`), names every row of the batch
+  (`merchant::apply_to_batch`), runs the rules on the batch (`rule::apply_to_batch`),
   which override the preset's category, and suggests transfer pairs
   (`transfer::detect_for_batch`); a failure in any step rolls the whole import back.
   `CommitSummary` counts the file's rows categorised by the preset and by rules, the
   mirrored rows and created pots, and the pairs suggested. The M1.28 backup is taken
-  just before the transaction; merchant names (M1.23) will run inside it.
+  just before the transaction.
 - **File balances** are `New`, `AlreadyRecorded`, `Repeated`, or `Locked` (dated on or
   before the lock; left out).
 
@@ -1169,9 +1255,10 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   mismatch is a failed check, not a refused insert.
 - `transaction` is an SQL keyword, so the table name is always quoted (`"transaction"`).
 - Tables arrive with the roadmap item that needs them. M1.4 created the ones below up to
-  and including `report`, except `change_batch`/`change_item`, `transaction_split`,
-  `ledger_line`, `tag`, `merchant_alias`, `transaction_link`, `duplicate_candidate` and
-  the schedule tables; `mcp_client`, `mcp_access_log` and `setting` come with M2.
+  and including `report`, except `change_batch`/`change_item`, `transaction_split` and
+  `ledger_line` (V5, M1.20), `tag`/`transaction_tag` (V6, M1.21), `merchant_alias` (V7,
+  M1.23), `transaction_link`, `duplicate_candidate` and the schedule tables;
+  `mcp_client`, `mcp_access_log` and `setting` come with M2.
 
 - `account(id, parent_id?, name, institution, kind [current|savings|credit_card|pot|cash|
   asset|liability|...], currency, opening_balance_minor?, opening_date?,
@@ -1191,7 +1278,7 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   status [applied|undone])` and `change_item(batch_id, transaction_id, field, old_value,
   new_value)` — undo for changes to existing transactions
 - `transaction(id, account_id, batch_id?, date, time?, amount_minor, currency, merchant?,
-  merchant_display?, description_raw, description_normalized, external_id?, fingerprint,
+  merchant_display?, merchant_display_source? [rule|user], description_raw, description_normalized, external_id?, fingerprint,
   source_category?, source_type?, original_amount_minor?, original_currency?, category_id?,
   category_source [rule|preset_map|user|ai_approved], rule_id?, transfer_group_id?, note?,
   user_note?, my_share_minor?, share_label?, reimbursable,
@@ -1199,15 +1286,24 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   origin [imported|mirrored|manual], created_at)` — `mirrored` rows are the generated
   pot-side half of a sub-account transfer, and undoing their import batch removes them too;
   `manual` rows have no batch and no `external_id` or `fingerprint`; `note` is the imported note (read-only), `user_note` the
-  user's; `category_id` is empty when the transaction is split. The three `excluded_*`
+  user's; `category_id` is empty when the transaction is split; `merchant_display_source`
+  (V7) is empty while the name is derived and set when a rule or the user named the
+  merchant, which recomputes leave alone. The three `excluded_*`
   fields are set and cleared together (`excluded_note` is required for `other`);
   `created_at` is when the row entered the database (the batch commit for imported rows)
 - `transaction_split(id, transaction_id, line_no, amount_minor, category_id?,
   my_share_minor?, share_label?, user_note?)` — lines sum exactly to the parent amount
-- `ledger_line` (view) — the split lines, or the transaction itself when unsplit. Reports skip
-  excluded rows and confirmed transfers; a linked refund takes its purchase's category
-- `tag(id, name, private)`, `transaction_tag(transaction_id, tag_id)`
-- `merchant_alias(id, match_kind [exact|prefix|regex], pattern, display_name)`
+  (checked in core), each non-zero with the parent's sign, in the parent's currency;
+  `line_no` from 1, unique per transaction (V5)
+- `ledger_line` (view) — the split lines, or the transaction itself when unsplit, with
+  `split_id`/`line_no` NULL on a transaction's own row, `transfer_status` and
+  `my_amount_minor`. It doesn't filter: reports skip excluded rows and confirmed
+  transfers; a linked refund takes its purchase's category
+- `tag(id, name, private)`, `transaction_tag(transaction_id, tag_id)` — names unique
+  ignoring case, at most 64 characters; the link table is `WITHOUT ROWID` and its rows
+  are only inserted or deleted (V6)
+- `merchant_alias(id, match_kind [exact|prefix|regex], pattern, display_name,
+  created_at)` (V7)
 - `transaction_link(id, kind [refund|reimbursement|settlement], inflow_id, target_id?,
   share_label?, amount_minor, status [suggested|confirmed|rejected])` — refunds and
   reimbursements target a purchase; settlements target a share label
