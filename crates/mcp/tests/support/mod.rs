@@ -23,6 +23,7 @@
 
 #[path = "../../../import/tests/common/mod.rs"]
 mod common;
+pub mod inbox;
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
