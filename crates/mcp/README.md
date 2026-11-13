@@ -18,6 +18,11 @@ Coffer's MCP server: `coffer mcp --client <name>` runs it over stdio. Design and
 3. Exactly one `mcp_access_log` row is written, whatever happened. If it can't be
    written, the call fails and no data goes out.
 
+The database is opened for each call (and each `tools/list` and poll) and closed after
+it: no connection is kept between calls. While `coffer restore` holds its lock file
+(`backup::restoring`), checked before and after opening, calls are refused with a message
+and not logged.
+
 Queries run on `coffer_core::db::Reader`, which SQLite keeps read-only (`query_only`).
 The only writes are in `store.rs`: a suggestion, a report (through `Inbox`), the
 access-log row (the wrapper's own) and the server's own client name as `requested`.
@@ -88,3 +93,13 @@ Each tool's test file checks at least:
 
 Writing tools also check that they write only `suggestion` or `report`, with
 `source_client` set to the calling client.
+
+Then add the tool to `MATRIX` in `tests/matrix.rs`, with its level, whether it writes,
+and valid arguments: `the_matrix_lists_every_registered_tool` fails until you do, and the
+matrix runs the checks above for every tool at every level.
+
+## Prompts
+
+`src/prompts.rs` has `monthly_review(month)`. A prompt's text is built from the tools
+registered at the client's level, so a step naming a tool above it is left out; mention
+tools as `` `name` `` so `tests/monthly_review.rs` can check that.
