@@ -45,12 +45,85 @@
 //!
 //! Rules win field by field (point 1): in priority order, the first
 //! matching rule that sets a field sets it, and a later rule can still set
-//! another field. The result is an [`Outcome`]. This milestone applies
-//! `set_category` only; the other action kinds are ROADMAP M1.24.
+//! another field. The result is an [`Outcome`]: category and split share
+//! one field (a split categorises line by line), and tags add up across
+//! rules.
+//!
+//! # Applying
 //!
 //! [`apply_to_batch`] runs the rules on an import batch inside the import's
-//! own database transaction. It never changes a category the user set or
-//! approved (point 3), and it overrides the preset's category map.
+//! own database transaction, every action kind, mirrored rows included. It
+//! never changes a value the user set (point 3), and it overrides the
+//! preset's category map and the derived merchant name. [`preview_apply`]
+//! and [`commit_apply`] apply one rule to past transactions as one undoable
+//! `rule_apply` change batch, listing the rows where it would change a value
+//! the user set separately: those change only when the user includes them.
+//! Shares and split lines are turned from basis points into minor units
+//! exactly, with integers ([`share_of`], [`split_amounts`]).
+//!
+//! Both plan each row first ([`RowPlan`]: what each field holds now, what
+//! the rules would set, and whether that overwrites a value the user set),
+//! then write the plan through a
+//! [`change::Recorder`](crate::change::Recorder), so the import and Apply
+//! write fields the same way. The import never finishes its recorder
+//! (an import records no change batch: undoing the import removes its rows);
+//! Apply finishes it as one `rule_apply` batch.
+//!
+//! ## What each action writes
+//!
+//! - `set_category`: `category_id`, `category_source = 'rule'` and `rule_id`.
+//! - `split_template`: clears the category and the share, then stores the
+//!   lines ([`split_amounts`]; a line's category is the template's, its
+//!   share the rule's `my_share` of the line). A row that is in a
+//!   suggested or confirmed transfer, or too small to give every line at
+//!   least one minor unit, isn't split ([`SkippedSplit`]) and keeps its
+//!   category; its share, if a rule sets one, then applies to the row. A
+//!   split row has no category, so no `rule_id` records the rule.
+//! - `set_merchant`: `merchant_display` (trimmed) with
+//!   `merchant_display_source = 'rule'`.
+//! - `add_tag`: links the tags, finding each by name ignoring case and
+//!   creating it (not private) when there is none.
+//! - `set_note`: `user_note`, trimmed. A note longer than
+//!   [`MAX_USER_NOTE_LEN`](crate::note::MAX_USER_NOTE_LEN) is an error
+//!   naming the rule.
+//! - `exclude`: the reason, no note, excluded now.
+//! - `my_share`: `my_share_minor` ([`share_minor`]): rounded half away from
+//!   zero, `NULL` for the whole amount. The share label stays as it is.
+//!
+//! ## Values the user set
+//!
+//! A change overwrites a value the user set ([`PlannedChange::user_set`])
+//! when the field holds a category with `category_source` `user` or
+//! `ai_approved`, a name with `merchant_display_source = 'user'`, any user
+//! note, any exclusion, or any share (`my_share_minor`); a split overwrites
+//! the category and the share (or share label) it clears. Such changes are
+//! never made on import, and on Apply only on rows the user includes
+//! (decision record "rules", point 3; "Inbox impact preview", point 1).
+//! Values from rules, the preset's map or the derived name are changed.
+//! Tags are only added, so adding one never overwrites anything. A field
+//! that already holds the value (or, for a category or name the user set,
+//! the same category or name; for an exclusion, the same reason) isn't
+//! changed at all.
+//!
+//! ## Apply
+//!
+//! [`preview_apply`] plans rule `rule` against every transaction it
+//! matches, of any account and origin, evaluating the whole current rule set
+//! so the rule changes only the fields it wins (decision record "rules",
+//! point 1) and adds every tag it names. Split rows are skipped entirely
+//! (decision record "splits, tags and notes…", point 3; listed in
+//! [`ApplyPreview::split_rows`]). An exclusion on a row dated on or before
+//! its account's `reconciled_through` meets the lock
+//! ([`PlannedChange::locked`]; decided by the user, 2026-11-12): the commit
+//! refuses while it would make one ([`ApplyError::Locked`]), and the user
+//! unlocks first. Other fields aren't guarded by locks (point 8).
+//!
+//! [`commit_apply`] plans again inside its DB transaction, refuses as stale
+//! when the plan differs from the preview, then makes every change that
+//! needs no inclusion and, on the rows the user included, the ones that do,
+//! recorded as one `rule_apply` [change batch](crate::change).
+//! [`change::undo`](crate::change::undo) undoes it, skipping fields changed
+//! since; tags the apply created stay (without the links).
 //!
 //! Patterns and action values are user text (or an agent's, from an Inbox
 //! suggestion), so errors here never repeat them, and they must not be
@@ -58,6 +131,10 @@
 //! ever the thing a pattern is matched against, and it is never logged.
 
 mod action;
+mod allocate;
+mod apply;
+#[cfg(test)]
+mod apply_tests;
 #[cfg(test)]
 mod db_tests;
 mod engine;
@@ -70,6 +147,11 @@ use std::str::FromStr;
 pub use action::{
     ActionText, ActionValueError, ExcludeReason, RuleAction, Share, SplitLine, SplitTemplate,
     TagList,
+};
+pub use allocate::{share_minor, share_of, split_amounts};
+pub use apply::{
+    Applied, ApplyError, ApplyPreview, BatchApplied, PlannedChange, PlannedLine, RowPlan,
+    SkippedSplit, SplitSkip, Target, commit_apply, preview_apply,
 };
 pub use engine::{MatchInput, Outcome, RuleSet, SetBy, apply_to_batch};
 pub(crate) use engine::{collapse_whitespace, fold};

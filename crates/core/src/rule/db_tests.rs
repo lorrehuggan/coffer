@@ -493,8 +493,9 @@ impl Fixture {
             .unwrap()
     }
 
+    /// Applies the rules to `batch`; how many rows they categorised.
     fn apply(&self, batch: BatchId) -> usize {
-        apply_to_batch(self.db.conn(), batch).unwrap()
+        apply_to_batch(self.db.conn(), batch).unwrap().categorized
     }
 }
 
@@ -849,7 +850,7 @@ fn applying_runs_inside_the_callers_transaction() {
     let row = f.row(batch, "ACME", None);
     {
         let tx = f.db.conn_mut().transaction().unwrap();
-        assert_eq!(apply_to_batch(&tx, batch).unwrap(), 1);
+        assert_eq!(apply_to_batch(&tx, batch).unwrap().categorized, 1);
         // Dropped without commit: rolled back.
     }
     assert_eq!(f.categorised(row), (None, None, None));
