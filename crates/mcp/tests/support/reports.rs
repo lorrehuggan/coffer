@@ -51,3 +51,69 @@ pub fn add_row(
     entry.category = category.map(|key| CategoryKey::new(key).unwrap());
     manual::create(&mut db, &entry).unwrap()
 }
+
+/// A pot under `parent`, in its currency.
+pub fn add_pot(fixture: &Fixture, parent: AccountId, name: &str) -> AccountId {
+    let mut db = writable(fixture);
+    let currency = account::get(&db, parent).unwrap().currency;
+    let mut pot = NewAccount::new(name, AccountKind::Pot, currency);
+    pot.parent = Some(parent);
+    account::create(&mut db, &pot).unwrap()
+}
+
+/// An entered (manual) balance for `account` at the end of `date`.
+pub fn add_balance(fixture: &Fixture, account: AccountId, date: &str, minor: i64) {
+    let mut db = writable(fixture);
+    let currency = account::get(&db, account).unwrap().currency;
+    account::add_balance(
+        &mut db,
+        account,
+        &account::EnteredBalance {
+            date: day(date),
+            balance: Money::new(minor, currency),
+            source: account::EnteredSource::Manual,
+            note: None,
+        },
+    )
+    .unwrap();
+}
+
+/// Stores `rule` first in the rule list.
+pub fn add_rule(
+    fixture: &Fixture,
+    rule: &coffer_core::rule::RuleDefinition,
+) -> coffer_core::id::RuleId {
+    coffer_core::rule::create(&mut writable(fixture), rule).unwrap()
+}
+
+/// A report saved by `client`; `created_at` (`YYYY-MM-DDTHH:MM:SS.sssZ`)
+/// replaces the time it was saved, when given.
+pub fn add_report(
+    fixture: &Fixture,
+    client: &str,
+    title: &str,
+    body: &str,
+    created_at: Option<&str>,
+) -> i64 {
+    let mut db = writable(fixture);
+    let id = coffer_core::inbox::insert_report(
+        &mut db,
+        &coffer_core::mcp_client::ClientName::new(client).unwrap(),
+        &coffer_core::inbox::NewReport {
+            period: "2026-11".to_owned(),
+            title: title.to_owned(),
+            body_markdown: body.to_owned(),
+        },
+    )
+    .unwrap();
+    drop(db);
+    if let Some(at) = created_at {
+        let conn = rusqlite::Connection::open(fixture.path()).unwrap();
+        conn.execute(
+            "UPDATE report SET created_at = ?1 WHERE id = ?2",
+            rusqlite::params![at, id],
+        )
+        .unwrap();
+    }
+    id
+}
