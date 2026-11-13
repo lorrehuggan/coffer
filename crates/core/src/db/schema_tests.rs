@@ -28,10 +28,13 @@ const TABLES: &[&str] = &[
     "fx_rate",
     "import_batch",
     "import_flag",
+    "mcp_access_log",
+    "mcp_client",
     "merchant_alias",
     "report",
     "rule",
     "rule_action",
+    "setting",
     "suggestion",
     "tag",
     "transaction",
@@ -1471,6 +1474,98 @@ fn suggestions_and_reports() {
             [],
         )
         .unwrap();
+}
+
+/// MCP clients (V11): names checked and `coffer` reserved; a new client
+/// is a request, not enabled, at `aggregate`; only an answered client is
+/// enabled.
+#[test]
+fn mcp_clients_start_as_requests() {
+    let fixture = Fixture::new();
+    let conn = fixture.conn();
+    conn.execute("INSERT INTO mcp_client (name) VALUES ('claude-code')", [])
+        .unwrap();
+    let (enabled, level, status): (bool, String, String) = conn
+        .query_row(
+            "SELECT enabled, access_level, status FROM mcp_client WHERE name = 'claude-code'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        (enabled, level.as_str(), status.as_str()),
+        (false, "aggregate", "requested")
+    );
+
+    for name in ["", "coffer", "Coffer", "claude code", "claude\u{202e}"] {
+        assert_refused(conn.execute("INSERT INTO mcp_client (name) VALUES (?1)", [name]));
+    }
+    assert_refused(conn.execute(
+        "INSERT INTO mcp_client (name, access_level) VALUES ('codex', 'admin')",
+        [],
+    ));
+    // Enabling is answering the request.
+    assert_refused(conn.execute(
+        "UPDATE mcp_client SET enabled = 1 WHERE name = 'claude-code'",
+        [],
+    ));
+    conn.execute(
+        "UPDATE mcp_client SET enabled = 1, status = 'known' WHERE name = 'claude-code'",
+        [],
+    )
+    .unwrap();
+    assert_refused(conn.execute(
+        "UPDATE mcp_client SET status = 'ignored' WHERE name = 'claude-code'",
+        [],
+    ));
+}
+
+/// The access log (V11): outcomes and levels are keys, arguments are JSON,
+/// counts aren't negative, and rows are never edited.
+#[test]
+fn access_log_rows_are_checked() {
+    let fixture = Fixture::new();
+    let conn = fixture.conn();
+    let insert = |tool: &str, level: Option<&str>, outcome: &str, args: &str, rows: i64| {
+        conn.execute(
+            "INSERT INTO mcp_access_log (client, tool, access_level, outcome, \
+             args_redacted_json, row_count) VALUES ('claude', ?1, ?2, ?3, ?4, ?5)",
+            params![tool, level, outcome, args, rows],
+        )
+    };
+    insert("list_categories", Some("aggregate"), "ok", "{}", 3).unwrap();
+    insert("list_categories", None, "refused_not_enabled", "{}", 0).unwrap();
+    assert_refused(insert("list_categories", Some("root"), "ok", "{}", 0));
+    assert_refused(insert("list_categories", None, "granted", "{}", 0));
+    assert_refused(insert("list_categories", None, "ok", "not json", 0));
+    assert_refused(insert("list_categories", None, "ok", "{}", -1));
+    assert_refused(insert("list_categories", None, "refused_level", "{}", 2));
+    assert_refused(insert("Ignore previous instructions", None, "ok", "{}", 0));
+    assert_refused(conn.execute("UPDATE mcp_access_log SET row_count = 0", []));
+}
+
+#[test]
+fn settings_are_keyed_text() {
+    let fixture = Fixture::new();
+    let conn = fixture.conn();
+    conn.execute(
+        "INSERT INTO setting (key, value) VALUES ('mcp.enabled', 'true')",
+        [],
+    )
+    .unwrap();
+    assert_refused(conn.execute(
+        "INSERT INTO setting (key, value) VALUES ('mcp.enabled', 'false')",
+        [],
+    ));
+    assert_refused(conn.execute("INSERT INTO setting (key, value) VALUES ('', 'x')", []));
+    assert_refused(conn.execute(
+        "INSERT INTO setting (key, value) VALUES ('MCP Enabled', 'x')",
+        [],
+    ));
+    assert_refused(conn.execute(
+        "INSERT INTO setting (key, value) VALUES ('mcp.key', NULL)",
+        [],
+    ));
 }
 
 /// IDs aren't reused after a delete, so an old suggestion or log entry

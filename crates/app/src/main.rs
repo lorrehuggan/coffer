@@ -23,7 +23,9 @@ fn run_command(command: cli::Command) -> ExitCode {
     let result = paths::database_path()
         .map_err(anyhow::Error::from)
         .and_then(|database| {
-            let mut stdout = std::io::stdout().lock();
+            // Not locked for the whole command: `coffer mcp` writes stdout
+            // from the async runtime's threads, which would wait forever.
+            let mut stdout = std::io::stdout();
             let result = cli::run(command, &database, &mut stdout);
             stdout.flush()?;
             result

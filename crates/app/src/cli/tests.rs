@@ -239,12 +239,34 @@ fn parses_undo_import() {
 
 #[test]
 fn later_commands_arent_there_yet() {
-    for command in ["mcp", "inbox", "export"] {
-        assert!(
-            Cli::try_parse_from(["coffer", command]).is_err(),
-            "{command}"
-        );
+    assert!(Cli::try_parse_from(["coffer", "inbox"]).is_err());
+}
+
+#[test]
+fn parses_mcp() {
+    let cli = Cli::try_parse_from(["coffer", "mcp", "--client", "claude-code"]).unwrap();
+    let Some(Command::Mcp(args)) = cli.command else {
+        panic!("not mcp");
+    };
+    assert_eq!(args.client.as_str(), "claude-code");
+
+    for bad in [
+        &["coffer", "mcp"][..],
+        &["coffer", "mcp", "--client", ""],
+        &["coffer", "mcp", "--client", "claude code"],
+        &["coffer", "mcp", "--client", "coffer"],
+    ] {
+        assert!(Cli::try_parse_from(bad).is_err(), "{bad:?}");
     }
+}
+
+#[test]
+fn mcp_needs_an_existing_database_and_creates_none() {
+    let scratch = Scratch::new();
+    let error = scratch.err(&["mcp", "--client", "claude-code"]);
+    assert!(error.contains("couldn't start the MCP server"), "{error}");
+    assert!(error.contains("there is no Coffer database"), "{error}");
+    assert!(!scratch.db.exists(), "the MCP server creates nothing");
 }
 
 // Accounts ---------------------------------------------------------------------

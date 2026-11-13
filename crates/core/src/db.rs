@@ -8,6 +8,10 @@
 //! - [`Database::open_existing`] (`coffer mcp`) only opens a database that
 //!   is already up to date, and never creates or migrates one.
 //!
+//! [`Database::reader`] then opens a second, read-only connection to the
+//! same file ([`Reader`]): the MCP server runs every query on it, so a tool
+//! can't write through a query (M2.1).
+//!
 //! An existing database file is checked before anything is changed: it must
 //! be a SQLite database, not from a newer Coffer, and its applied migrations
 //! must match this build's. A file that fails is left exactly as it was: no
@@ -303,6 +307,44 @@ impl Database {
 
     pub(crate) fn conn_mut(&mut self) -> &mut Connection {
         &mut self.conn
+    }
+
+    /// Opens a second connection to this database that can only read
+    /// ([`Reader`]). The file has passed this database's checks, so the
+    /// reader needs none of its own.
+    pub fn reader(&self) -> Result<Reader, Error> {
+        let conn = connect(&self.path)?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
+        conn.pragma_update(None, "query_only", true)?;
+        conn.pragma_update(None, "trusted_schema", false)?;
+        Ok(Reader { conn })
+    }
+}
+
+/// A read-only connection to the database ([`Database::reader`]), for the
+/// MCP server's queries (M2.1).
+///
+/// It is `query_only`: SQLite refuses every statement that would change the
+/// file (an insert, a schema change, a `VACUUM`), whatever SQL reaches it.
+/// Like [`Database`]'s, the connection isn't public: queries are core
+/// functions that take a `&Reader`, so the MCP server holds no connection it
+/// could write through. It sees what other connections have committed (WAL),
+/// and each statement reads a consistent snapshot; a query that needs
+/// several statements to agree runs them in one read transaction.
+#[derive(Debug)]
+pub struct Reader {
+    conn: Connection,
+}
+
+impl Reader {
+    /// Every category, as a two-level tree ([`Database::categories`]).
+    pub fn categories(&self) -> Result<CategoryTree, Error> {
+        Ok(CategoryTree::load(&self.conn)?)
+    }
+
+    /// The connection, for core's read functions.
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
     }
 }
 
@@ -1018,6 +1060,56 @@ mod tests {
             assert_eq!(snapshot(&path), before);
             assert_no_sidecars(&path);
         }
+    }
+
+    #[test]
+    fn a_reader_refuses_writes() {
+        let dir = TempDir::new().unwrap();
+        let db = Database::open(&db_path(&dir)).unwrap();
+        let reader = db.reader().unwrap();
+
+        for sql in [
+            "INSERT INTO report (period, title, body_markdown, source_client) \
+             VALUES ('2026-10', 'October', 'Body', 'claude')",
+            "INSERT INTO suggestion (kind, payload_json, source_client) \
+             VALUES ('categorization', '{}', 'claude')",
+            "INSERT INTO mcp_access_log (client, tool, outcome) VALUES ('claude', 'x', 'ok')",
+            "UPDATE category SET label = 'Changed'",
+            "DELETE FROM category",
+            "CREATE TABLE planted (id INTEGER)",
+            "DROP TABLE report",
+        ] {
+            let error = reader.conn().execute(sql, []).unwrap_err();
+            assert_eq!(
+                error.sqlite_error_code(),
+                Some(rusqlite::ErrorCode::ReadOnly),
+                "{sql}: {error}"
+            );
+        }
+        assert_eq!(reader.categories().unwrap(), db.categories().unwrap());
+    }
+
+    #[test]
+    fn a_reader_sees_what_the_database_commits() {
+        let dir = TempDir::new().unwrap();
+        let db = Database::open(&db_path(&dir)).unwrap();
+        let reader = db.reader().unwrap();
+        let count = || -> i64 {
+            reader
+                .conn()
+                .query_row("SELECT count(*) FROM report", [], |row| row.get(0))
+                .unwrap()
+        };
+
+        assert_eq!(count(), 0);
+        db.conn()
+            .execute(
+                "INSERT INTO report (period, title, body_markdown, source_client) \
+                 VALUES ('2026-10', 'October', 'Body', 'claude')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(count(), 1);
     }
 
     #[test]
