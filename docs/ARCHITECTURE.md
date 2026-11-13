@@ -1023,14 +1023,31 @@ Everything else follows an earlier decision record or invariant.
 
 1. **Restores and running servers.** The server opens the database per call and keeps no
    connection between calls, so an idle server never blocks `coffer restore` (which
-   refuses a database another connection holds). `restore` holds a lock file,
-   `<database>-restoring` (`backup::restore_lock_path`), from the checked backup until the
-   restored database is open, and waits up to 5 seconds for a running call to close its
-   connection. The server checks the lock before and after opening and refuses with
+   refuses a database another connection holds). From the checked backup until the
+   restored database is open, `restore` holds the operating system's exclusive file lock
+   (`File::try_lock`, std, no dependency) on `<database>-restoring`
+   (`backup::restore_lock_path`), and waits up to 5 seconds for a running call to close its
+   connection. The lock, not the file, means "restoring": the file stays, empty between
+   restores, and is never deleted, so no process can lock a file that has left the
+   directory while another locks a new one under the same name. The server checks with a
+   momentary shared lock before and after opening and refuses while the lock is held, with
    "Coffer is restoring a backup"; those refusals aren't logged, since the log is in the
-   database being replaced. The lock is created with `create_new`, so two restores can't
-   overlap; a lock left by a crash is reported with its path for the user to delete. No
-   network and no process-to-process messages (default).
+   database being replaced. A second restore can't take the lock and is refused (after
+   retrying for a second, past the server's momentary checks). A check made before the
+   restore holds the lock sees no restore, which is sound because `restore` changes
+   nothing until it holds the lock and then waits for earlier connections; that's why
+   there is no grace period and no create-then-rename (which `std`'s replacing rename
+   can't do safely on Windows). **A crashed or killed restore** loses its lock with its
+   process, so it blocks nothing: the database is complete at every step (untouched before
+   the atomic rename, the synced backup after it, a migration all or nothing), and
+   `open_existing` refuses one left at an older schema with its usual "run a `coffer`
+   command" message. The restore writes a marker (start time, backup) into the file while
+   it holds the lock and empties it at the end, so `coffer restore` finds a stopped one,
+   warns, and goes ahead, backing the current database up first as always. A lock file
+   the server can't open or lock is refused with a message naming the file. File locks are
+   `flock`/`LockFileEx`; on a network file system they may be missing (restore refuses,
+   MCP refuses with that message) or local to one machine. No network and no
+   process-to-process messages (default).
 2. **`monthly_review`** is listed only to enabled clients; its text is built from the
    tools at the client's level, so it never names one the client can't call; getting it
    isn't logged, since it returns no data (default).
@@ -1845,9 +1862,10 @@ returning no data: a refusal while a restore holds its lock or when the database
 opened (the log is in that database), and getting a prompt.
 
 **Restores.** The server opens the database for each call and keeps no connection
-between calls. `coffer restore` holds `<database>-restoring` while it swaps the files;
-the server checks it before and after opening and refuses the call while it exists, so
-the next call reads the restored file.
+between calls. `coffer restore` holds the file lock on `<database>-restoring` while it
+swaps the files; the server checks it before and after opening and refuses the call while
+it's held, so the next call reads the restored file. The lock goes with the restore's
+process, so a crashed restore blocks nothing (decision record "M2: MCP server", F.1).
 
 Transaction descriptions are untrusted input (prompt-injection surface); inbox-only
 writes are the containment. In addition:

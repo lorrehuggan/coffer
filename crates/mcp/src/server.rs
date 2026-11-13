@@ -30,10 +30,16 @@
 //! the database ([`Database::open_existing`]) and closes it when done. So a
 //! `coffer restore` is never blocked by an idle server, and the call after
 //! a restore reads the restored file. While a restore swaps the files it
-//! holds a lock file ([`backup::restoring`]); the server checks it before
-//! and after opening, and refuses the call with a message saying so. That
-//! refusal isn't in the access log: the log lives in the database being
-//! replaced. (Decision record "M2: MCP server (2026-11-13)".)
+//! holds the operating system's lock on `<database>-restoring`
+//! ([`backup::restoring`]); the server checks it before and after opening,
+//! and refuses the call with a message saying so. The lock goes with the
+//! restore's process, so a restore that crashed or was killed blocks
+//! nothing: a lock file nobody holds is ignored, and the database is
+//! complete whichever step the restore stopped at (see
+//! [`backup::restore`]). A lock file the server can't open or lock is
+//! refused with a message naming it and saying what to do. These refusals
+//! aren't in the access log: the log lives in the database being replaced.
+//! (Decision record "M2: MCP server (2026-11-13)".)
 //!
 //! Handlers are synchronous and short; they run on the runtime's thread
 //! under a lock that lets one call at a time hold connections. One client
@@ -326,22 +332,31 @@ struct Session {
 
 /// Why the database couldn't be opened for a call.
 enum Unavailable {
-    /// A restore is swapping the database files ([`backup::restoring`]).
+    /// A running restore holds the restore lock ([`backup::restoring`]).
     Restoring,
+    /// The restore lock file exists but can't be opened or locked, so
+    /// whether a restore is running is unknown. Holds the file's name only:
+    /// the full path can name the user.
+    LockUnreadable { file: String },
     /// Opening failed: e.g. the database was migrated by a newer Coffer.
     Open,
 }
 
 impl Unavailable {
-    fn message(&self) -> &'static str {
+    fn message(&self) -> String {
         match self {
             Unavailable::Restoring => {
-                "Coffer is restoring a backup. Try again in a moment; nothing was read."
+                "Coffer is restoring a backup. Try again in a moment; nothing was read.".to_owned()
             }
-            Unavailable::Open => {
-                "Coffer couldn't open its database. The user may need to open Coffer or run \
-                 a `coffer` command to update it."
-            }
+            Unavailable::LockUnreadable { file } => format!(
+                "Coffer can't tell whether a backup is being restored: it can't lock {file}, \
+                 next to its database. Nothing was read. The user should make sure Coffer's \
+                 data directory is on a local disk and that they own {file}; when no \
+                 `coffer restore` is running, deleting {file} is safe."
+            ),
+            Unavailable::Open => "Coffer couldn't open its database. The user may need to open \
+                                  Coffer or run a `coffer` command to update it."
+                .to_owned(),
         }
     }
 }
@@ -349,24 +364,40 @@ impl Unavailable {
 impl Inner {
     /// Opens the database for one call: refused while a restore holds its
     /// lock, checked before opening and again after, so a connection is
-    /// never used across the swap.
+    /// never used across the swap. A lock file that nobody holds (a stopped
+    /// restore's) doesn't refuse: the database is complete whichever step
+    /// that restore stopped at, and `open_existing` refuses one it left at
+    /// an older schema.
     fn open(&self) -> Result<Session, Unavailable> {
-        if backup::restoring(&self.path) {
-            return Err(Unavailable::Restoring);
-        }
+        self.check_restoring()?;
         let opened = Database::open_existing(&self.path)
             .and_then(|db| db.reader().map(|reader| (db, reader)));
         let (db, reader) = opened.map_err(|error| {
             tracing::debug!(%error, "couldn't open the database for a call");
             Unavailable::Open
         })?;
-        if backup::restoring(&self.path) {
-            return Err(Unavailable::Restoring);
-        }
+        self.check_restoring()?;
         Ok(Session {
             reader,
             store: Store::new(db, self.client.clone()),
         })
+    }
+
+    fn check_restoring(&self) -> Result<(), Unavailable> {
+        match backup::restoring(&self.path) {
+            Ok(false) => Ok(()),
+            Ok(true) => Err(Unavailable::Restoring),
+            Err(error) => {
+                let lock = backup::restore_lock_path(&self.path);
+                tracing::warn!(%error, path = %lock.display(), "couldn't check the restore lock");
+                Err(Unavailable::LockUnreadable {
+                    file: lock
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                })
+            }
+        }
     }
 }
 

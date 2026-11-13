@@ -70,11 +70,29 @@ fn assert_no_scratch_files(db_path: &Path) {
             dir.display()
         );
     }
+    let lock = restore_lock_path(db_path);
     assert!(
-        !restoring(db_path),
-        "the restore lock was left at {}",
-        restore_lock_path(db_path).display()
+        !restoring(db_path).unwrap(),
+        "the restore lock is still held at {}",
+        lock.display()
     );
+    // Emptied when the restore ended, so it isn't reported as interrupted.
+    if lock.exists() {
+        assert_eq!(fs::read(&lock).unwrap(), b"", "{}", lock.display());
+    }
+}
+
+/// Holds the restore lock for `db_path` as a running restore in another
+/// process would, until dropped.
+fn hold_restore_lock(db_path: &Path) -> File {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(restore_lock_path(db_path))
+        .unwrap();
+    file.lock().unwrap();
+    file
 }
 
 #[cfg(unix)]
@@ -692,7 +710,7 @@ fn restore_waits_for_a_running_call_to_close_its_connection() {
     let closer = std::thread::spawn(move || {
         // A call that is running when the restore starts: it sees the lock
         // when it ends, and closes its connection.
-        while !restoring(&path) {
+        while !restoring(&path).unwrap() {
             std::thread::sleep(Duration::from_millis(5));
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -710,18 +728,105 @@ fn restore_waits_for_a_running_call_to_close_its_connection() {
 fn a_held_restore_lock_refuses_a_second_restore() {
     let setup = Setup::new();
     let before = fs::read(&setup.path).unwrap();
-    let lock = restore_lock_path(&setup.path);
-    fs::write(&lock, "").unwrap();
-    assert!(restoring(&setup.path));
+    let held = hold_restore_lock(&setup.path);
+    assert!(restoring(&setup.path).unwrap());
+    // A running restore isn't an interrupted one.
+    assert_eq!(check(&setup.path, &setup.backup).unwrap().interrupted, None);
 
     let err = restore(&setup.path, &setup.backup).unwrap_err();
 
     assert!(matches!(err, Error::RestoreLocked { .. }), "{err:?}");
-    assert!(err.to_string().contains("-restoring"), "{err}");
-    // Someone else's lock stays; nothing was swapped or backed up.
-    assert!(lock.exists());
-    fs::remove_file(&lock).unwrap();
+    let message = err.to_string();
+    assert!(message.contains("coffer.db-restoring"), "{message}");
+    assert!(!message.contains("delete"), "{message}");
+    // Someone else's lock is still held; nothing was swapped or backed up.
+    assert!(restoring(&setup.path).unwrap());
+    drop(held);
     setup.assert_untouched(&before, 1);
+
+    // Once it's released, the restore goes ahead.
+    restore(&setup.path, &setup.backup).unwrap();
+    assert_eq!(account_names(&setup.path), ["Backed up"]);
+}
+
+#[test]
+fn a_restore_holds_its_lock_and_releases_it_when_done() {
+    let setup = Setup::new();
+    let lock = RestoreLock::acquire(&setup.path, &setup.backup).unwrap();
+    assert!(restoring(&setup.path).unwrap());
+    // The marker: when it started, and from which backup.
+    let marker = fs::read_to_string(restore_lock_path(&setup.path)).unwrap();
+    assert!(
+        marker.ends_with(&format!("\n{}\n", setup.backup.display())),
+        "{marker}"
+    );
+    // A second lock can't be taken beside it.
+    assert!(matches!(
+        RestoreLock::acquire(&setup.path, &setup.backup),
+        Err(Error::RestoreLocked { .. })
+    ));
+
+    drop(lock);
+    assert!(!restoring(&setup.path).unwrap());
+    assert_eq!(fs::read(restore_lock_path(&setup.path)).unwrap(), b"");
+    assert_eq!(check(&setup.path, &setup.backup).unwrap().interrupted, None);
+}
+
+#[test]
+fn a_lock_file_nobody_holds_isnt_restoring() {
+    let setup = Setup::new();
+    assert!(!restoring(&setup.path).unwrap(), "no lock file");
+    // Left by a restore that crashed after taking the lock.
+    RestoreLock::acquire(&setup.path, &setup.backup)
+        .unwrap()
+        .crash();
+    assert!(restore_lock_path(&setup.path).exists());
+    assert!(!restoring(&setup.path).unwrap(), "a lock file nobody holds");
+}
+
+#[test]
+fn a_restore_over_a_stopped_restores_lock_goes_ahead_and_clears_it() {
+    let setup = Setup::new();
+    let started = now();
+    RestoreLock::acquire(&setup.path, &setup.backup)
+        .unwrap()
+        .crash();
+
+    // `check` reports it, for the CLI's warning.
+    let interrupted = check(&setup.path, &setup.backup)
+        .unwrap()
+        .interrupted
+        .expect("the stopped restore is reported");
+    assert_eq!(interrupted.backup.as_deref(), Some(setup.backup.as_path()));
+    let reported = interrupted.started.unwrap();
+    assert!(reported >= started && reported <= now(), "{reported}");
+
+    // The restore goes ahead, backing up the current database first.
+    let restored = restore(&setup.path, &setup.backup).unwrap();
+    assert_eq!(account_names(&setup.path), ["Backed up"]);
+    assert_eq!(
+        account_names(&restored.pre_restore.unwrap().path),
+        ["Current"]
+    );
+    assert_no_scratch_files(&setup.path);
+    assert_eq!(check(&setup.path, &setup.backup).unwrap().interrupted, None);
+}
+
+#[test]
+fn a_lock_file_coffer_didnt_write_is_reported_as_interrupted() {
+    let setup = Setup::new();
+    fs::write(restore_lock_path(&setup.path), "not a marker").unwrap();
+
+    let interrupted = check(&setup.path, &setup.backup).unwrap().interrupted;
+    assert_eq!(
+        interrupted,
+        Some(Interrupted {
+            started: None,
+            backup: None
+        })
+    );
+    restore(&setup.path, &setup.backup).unwrap();
+    assert_no_scratch_files(&setup.path);
 }
 
 #[test]

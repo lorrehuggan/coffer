@@ -19,9 +19,10 @@ Coffer's MCP server: `coffer mcp --client <name>` runs it over stdio. Design and
    written, the call fails and no data goes out.
 
 The database is opened for each call (and each `tools/list` and poll) and closed after
-it: no connection is kept between calls. While `coffer restore` holds its lock file
-(`backup::restoring`), checked before and after opening, calls are refused with a message
-and not logged.
+it: no connection is kept between calls. While `coffer restore` holds the file lock on
+`<database>-restoring` (`backup::restoring`), checked before and after opening, calls are
+refused with a message and not logged. A lock file nobody holds (a crashed restore's)
+doesn't block calls.
 
 Queries run on `coffer_core::db::Reader`, which SQLite keeps read-only (`query_only`).
 The only writes are in `store.rs`: a suggestion, a report (through `Inbox`), the

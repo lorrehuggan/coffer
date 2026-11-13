@@ -210,6 +210,12 @@ connection open between calls. While the files are swapped it refuses calls with
 "Coffer is restoring a backup", and its next call reads the restored database. Those
 refused calls aren't in the log, because the log is in the database being replaced.
 
+If a restore is killed or crashes, nothing stays blocked: the restore's lock on
+`coffer.db-restoring` goes with its process, and the database is complete either way (the
+one before the restore, or the backup). The file itself stays next to the database, empty
+between restores; that's expected. The next `coffer restore` warns that an earlier one
+stopped, and goes ahead.
+
 ## Troubleshooting
 
 - **No tools listed**: the client isn't enabled (`coffer ai-access list`; enable it under
@@ -218,5 +224,9 @@ refused calls aren't in the log, because the log is in the database being replac
   (check `COFFER_DATA_DIR`), or it needs migrating: run any `coffer` command, such as
   `coffer accounts`, which updates it.
 - **A tool is missing**: it's above the client's level (`coffer ai-access level`).
+- **"Coffer can't tell whether a backup is being restored"**: the server can't open or lock
+  `coffer.db-restoring` next to the database. Check that you own it and that the data dir
+  is on a local disk (file locks may not work on a network share). When no `coffer
+  restore` is running, deleting the file is safe.
 - **Debug output**: set `COFFER_LOG=debug` in the server's `env`. Logs go to stderr and
   never hold transaction text at `info` or above.

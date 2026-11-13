@@ -202,6 +202,25 @@ fn write_check(
             )?;
         }
     }
+
+    if let Some(interrupted) = &checked.interrupted {
+        let started = interrupted
+            .started
+            .map(|time| format!(" started {}", time.format("%Y-%m-%d %H:%M:%S UTC")))
+            .unwrap_or_default();
+        let from = interrupted
+            .backup
+            .as_ref()
+            .map(|backup| format!(" from {}", backup.display()))
+            .unwrap_or_default();
+        writeln!(out)?;
+        writeln!(
+            out,
+            "Warning: an earlier restore{from}{started} stopped before it finished. The \
+             current database is complete: either the one it was replacing or that backup. \
+             Restoring now backs it up first, as always."
+        )?;
+    }
     Ok(())
 }
 
