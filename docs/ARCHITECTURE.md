@@ -26,7 +26,7 @@ Built for one user first; released as open source (UK, US, euro area at launch).
 | Currency | Multi-currency; one home currency for reporting. ECB reference rates fetched opt-in and cached (the app's only network call); manual rates as fallback |
 | Formats (v1) | CSV (generic mapping + presets), OFX/QFX. QIF, CAMT.053, MT940 later via `Importer` trait |
 | PDF | Deferred. Plan: local text extraction + per-layout templates; any model-based extraction opt-in only |
-| Categorization | Local rules engine first; AI-proposed categories/rules land in the Inbox for approval; approvals become rules. The app also files `rule` suggestions itself (source `coffer`) after repeated identical manual recategorisations: deterministic counting, no ML. Learned classifiers are not used |
+| Categorization | Local rules engine first; AI-proposed categories/rules land in the Inbox for approval. Approving a categorisation sets those transactions' categories (an undoable `bulk_edit` batch, source `ai_approved`); only approving a `rule` suggestion creates a rule. The app also files `rule` suggestions itself (source `coffer`) after repeated identical manual recategorisations: deterministic counting, no ML. Learned classifiers are not used |
 | Transfers | Auto-detect opposite-amount pairs across own accounts within 3 days (`TransferWindow::DEFAULT`); user confirms; excluded from income/spend |
 | Pots / sub-accounts | Monzo Pots, Starling Spaces, Revolut Vaults etc. are sub-accounts of their parent. A preset's `[sub_account_transfer]` identifies pot transfers; the import commit creates the pot when its key (the bank's ID for it, or its name where the export has no ID, as Monzo's doesn't) is new, mirrors the row onto it (`origin = mirrored`) and pairs the two as a confirmed transfer. Pots count toward net worth (opening balance entered once per pot). See "Decision record: sub-accounts" |
 | AI integration | `coffer mcp` stdio MCP server (`rmcp`). Read-only query tools + inbox-only writes. No account numbers or PII in tool output |
@@ -854,6 +854,191 @@ Open: CSV cells beginning with `=`, `+`, `-` or `@` are left as they are (a spre
 may read them as formulas); `external_id` is always exported; share labels may want an
 opt-in flag later; share labels compare case-sensitively.
 
+### Decision record: M2: MCP server (2026-11-13)
+
+M2 was built in four parallel blocks (B access, log and text safety; C read tools and
+reporting; D recurring payments and schedules; E the inbox) on Wave 0's spine, then
+integrated. Marked **(user)**: decided by the user on 2026-11-13. Marked **(default)**:
+chosen during implementation and not reviewed one by one; defaults, can be changed.
+Everything else follows an earlier decision record or invariant.
+
+**A. The user's decisions.**
+
+1. **Names at `standard` are accepted (user).** `standard` is full access by design: a
+   payee who is a person can appear under their name as `merchant`, and in
+   `description_untrusted`. Below `standard` a name never appears (tested with a row
+   whose bank text is only a name, `crates/mcp/tests/person_names.rs`).
+2. **No account names at `aggregate` (user).** `net_worth_history` gives each account a
+   `label`, its kind and its number among accounts of that kind by ID (`current 1`,
+   `pot 2`), and `name: null`; names appear from `pseudonymous` up.
+3. **No text search below `standard` (user).** `search_transactions` refuses `query` (and
+   the tag filter, the other user-text match) below `standard` with a clear error; date,
+   account, category and amount filters stay.
+4. **Descriptions are hidden below `standard` (user).** `Call::untrusted` returns
+   `[hidden: descriptions name merchants, so they aren't shared at this access level]`
+   below `standard`, since bank text names the merchant a token hides.
+5. **Block D's schedule schema (user):** `start_date` instead of `next_date`, the new
+   `recurring_dismissal` table, and the correction to the lock claim (D7 below).
+6. **Wave 1's defaults are accepted (user):** CLI names `coffer ai-access`, `coffer
+   budgets`, `coffer schedules`, `coffer inbox`; pseudonym tokens are HMAC-SHA256; the
+   tool levels as built (the table in "MCP surface"); `Amount.home` stays `null` through
+   M2.
+
+**B. Access control, the access log and the text envelope (M2.11–M2.13).**
+
+1. The kill switch is on unless set off; MCP stays off until a client is enabled
+   (default).
+2. The pseudonym key is 32 bytes from SQLite's `randomblob` (no RNG crate), created by
+   `coffer ai-access enable`, never by the server; without one a `pseudonymous` call is
+   refused with a message saying to enable the client again (default).
+3. Tokens are `M-` plus 12 hex digits (48 bits: about 1.8 × 10⁻⁷ chance of any collision
+   at 10,000 merchants), of the trimmed, lower-cased display name (default).
+4. Client lifecycle: enabling an enabled client keeps its level; `revoke` sets the level
+   back to `aggregate`; `ignore` also revokes; a name can be enabled before the server has
+   seen it (default).
+5. An unknown name is recorded as `requested` on any request, even with the kill switch
+   off, so the user sees who asked (default).
+6. A 5-second poll sends `tools/list_changed` to an idle client; it only reads (default).
+7. Redaction: numbers, booleans, dates and schema enum values are stored as themselves;
+   any other string, digits-only included, as `{"length":N,"type":"string"}`; undeclared
+   keys only counted, `"_undeclared": N` (default).
+8. The result hash is SHA-256 of compact JSON with keys sorted at every level (default).
+9. The envelope withholds the whole field on any pattern match; URLs with a scheme, `www.`
+   hosts and markdown/HTML links are withheld and bare domains made inert
+   (`NETFLIX[.]COM`), which settles "made inert" against "withheld"; fullwidth letters
+   are folded, full NFKC and homoglyphs are out of scope; `Call::merchant` withholds a
+   display name that reads like instructions at `standard` too (default).
+10. `coffer ai-access log` shows the redacted arguments (cut at 120 characters) and the
+    cleaned purpose (cut at 60), never the result hash (default).
+11. Retention: failing to delete old log rows is a warning, and the server starts anyway
+    (default).
+
+**C. Read tools and reporting (M2.2, M2.14 reads).**
+
+1. Money counts by its category's kind: money in under a spending category (refunds
+   included) lowers spending and isn't income; transfer categories count as neither;
+   uncategorised money counts by the sign of the user's share; a claimed-back purchase
+   counts as nothing (default).
+2. Spending, budgets and the row tools' `my_amount` use the user's share; balances and
+   net worth are gross (default).
+3. Net worth: liabilities always lower the total, even entered positive; a closed account
+   drops out of months ending after its closing day; an account with no stated balance is
+   summed from zero and flagged `unanchored` (default).
+4. Budgets: a month's budget overrides the standing one; a budget counts spending only in
+   its own currency and lists the rest beside it; rollover follows the group (reported,
+   applied from M4.9); budgets only on spending categories; `coffer budgets set` defaults
+   to the one currency all accounts share and otherwise needs `--currency` (default).
+5. Row limits: 50 by default, at most 200, with `truncated` (default).
+6. Account-details check (`reporting::rows::has_account_identifier`): a merchant holding a
+   sort code, 8+ digit run or IBAN becomes `null`, a description holding one
+   `[withheld: account details]`; dates, amounts and short card references like `*1234`
+   aren't caught; `withheld_count` still counts only text withheld as instructions
+   (default).
+7. `list_rules` shows public tags plus a count of private ones, `set_note` as the action
+   only, the share action as its percentage only (default).
+8. `list_reports` is newest first, every report `ai_authored: true`, text stripped of
+   invisible characters (decision record 2026-11-10, point 4).
+9. A refund of a split purchase comes back as one row per line category, as the ledger
+   nets it.
+
+**D. Recurring payments and schedules (M2.6, M2.10).**
+
+1. **`start_date`, not `next_date` (user).** A schedule stores its first tracked
+   occurrence; occurrence *k* is `Cadence::nth(start, k)`, counted from the start (a
+   schedule on the 31st falls on 28/29 February and 31 March again). Stored matches and
+   skips name occurrence dates, so the dates must be fixed.
+2. **`recurring_dismissal(series_key, dismissed_at)` (user)** records "Not recurring".
+3. `schedule_match` records who matched (`auto`/`user`) and when; a transaction fulfils
+   at most one occurrence of any schedule; triggers keep a match on the schedule's account
+   and an occurrence never both matched and skipped.
+4. Series keys are an unkeyed FNV-1a hash of account, merchant, direction, currency,
+   cadence and position, stable as payments arrive; kept out of MCP output (a guessed
+   merchant could be checked against one). The CLI shows them (default).
+5. Matching runs at import (that import's rows, active schedules) and when a schedule is
+   created or confirmed (the account's earlier rows after its lock date). The window for
+   occurrence *k* is `[nth(k) − tolerance_days, nth(k+1) − tolerance_days)`; it compares
+   the whole amount, the normalised merchant and the sign; excluded rows and transfers
+   never match automatically; the lower schedule ID wins a tie; `update` and `resume`
+   match nothing, so an unmatched payment stays unmatched (default).
+6. "Imports cover the date" means the account's latest imported or mirrored transaction,
+   excluded ones included; manual rows don't count. `today` is passed in, read from
+   SQLite's clock (default).
+7. **Lock dates apply to the occurrence's date (user: the correction).** Skip, unskip,
+   match and unmatch are refused on or before the lock, and deleting a schedule with a
+   match or skip there. A payment arriving late but within its window can fulfil an
+   occurrence dated on or before the lock, so an import's matches *can* touch a locked
+   period: the earlier assumption that they never do was wrong.
+8. Ended is final; a paused schedule can still be skipped, matched and edited; an ended
+   one refuses skips, matches and edits, but its matches and skips can be removed and it
+   can be deleted (default).
+9. A new schedule's tolerance: days per cadence (weekly 1, fortnightly and four-weekly 2,
+   monthly 3, quarterly 5, yearly 7), at most under half the shortest gap; amount: the
+   series' spread or a tenth of its typical amount, whichever is larger (default).
+10. Detection groups by account, normalised merchant, direction and currency; chains
+    each cadence within the day tolerance, skipping at most one payment (never two in a
+    row, at most one per four); fixed amounts within 2% (each price held twice, at most
+    `max(1, n/4)` changes, typical = latest); otherwise variable within a factor of two of
+    the median (one extra payment needed, typical = median of the last 6); refuses a
+    series with similar amounts around it or one chance would give 1/32 of the time;
+    reports only the current run of a restarted payment. Full rules in `recurring.rs`
+    (default).
+11. Known limits: two series from one merchant at the same amount aren't reported;
+    detection runs on every `recurring_payments` call and isn't benchmarked on large
+    ledgers; on synthetic noise about 1 ledger in 300 gives a false series.
+
+**E. The inbox (M2.3, M2.7, M2.14 writes).**
+
+1. At most 200 pending suggestions per source; a duplicate doesn't count (default).
+2. Caps: 1–100 categorisation items, rationale 1,000 characters, display name 100 (no
+   control characters), rejection reason 500 and not blank, report title 200, period 32,
+   body 100,000, title and period not blank (default).
+3. One pending suggestion per `(kind, canonical payload)` from any source; filing an
+   identical one returns the existing ID and the first proposer stays the source. The
+   canonical form sorts items, orders actions and writes out defaults (default).
+4. An agent's rule may only use `set_category`, `split_template`, `set_merchant` and
+   `add_tag`; `exclude`, `set_note` and `my_share` are refused (default).
+5. Each approval is one `BEGIN IMMEDIATE` transaction that re-checks the payload, applies
+   it and marks it approved. A categorisation is one `bulk_edit` batch with source
+   `ai_approved` and overwrites user-set categories (the user approved those rows
+   explicitly, and the preview counts them); setting a split line's category rewrites
+   that transaction's lines. A transfer pair confirms detection's own group or creates a
+   confirmed one, refused if either side is linked. A link is confirmed at the payload's
+   amount or what both sides can still take (default).
+6. No approval meets a lock today: `reconciled_through` guards only exclusions, which no
+   suggestion makes; `ApproveError::Locked` is a safeguard.
+7. Settling is narrow: a pending categorisation is settled by an approved rule only when
+   every item names a transaction the rule's batch gave that category; split-line items
+   and partial overlaps stay pending (default).
+8. Coffer's own rule suggestions: after 3 or more unsplit rows with one `merchant_display`
+   get the same category from the user (counted from the current state, so undoing an
+   edit lowers the count), Coffer files `merchant is <cleaned merchant>` →
+   `set_category`, only when every counted row's merchant folds to one text, with a fixed
+   rationale and no merchant text. It files nothing when an identical suggestion is
+   pending or was ever decided (a rejection is permanent), a stored rule has exactly this
+   definition, or the source is at its cap (default).
+9. "Approved" means "was applied": undoing its batch or deleting its rule leaves it
+   `approved`.
+
+**F. Integration.**
+
+1. **Restores and running servers.** The server opens the database per call and keeps no
+   connection between calls, so an idle server never blocks `coffer restore` (which
+   refuses a database another connection holds). `restore` holds a lock file,
+   `<database>-restoring` (`backup::restore_lock_path`), from the checked backup until the
+   restored database is open, and waits up to 5 seconds for a running call to close its
+   connection. The server checks the lock before and after opening and refuses with
+   "Coffer is restoring a backup"; those refusals aren't logged, since the log is in the
+   database being replaced. The lock is created with `create_new`, so two restores can't
+   overlap; a lock left by a crash is reported with its path for the user to delete. No
+   network and no process-to-process messages (default).
+2. **`monthly_review`** is listed only to enabled clients; its text is built from the
+   tools at the client's level, so it never names one the client can't call; getting it
+   isn't logged, since it returns no data (default).
+3. **Saved reports are capped at 500 per client**; the 501st is refused with a clear
+   error (default).
+4. The tool × level matrix (`crates/mcp/tests/matrix.rs`) lists every tool with its level
+   and arguments; a new tool fails it until added.
+
 ## Architecture
 
 ```
@@ -929,7 +1114,8 @@ own QIF parser. Avoid GPL crates (`ofxy`, `tree_magic_mini`'s GPL data feature).
    category, source type, amount, account) and their actions, a rule's category
    overriding the preset's and its merchant overriding the alias; run transfer-pair
    detection; match schedule occurrences; queue near-duplicate candidates; record
-   balances and check assertions. Everything up to transfer detection runs today
+   balances and check assertions. All of these run today (schedule matching since
+   M2.10)
    ("Decision record: sub-accounts"; "Decision record: rules engine, transfer detection
    and the CLI"; "Decision record: splits, tags and notes, manual rows, merchant
    names").
@@ -1440,8 +1626,9 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   and including `report`, except `transaction_split` and `ledger_line` (V5, M1.20),
   `tag`/`transaction_tag` (V6, M1.21), `merchant_alias` (V7, M1.23),
   `change_batch`/`change_item` (V8, M1.24/M1.26), `transaction_link` (V9, M1.25; it also
-  redefines `ledger_line`), `duplicate_candidate` (V10, M1.26) and the schedule tables;
-  `mcp_client`, `mcp_access_log` and `setting` come with M2.
+  redefines `ledger_line`), `duplicate_candidate` (V10, M1.26), `mcp_client`,
+  `mcp_access_log` and `setting` (V11, M2.1), the schedule tables and
+  `recurring_dismissal` (V12, M2.6/M2.10) and the inbox's decision columns (V13, M2.3).
 - refinery embeds migrations in file-name order (`V10__` before `V1__`);
   `db::migrations::embedded` sorts them by version.
 
@@ -1522,11 +1709,20 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   unique (ties go by ID). Patterns and `value_json` shapes are checked in core
   (`rule::RuleDefinition`; see "Decision record: rules", point 9)
 - `transfer_group(id, status [suggested|confirmed|rejected], created_at)`
-- `schedule(id, account_id, merchant_display, category_id?, cadence, next_date,
-  amount_minor, currency, tolerance_minor, tolerance_days, status [active|paused|ended])`,
-  `schedule_skip(schedule_id, occurrence_date, skipped_at)` and
-  `schedule_match(schedule_id, occurrence_date, transaction_id)` — a missed occurrence is
-  derived, not stored
+- `schedule(id, account_id, merchant_display, category_id?, cadence [weekly|fortnightly|
+  four_weekly|monthly|quarterly|yearly], start_date, amount_minor, currency,
+  tolerance_minor, tolerance_days, status [active|paused|ended], series_key?,
+  created_at)`, `schedule_skip(schedule_id, occurrence_date, skipped_at)` and
+  `schedule_match(schedule_id, occurrence_date, transaction_id, matched_by [auto|user],
+  matched_at)` (V12) — `start_date` is the first tracked occurrence; occurrence *k* is
+  `Cadence::nth(start_date, k)`, always counted from the start, and the next date is
+  derived, never stored. Account, cadence, start, currency and series key are read-only;
+  an ended schedule stays ended. A transaction fulfils at most one occurrence (UNIQUE),
+  on the schedule's own account; an occurrence is never both matched and skipped; matches
+  and skips are only inserted or deleted. Missed and late are derived, not stored
+  ("Decision record: M2: MCP server", section D)
+- `recurring_dismissal(series_key, dismissed_at)` (V12) — a detected series the user
+  marked "Not recurring"; it isn't suggested again
 - `budget(id, category_id, month?, amount_minor, currency, rollover,
   group_kind [fixed|non_monthly|flex], opening_set_aside_minor?, created_at)` — rollover
   is derived from `ledger_line`, never stored; `opening_set_aside_minor` is what a
@@ -1536,70 +1732,133 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
 - `fx_rate(date, base, quote, rate_e9, source [ecb|manual])` — 1 `base` = `rate_e9` /
   10⁹ `quote`: fixed point, so no float enters a conversion
 - `suggestion(id, kind [categorization|rule|transfer_pair|merchant_alias|refund_link],
-  payload_json, rationale, source_client, created_at, status [pending|approved|rejected])`
-  — `source_client = coffer` for suggestions the app files itself
+  payload_json, rationale, source_client, created_at, status [pending|approved|rejected],
+  decided_at?, decision_reason?, change_batch_id?, applied_json?)` — `source_client =
+  coffer` for suggestions the app files itself. `payload_json` is the validated canonical
+  form; one pending suggestion per `(kind, payload_json)` (partial unique index
+  `suggestion_pending_once`). V13 adds the decision columns and triggers: the proposal
+  fields are read-only, a suggestion is filed pending, a decided one stays decided and has
+  `decided_at`, only a rejection has a reason (≤ 500 characters), and only an approval has
+  a change batch or `applied_json` (a record of what it created, with no foreign keys)
 - `report(id, period, title, body_markdown, source_client, created_at)`
-- `mcp_client(id, name, access_level [aggregate|pseudonymous|standard], enabled,
-  status [requested|known|ignored], created_at, last_seen_at?)` — an unknown name creates
-  a `requested` row that isn't enabled
-- `mcp_access_log(id, client_id, at, tool, args_redacted_json, purpose?, row_count,
-  withheld_count, result_hash, access_level,
-  outcome [ok|refused_off|refused_not_enabled|refused_level])` — never stores returned data;
-  `withheld_count` is how many descriptions the call withheld
-- `setting(key, value)` — includes the per-database key for merchant pseudonyms, which is
-  never exposed
+- `mcp_client(name, enabled, access_level [aggregate|pseudonymous|standard],
+  status [requested|known|ignored], created_at, last_seen_at?)` (V11) — keyed by the name
+  `coffer mcp --client` was given (1–64 of `A–Z a–z 0–9 . _ -`, never `coffer`); an
+  enabled client is `known`. An unknown name creates a `requested` row that isn't
+  enabled. Revoking sets `enabled = 0` and the level back to `aggregate`
+- `mcp_access_log(id, at, client, tool, access_level?, outcome [ok|refused_off|
+  refused_not_enabled|refused_level|error], purpose?, args_redacted_json, row_count,
+  result_hash?, withheld_count)` (V11) — read-only; never stores returned data. `client`
+  is the name (no foreign key, so a log row outlives its client); a refused or failed call
+  has no rows, hash or withheld count; `withheld_count` is how many descriptions the call
+  withheld as instructions. Rows older than 12 months are deleted when a server starts
+- `setting(key, value)` (V11) — `mcp.enabled` (the kill switch; on unless set off) and
+  `mcp.pseudonym_key` (32 random bytes, created by `coffer ai-access enable`, never
+  exposed)
 
 ## MCP surface
 
-**Read tools** (all results in home currency + original currency; no account numbers/PII;
-merchant addresses and user notes are not exposed by default):
-`list_accounts`, `monthly_summary(from, to)`, `spending_by_category(period)`,
-`search_transactions(query, filters, limit)`, `merchant_history(merchant)`,
-`recurring_payments()`, `budget_status(month)`, `net_worth_history(from, to)`,
-`uncategorized_transactions(limit)`, `list_categories`, `list_rules`, `list_reports`.
-Reads go through `ledger_line`, so split purchases count per category. They include tags
-(not private ones, and only at `standard` access) and confirmed refund links. Notes and
-share labels are never exposed. Every tool takes an optional `purpose` string, which is
-logged and never interpreted. Added with M4.8: `cash_flow_forecast`.
+`coffer mcp --client <name>` (`crates/mcp`, rmcp over stdio). Setup for Claude Code,
+Claude Desktop and Codex: [`mcp-setup.md`](mcp-setup.md). Decisions: "Decision record:
+M2: MCP server (2026-11-13)".
 
-**Inbox writes** (never modify transactions/rules directly):
-`propose_categorizations`, `propose_rule`, `propose_transfer_pair`,
-`propose_merchant_alias`, `propose_refund_link`, `save_report`.
+**Tools by level** (a client sees and can call the tools at its level and below; a call
+above it is refused `refused_level`):
 
-**Prompts**: `monthly_review(month)` — patterns, anomalies, subscription creep,
-budget variance, suggestions; ends by calling `save_report`.
+| Level | Tools |
+|---|---|
+| `aggregate` | `list_categories`, `list_reports`, `monthly_summary(from, to)`, `spending_by_category(period)`, `budget_status(month)`, `net_worth_history(from, to)`, `save_report(period, title, body_markdown)` |
+| `pseudonymous` | also `list_accounts`, `search_transactions(filters, limit)`, `uncategorized_transactions(limit)`, `recurring_payments()` |
+| `standard` | also `list_rules`, `merchant_history(merchant)`, `propose_categorizations`, `propose_rule`, `propose_transfer_pair`, `propose_merchant_alias`, `propose_refund_link` |
 
-**Access levels** (per client, set in the app):
+Reads go through `ledger_line`, so split purchases count per category, and a confirmed
+refund nets against its purchase's category. Amounts are `{minor, currency, home}` with
+integer minor units; `home` stays `null` until home-currency conversion (M4.6), and totals
+are listed per currency, never added across currencies. Every tool takes an optional
+`purpose` string, which is logged and never interpreted. Added with M4.8:
+`cash_flow_forecast`.
 
-- `aggregate`: totals only (`monthly_summary`, `spending_by_category`, `budget_status`,
-  `net_worth_history`, `list_categories`, `list_reports`); no transaction rows, no writes
-  except `save_report`.
-- `pseudonymous`: transaction rows with each merchant replaced by a stable keyed-hash token
-  (e.g. `M-7f3a`); the mapping never leaves the app.
-- `standard`: the full surface above.
+**What each level withholds**:
 
-**Access log**: tools write only `suggestion` and `report`. Separately, the server appends
-one `mcp_access_log` row per call as its own audit record; the AI's only input to it is the
-untrusted `purpose` string. The app shows the log.
+- **Merchants.** At `pseudonymous` every merchant is a token, `M-` plus 12 hex digits of
+  HMAC-SHA256 of the trimmed, lower-cased display name under the per-database
+  `mcp.pseudonym_key`: stable across calls, different between databases. Without a key a
+  `pseudonymous` call is refused.
+- **Descriptions.** Bank text appears only at `standard`, only when asked for
+  (`include_description`), and only as `description_untrusted`. Below `standard` the
+  field holds a fixed `[hidden: …]` text: bank text names the merchant and would undo the
+  tokens.
+- **Text search.** `search_transactions`' free-text `query` and its tag filter need
+  `standard`: below it, counting the rows a text matches would reveal what lies behind a
+  token. Dates, accounts, categories and amounts filter at `pseudonymous`.
+- **Account names.** At `aggregate`, `net_worth_history` gives each account a `label`
+  (its kind and number, e.g. `pot 2`) and no name; names appear from `pseudonymous` up,
+  since a name can name a person.
+- **Names in bank text.** A merchant or description that is a person's name reaches a
+  client only at `standard`, which is full access by design (user, 2026-11-13).
+- **Never, at any level:** account numbers, sort codes and IBANs (a merchant holding one
+  is `null`, a description holding one is `[withheld: account details]`), notes (the
+  bank's and the user's), share labels, private tags, merchant addresses and
+  attachments. Public tags only at `standard`.
+
+**Inbox writes** (never modify transactions/rules directly): `propose_categorizations`,
+`propose_rule` (actions `set_category`, `split_template`, `set_merchant`, `add_tag` only),
+`propose_transfer_pair`, `propose_merchant_alias`, `propose_refund_link`, `save_report`.
+Payloads are validated against the database when filed and again when approved; an
+identical pending suggestion returns the existing ID (`already_pending`). Caps: 200
+pending suggestions and 500 saved reports per client. The source is always the calling
+client, never an argument.
+
+**Prompts**: `monthly_review(month)` — patterns, anomalies, subscription creep, budget
+variance and suggestions, ending with `save_report`. Its steps name only tools registered
+at the client's level; `month` must parse as `YYYY-MM` before it enters the text.
+
+**Access control** (M2.11). On every call the server reads the kill switch
+(`mcp.enabled`) and the client's row: switched off → `refused_off`; unknown (recorded as
+`requested`), requested, ignored or revoked → `refused_not_enabled`; a tool above the
+level → `refused_level`. A lower level applies to the next call, and the server sends
+`notifications/tools/list_changed` (also from a 5-second poll, so an idle client hears).
+Only the CLI or app enables a client or changes a level.
+
+**Access log** (M2.12): tools write only `suggestion` and `report`. Separately, the
+server appends exactly one `mcp_access_log` row per tool call as its own audit record,
+whatever the outcome; if it can't be written, the call fails and no data goes out. The
+AI's inputs to it are the untrusted `purpose` (stored without invisible characters) and
+the arguments, redacted by the tool's schema: numbers, booleans, dates and schema enum
+values are kept, any other string becomes `{"length":N,"type":"string"}`, undeclared keys
+are only counted (`"_undeclared": N`). `result_hash` is SHA-256 of the result's canonical
+JSON (compact, keys sorted). `coffer ai-access log` shows the log. Two exceptions, both
+returning no data: a refusal while a restore holds its lock (the log is in the database
+being replaced) and getting a prompt.
+
+**Restores.** The server opens the database for each call and keeps no connection
+between calls. `coffer restore` holds `<database>-restoring` while it swaps the files;
+the server checks it before and after opening and refuses the call while it exists, so
+the next call reads the restored file.
 
 Transaction descriptions are untrusted input (prompt-injection surface); inbox-only
 writes are the containment. In addition:
 
-- **Text envelope.** Tools return `merchant_display` by default. Raw text appears only as
-  `description_untrusted`: length-capped, with control, zero-width and bidi characters
-  stripped and URLs made inert. Text matching injection patterns ("ignore previous…",
-  base64 blobs, URLs) is withheld and replaced by the marker
-  `[withheld: N characters that read like instructions]`, and the app counts what was
-  withheld (`mcp_access_log.withheld_count`).
+- **Text envelope** (`coffer_core::envelope`, M2.13). `description_untrusted` is
+  sanitised in four steps: control, zero-width, bidi, tag and BOM characters are
+  stripped and fullwidth letters folded to ASCII; the whole field is withheld, as
+  `[withheld: N characters that read like instructions]`, when it matches a documented
+  pattern list (role markers such as `system:`, "ignore previous/above…", a URL with a
+  scheme, a `www.` host, a markdown or HTML link, a long base64 run); bare domains are
+  made inert (`NETFLIX[.]COM`); the length is capped. The count goes to
+  `mcp_access_log.withheld_count`, and the app's "Withheld from AI" filter runs the same
+  check (`envelope::reads_like_instructions`). A display merchant that reads like
+  instructions is withheld at `standard` too.
 - **Impact preview.** The inbox shows what approving each suggestion would change (e.g. how
   many past transactions a rule would recategorise), so an overly broad rule or a fake
   transfer pair planted by injected text is visible before approval.
 - **Reports.** Saved reports render as a markdown subset: no HTML, no images, links shown as
   plain text, so a report can't trigger a network request. `list_reports` marks them
   `ai_authored`, since stored AI text is untrusted when read back, and strips control,
-  zero-width and bidi characters from the body (decision record, 2026-11-10).
-- **Client setup.** Setup docs recommend a client profile with Coffer as the only data
-  source and no web or fetch tools.
+  zero-width and bidi characters from the period, title and body (decision record,
+  2026-11-10); the stored text is unchanged. `coffer inbox` shows them the same way.
+- **Client setup.** [`mcp-setup.md`](mcp-setup.md) recommends a client profile with
+  Coffer as the only data source and no web or fetch tools.
 
 ## Dashboard (v1)
 
