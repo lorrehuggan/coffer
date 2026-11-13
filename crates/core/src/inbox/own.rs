@@ -1,13 +1,13 @@
 //! Coffer's own suggestions (ROADMAP M2.14): after repeated identical
 //! manual recategorisations, a `rule` suggestion from
-//! [`COFFER_SOURCE`](super::COFFER_SOURCE).
+//! [`COFFER_SOURCE`].
 //!
 //! # When
 //!
 //! Only the user's own recategorisations count: a [`ChangeKind::BulkEdit`]
 //! change batch whose category change has source [`CategorySource::User`]
 //! ([`recategorize`] makes one). [`Recorder::finish`] calls
-//! [`after_user_recategorization`] in the same DB transaction. Imports,
+//! `after_user_recategorization` in the same DB transaction. Imports,
 //! rule applies, duplicate merges and approved suggestions (`ai_approved`)
 //! never get here.
 //!
@@ -33,7 +33,7 @@
 //!
 //! # Once
 //!
-//! Filing goes through [`file_in`](super::file_in): it checks the payload,
+//! Filing goes through `file_in`: it checks the payload,
 //! and an identical pending suggestion from any source is a duplicate, not
 //! a second suggestion. Coffer also files nothing when an identical
 //! suggestion was approved or rejected (the user said no, or a rule already
