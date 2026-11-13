@@ -75,6 +75,12 @@ pub const IBAN: &str = "GB94BARC10201530093459";
 /// The manual row's bank text: a transfer naming the payee's details.
 pub const PII_DESCRIPTION: &str =
     "TRANSFER TO ROBIN FIXTURE-HOLDER 77-41-29 58316402 IBAN GB94 BARC 1020 1530 0934 59";
+/// A row's whole bank text when it is a payment to a person, and nothing
+/// else: no account details for the account-details check to catch
+/// ([`Fixture::add_name_only_row`]). At `standard` it may reach a client
+/// (the user's decision, 2026-11-13: `standard` is full access); below it,
+/// never.
+pub const PAYEE_NAME: &str = "JORDAN NAMEONLY-PAYEE";
 /// The user's own note on an imported row.
 pub const USER_NOTE: &str = "Birthday present for Sam Notefixture";
 /// A private tag on an imported row.
@@ -250,6 +256,23 @@ impl Fixture {
                 manual,
             },
         }
+    }
+
+    /// Adds a manual row on the bank account whose bank text is only a
+    /// person's name ([`PAYEE_NAME`]), and returns it. Not part of
+    /// [`Fixture::new`], so the other tests' row counts stay as they are.
+    pub fn add_name_only_row(&self) -> TransactionId {
+        let mut db = Database::open(&self.path).unwrap();
+        manual::create(
+            &mut db,
+            &ManualTransaction::new(
+                self.seeded.bank,
+                NaiveDate::from_ymd_opt(2026, 11, 21).unwrap(),
+                Money::new(-3000, Currency::GBP),
+                PAYEE_NAME,
+            ),
+        )
+        .unwrap()
     }
 
     /// The database file.
