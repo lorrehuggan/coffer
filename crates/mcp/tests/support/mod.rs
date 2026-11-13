@@ -392,6 +392,25 @@ impl TestClient {
         self.service.list_all_tools().await.unwrap()
     }
 
+    /// The prompts this client sees.
+    pub async fn prompts(&self) -> Vec<rmcp::model::Prompt> {
+        self.service.list_all_prompts().await.unwrap()
+    }
+
+    /// Gets `name` with `args` (a JSON object).
+    pub async fn prompt(
+        &self,
+        name: &str,
+        args: Value,
+    ) -> Result<rmcp::model::GetPromptResult, ServiceError> {
+        let Value::Object(args) = args else {
+            panic!("prompt arguments must be a JSON object");
+        };
+        self.service
+            .get_prompt(rmcp::model::GetPromptRequestParams::new(name).with_arguments(args))
+            .await
+    }
+
     /// The names of the tools this client sees.
     pub async fn tool_names(&self) -> Vec<String> {
         self.tools()

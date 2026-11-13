@@ -50,13 +50,15 @@ use coffer_core::db::{self, Database, Reader};
 use coffer_core::mcp_client::{AccessLevel, ClientName};
 use coffer_core::setting;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
-    JsonObject, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, GetPromptRequestParams,
+    GetPromptResponse, Implementation, JsonObject, ListPromptsResult, ListToolsResult,
+    PaginatedRequestParams, ServerCapabilities, ServerConfig,
 };
 use rmcp::service::{Peer, RequestContext};
 use rmcp::{ErrorData, RoleServer, ServerHandler};
 
 use crate::access::{self, Access, Gate};
+use crate::prompts;
 use crate::registry::{Call, Registry, Writes};
 use crate::store::Store;
 use crate::tools;
@@ -146,22 +148,27 @@ impl Server {
         self
     }
 
+    /// The level the client may use now, `None` when it may use nothing.
+    /// An unknown client is recorded as `requested`.
+    fn level_now(&self) -> Result<Option<AccessLevel>, ErrorData> {
+        let inner = &*self.inner;
+        let _busy = inner.busy.lock().map_err(|_| unusable())?;
+        let session = inner
+            .open()
+            .map_err(|unavailable| ErrorData::internal_error(unavailable.message(), None))?;
+        Ok(access::for_request(&session.reader, &session.store)
+            .map_err(|error| {
+                tracing::debug!(%error, "couldn't read the client's access");
+                ErrorData::internal_error("Coffer couldn't read this client's access", None)
+            })?
+            .level())
+    }
+
     /// The tools the client sees now. An unknown client is recorded as
     /// `requested` and sees none.
     fn list(&self) -> Result<ListToolsResult, ErrorData> {
         let inner = &*self.inner;
-        let level = {
-            let _busy = inner.busy.lock().map_err(|_| unusable())?;
-            let session = inner
-                .open()
-                .map_err(|unavailable| ErrorData::internal_error(unavailable.message(), None))?;
-            access::for_request(&session.reader, &session.store)
-                .map_err(|error| {
-                    tracing::debug!(%error, "couldn't read the client's access");
-                    ErrorData::internal_error("Coffer couldn't read this client's access", None)
-                })?
-                .level()
-        };
+        let level = self.level_now()?;
         *inner.listed.lock().map_err(|_| unusable())? = Some(level);
         let tools = level
             .map(|level| inner.registry.tools_for(level))
@@ -435,6 +442,7 @@ impl ServerHandler for Server {
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_tool_list_changed()
+                .enable_prompts()
                 .build(),
         )
         .with_server_info(Implementation::new("coffer", env!("CARGO_PKG_VERSION")))
@@ -449,6 +457,47 @@ impl ServerHandler for Server {
         let tools = self.list()?;
         self.start_polling(&context.peer);
         Ok(tools)
+    }
+
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, ErrorData> {
+        // Like tools: an enabled client only.
+        let prompts = match self.level_now()? {
+            Some(_) => prompts::list(),
+            None => Vec::new(),
+        };
+        Ok(ListPromptsResult::with_all_items(prompts))
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResponse, ErrorData> {
+        let Some(level) = self.level_now()? else {
+            return Err(ErrorData::invalid_request(
+                access::refusal_message(Outcome::RefusedNotEnabled),
+                None,
+            ));
+        };
+        let tools: Vec<&str> = self
+            .inner
+            .registry
+            .all()
+            .filter(|tool| tool.spec().level <= level)
+            .map(|tool| tool.spec().name)
+            .collect();
+        let month = request
+            .arguments
+            .as_ref()
+            .and_then(|arguments| arguments.get("month"))
+            .and_then(|month| month.as_str());
+        prompts::get(&request.name, month, &tools)
+            .map(GetPromptResponse::from)
+            .map_err(|error| ErrorData::invalid_params(error.to_string(), None))
     }
 
     async fn call_tool(

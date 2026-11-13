@@ -10,6 +10,8 @@
 //!   below its level.
 //! - **Every call** goes through one wrapper, gate → call → log
 //!   ([`server`]), so every call leaves exactly one access-log row.
+//! - **Prompts**: `monthly_review(month)` ([`prompts`]), built from the
+//!   tools at the client's level.
 //! - **Output** uses the shared types in [`output`]: integer money, display
 //!   merchants or tokens, and bank text only as sanitised untrusted text.
 //!
@@ -17,6 +19,7 @@
 
 pub mod access;
 pub mod output;
+pub mod prompts;
 pub mod registry;
 pub mod server;
 pub mod store;

@@ -71,7 +71,10 @@ async fn a_name_never_appears_at_pseudonymous() {
         .iter()
         .find(|row| row["transaction_id"] == payee.get())
         .unwrap();
-    assert!(is_merchant_token(row["merchant"].as_str().unwrap()), "{row}");
+    assert!(
+        is_merchant_token(row["merchant"].as_str().unwrap()),
+        "{row}"
+    );
     client.close().await;
 }
 
