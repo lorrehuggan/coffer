@@ -59,6 +59,7 @@ use regex::Regex;
 use rusqlite::{Connection, OptionalExtension};
 
 pub use clean::clean;
+pub(crate) use store::add_in;
 pub use store::{
     Error, InvalidAlias, add, clear_user_name, delete, edit, get, list, set_user_name,
 };

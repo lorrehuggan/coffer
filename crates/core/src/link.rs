@@ -353,7 +353,8 @@ pub fn create(db: &mut Database, link: &NewLink) -> Result<LinkId, Error> {
     Ok(id)
 }
 
-fn create_in(conn: &Connection, link: &NewLink) -> Result<LinkId, Error> {
+/// [`create`] inside the caller's DB transaction.
+pub(crate) fn create_in(conn: &Connection, link: &NewLink) -> Result<LinkId, Error> {
     let inflow = load_row(conn, link.inflow)?;
     check_inflow(conn, &inflow)?;
     if link.amount.currency() != inflow.currency {
@@ -566,22 +567,32 @@ pub fn suggestions(db: &Database) -> Result<Vec<Link>, Error> {
 /// What money in `inflow` has left to link: its amount less its confirmed
 /// links. Zero for money out.
 pub fn inflow_left(db: &Database, inflow: TransactionId) -> Result<Money, Error> {
-    let row = load_row(db.conn(), inflow)?;
+    inflow_left_of(db.conn(), inflow)
+}
+
+/// [`inflow_left`] on any connection (inside a DB transaction).
+pub(crate) fn inflow_left_of(conn: &Connection, inflow: TransactionId) -> Result<Money, Error> {
+    let row = load_row(conn, inflow)?;
     if row.amount <= 0 {
         return Ok(Money::zero(row.currency));
     }
-    Ok(Money::new(inflow_left_in(db.conn(), &row)?, row.currency))
+    Ok(Money::new(inflow_left_in(conn, &row)?, row.currency))
 }
 
 /// What purchase `purchase` can still take (positive): its amount less its
 /// confirmed refunds and reimbursements. For a claim, what is still owed.
 /// Zero for money in.
 pub fn purchase_left(db: &Database, purchase: TransactionId) -> Result<Money, Error> {
-    let row = load_row(db.conn(), purchase)?;
+    purchase_left_of(db.conn(), purchase)
+}
+
+/// [`purchase_left`] on any connection (inside a DB transaction).
+pub(crate) fn purchase_left_of(conn: &Connection, purchase: TransactionId) -> Result<Money, Error> {
+    let row = load_row(conn, purchase)?;
     if row.amount >= 0 {
         return Ok(Money::zero(row.currency));
     }
-    Ok(Money::new(purchase_left_in(db.conn(), &row)?, row.currency))
+    Ok(Money::new(purchase_left_in(conn, &row)?, row.currency))
 }
 
 /// What `label` owes the user in `currency` (module docs): positive when

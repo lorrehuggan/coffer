@@ -52,7 +52,10 @@ use crate::mcp_client::{ClientName, RESERVED_CLIENT_NAME};
 use crate::rule::{UnknownKey, key_enum};
 
 pub use approve::{Applied, ApproveError, ApproveOptions, Approved, approve, reject};
-pub use impact::{Impact, impact};
+pub use impact::{
+    AliasImpact, CategorizationImpact, Detail, Impact, LinkImpact, RuleImpact, TransferImpact,
+    WIDE_MERCHANTS, impact,
+};
 pub use payload::{Invalid, Payload};
 
 /// The longest rationale, in characters.
