@@ -1008,3 +1008,142 @@ fn without_its_backup_nothing_is_imported() {
         .unwrap();
     assert_eq!(batches, 0);
 }
+
+/// Adds an access-log row at `at` (`strftime` modifiers on now, or a
+/// timestamp), from `client`.
+fn log_row(conn: &Connection, client: &str, at: &str) {
+    let at = if at.starts_with(['-', '+']) {
+        conn.query_row(
+            "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?1)",
+            [at],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap()
+    } else {
+        at.to_owned()
+    };
+    conn.execute(
+        "INSERT INTO mcp_access_log (at, client, tool, outcome) \
+         VALUES (?1, ?2, 'list_categories', 'ok')",
+        [&at, client],
+    )
+    .unwrap();
+}
+
+/// The log of the database at `path`, oldest first: (client, outcome,
+/// pending ID, summarised calls).
+fn log_of(path: &Path) -> Vec<(String, String, Option<String>, Option<i64>)> {
+    let db = Database::open(path).unwrap();
+    let mut statement = db
+        .conn()
+        .prepare(
+            "SELECT client, outcome, pending_id, summarised_calls FROM mcp_access_log \
+             ORDER BY at, id",
+        )
+        .unwrap();
+    statement
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+fn clients(path: &Path) -> Vec<String> {
+    log_of(path).into_iter().map(|row| row.0).collect()
+}
+
+/// Restoring an older backup doesn't roll the access log back: rows
+/// written since the backup are carried over, once, however often the
+/// backup is restored.
+#[test]
+fn restore_keeps_access_log_rows_newer_than_the_backup() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let backup = {
+        let db = Database::open(&path).unwrap();
+        log_row(db.conn(), "in-backup", "-2 hours");
+        create(&db, Reason::Manual).unwrap().path
+    };
+    {
+        let db = Database::open(&path).unwrap();
+        log_row(db.conn(), "after-1", "-1 hours");
+        db.conn()
+            .execute(
+                "INSERT INTO mcp_access_log (at, client, tool, outcome, pending_id, \
+                 summarised_calls) VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 minutes'), \
+                 'after-2', 'list_reports', 'refused_restoring', 'p-1', 12)",
+                [],
+            )
+            .unwrap();
+    }
+
+    let restored = restore(&path, &backup).unwrap();
+    assert_eq!(restored.log_rows_carried, Some(2));
+    let expected = vec![
+        ("in-backup".to_owned(), "ok".to_owned(), None, None),
+        ("after-1".to_owned(), "ok".to_owned(), None, None),
+        (
+            "after-2".to_owned(),
+            "refused_restoring".to_owned(),
+            Some("p-1".to_owned()),
+            Some(12),
+        ),
+    ];
+    assert_eq!(log_of(&path), expected);
+
+    // Again: the rows are in both now, and nothing is doubled.
+    let again = restore(&path, &backup).unwrap();
+    assert_eq!(again.log_rows_carried, Some(2));
+    assert_eq!(log_of(&path), expected);
+}
+
+/// A backup from before the access log existed (V2) is restored over a
+/// database at an older schema (V13, its log without V14's columns): the
+/// backup is migrated first, then the replaced log copied in. Rows past the
+/// 12-month retention, the backup's or the carried ones, go.
+#[test]
+fn restore_keeps_the_access_log_across_older_schemas() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let old = dir.path().join("old.db");
+    drop(db::open_at_version(&old, 2).unwrap());
+    {
+        let db = db::open_at_version(&path, 13).unwrap();
+        log_row(db.conn(), "expired", "-13 months");
+        log_row(db.conn(), "kept-1", "-11 months");
+        log_row(db.conn(), "kept-2", "-1 days");
+    }
+
+    let restored = restore(&path, &old).unwrap();
+    assert_eq!(restored.from_version, 2);
+    assert_eq!(
+        restored.migrated_to,
+        Some(Database::supported_schema_version())
+    );
+    assert_eq!(restored.log_rows_carried, Some(3));
+    assert_eq!(clients(&path), ["kept-1", "kept-2"]);
+    // Taken at V13, before the swap.
+    let pre_restore = restored.pre_restore.unwrap().path;
+    assert_eq!(db::peek_schema_version(&pre_restore).unwrap(), 13);
+}
+
+/// A replaced database from before the log existed has nothing to carry,
+/// and the backup's own log is kept as it is.
+#[test]
+fn restore_over_a_database_without_a_log_keeps_the_backups() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let backup_dir = TempDir::new().unwrap();
+    let backup = backup_dir.path().join("backup.db");
+    {
+        let db = Database::open(&backup).unwrap();
+        log_row(db.conn(), "in-backup", "-1 days");
+    }
+    drop(db::open_at_version(&path, 2).unwrap());
+
+    let restored = restore(&path, &backup).unwrap();
+    assert_eq!(restored.log_rows_carried, Some(0));
+    assert_eq!(clients(&path), ["in-backup"]);
+}

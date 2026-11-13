@@ -37,8 +37,10 @@
 //! nothing: a lock file nobody holds is ignored, and the database is
 //! complete whichever step the restore stopped at (see
 //! [`backup::restore`]). A lock file the server can't open or lock is
-//! refused with a message naming it and saying what to do. (Decision record
-//! "M2: MCP server (2026-11-13)", F.1.)
+//! refused with a message naming it and saying what to do. The log isn't
+//! rolled back by a restore: it carries over the rows logged after the
+//! backup was taken ([`access_log::carry_forward`]). (Decision record "M2:
+//! MCP server (2026-11-13)", F.1, F.9.)
 //!
 //! **Refusals while the database can't be opened are logged too.** The log
 //! lives in the database, so a call refused while a restore holds the lock

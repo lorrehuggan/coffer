@@ -22,12 +22,20 @@
 //! `coffer ai-access`, or the restore itself. Each keeps the ID it was given
 //! when recorded (`pending_id`, unique, V14), so one is never moved in twice.
 //! The log is read newest first by time, so they show where they happened.
+//!
+//! **Restores.** Restoring a backup replaces the database, log included,
+//! so the rows written after the backup was taken would only be left in the
+//! pre-restore backup. [`carry_forward`], run by `backup::restore` once the
+//! restored database is open and migrated, copies them from that backup
+//! into the restored log: the log records what AI clients did, which a
+//! restore doesn't undo.
 
 use std::fmt;
+use std::path::Path;
 use std::str::FromStr;
 
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
-use rusqlite::{ToSql, params};
+use rusqlite::{Connection, ToSql, params};
 
 use crate::db::{Database, Reader};
 use crate::mcp_client::{AccessLevel, ClientName};
@@ -138,6 +146,9 @@ pub enum Error {
 
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
+
+    #[error("couldn't open the database to carry its access log forward: {0}")]
+    Open(#[from] crate::db::Error),
 }
 
 /// Appends a call to the log and returns its row ID.
@@ -173,11 +184,72 @@ pub const RETENTION_MONTHS: u32 = 12;
 /// Deletes the rows older than [`RETENTION_MONTHS`] and returns how many
 /// went. The MCP server runs it when it starts.
 pub fn expire(db: &mut Database) -> Result<usize, Error> {
-    Ok(db.conn().execute(
+    expire_on(db.conn())
+}
+
+fn expire_on(conn: &Connection) -> Result<usize, Error> {
+    Ok(conn.execute(
         "DELETE FROM mcp_access_log \
          WHERE at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?1)",
         [format!("-{RETENTION_MONTHS} months")],
     )?)
+}
+
+/// The columns every Coffer log has had since V11; V14 added the last two.
+const V11_COLUMNS: &str = "at, client, tool, access_level, outcome, purpose, \
+                           args_redacted_json, row_count, result_hash, withheld_count";
+
+/// Copies into `db`'s access log the rows of the database file at `from`
+/// that are newer than `db`'s newest row, keeping their times and IDs from
+/// the pending file, then deletes the rows older than [`RETENTION_MONTHS`]:
+/// one transaction. Returns how many rows were copied.
+///
+/// For `backup::restore`: `db` is the restored database, open and migrated;
+/// `from` is the pre-restore backup, a snapshot of the database it replaced,
+/// which is only read. That file may be at an older schema: before V11 it
+/// has no log (nothing is copied), before V14 its rows have no `pending_id`
+/// or `summarised_calls`. A row whose `pending_id` the restored log already
+/// holds isn't copied twice.
+pub fn carry_forward(db: &mut Database, from: &Path) -> Result<usize, Error> {
+    let source = crate::db::inspect(from)?;
+    let columns: Vec<String> = source
+        .prepare("SELECT name FROM pragma_table_info('mcp_access_log')")?
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    if columns.is_empty() {
+        return Ok(0);
+    }
+    let has = |column: &str| columns.iter().any(|name| name == column);
+    let extra = |column: &'static str| if has(column) { column } else { "NULL" };
+    let select = format!(
+        "SELECT {V11_COLUMNS}, {}, {} FROM mcp_access_log \
+         WHERE ?1 IS NULL OR at > ?1 ORDER BY at, id",
+        extra("pending_id"),
+        extra("summarised_calls"),
+    );
+
+    let tx = db.conn_mut().transaction()?;
+    let newest: Option<String> =
+        tx.query_row("SELECT max(at) FROM mcp_access_log", [], |row| row.get(0))?;
+    let mut carried = 0;
+    {
+        let mut read = source.prepare(&select)?;
+        let mut rows = read.query([&newest])?;
+        let mut insert = tx.prepare(&format!(
+            "INSERT INTO mcp_access_log ({V11_COLUMNS}, pending_id, summarised_calls) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+             ON CONFLICT (pending_id) DO NOTHING"
+        ))?;
+        while let Some(row) = rows.next()? {
+            let values: Vec<rusqlite::types::Value> = (0..12)
+                .map(|index| row.get(index))
+                .collect::<Result<_, _>>()?;
+            carried += insert.execute(rusqlite::params_from_iter(values))?;
+        }
+    }
+    expire_on(&tx)?;
+    tx.commit()?;
+    Ok(carried)
 }
 
 /// The latest `limit` calls, newest first (by time, then by row ID).

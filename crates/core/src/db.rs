@@ -390,7 +390,7 @@ pub(crate) fn connect(path: &Path) -> Result<Connection, Error> {
 /// a WAL database creates the `-wal`/`-shm` files but can't remove them on
 /// close, whereas the last read-write connection to close removes them.
 /// Reading checks the file is a SQLite database (`SQLITE_NOTADB` otherwise).
-fn inspect(path: &Path) -> Result<Connection, Error> {
+pub(crate) fn inspect(path: &Path) -> Result<Connection, Error> {
     let conn = connect(path)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
     conn.pragma_update(None, "query_only", true)?;

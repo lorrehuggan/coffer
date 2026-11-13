@@ -118,6 +118,20 @@ pub fn restore(database: &Path, args: &RestoreArgs, out: &mut dyn Write) -> anyh
         )?,
         None => writeln!(out, "Restored {}.", file.display())?,
     }
+    match (restored.log_rows_carried, &restored.pre_restore) {
+        (Some(0), _) => {}
+        (Some(rows), _) => writeln!(
+            out,
+            "Kept {rows} AI access-log {} newer than the backup.",
+            if rows == 1 { "entry" } else { "entries" }
+        )?,
+        (None, Some(pre_restore)) => writeln!(
+            out,
+            "Couldn't keep the AI access-log entries newer than the backup; they're in {}.",
+            pre_restore.path.display()
+        )?,
+        (None, None) => {}
+    }
     Ok(())
 }
 

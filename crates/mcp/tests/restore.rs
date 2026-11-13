@@ -74,13 +74,23 @@ async fn a_restore_succeeds_with_a_server_connected_and_the_next_call_reads_it()
 
     // The connected server holds no connection, so the restore isn't
     // refused as in use.
+    let calls = |log: Vec<LoggedCall>| -> Vec<(String, String, Outcome)> {
+        log.into_iter()
+            .map(|call| (call.tool, call.at, call.outcome))
+            .collect()
+    };
+    // Includes the call above, made after the backup was taken.
+    let logged_before = calls(fixture.access_log());
     backup::restore(fixture.path(), &backup).unwrap();
 
     let after = client.call_ok("list_reports", json!({})).await;
     assert_eq!(report_titles(&after), ["Kept"]);
-    // Logged in the restored database.
-    let log = fixture.access_log();
-    assert_eq!(log.last().unwrap().tool, "list_reports");
+    // Logged in the restored database, and the calls made after the backup
+    // was taken are still in it: a restore doesn't roll the log back.
+    let log = calls(fixture.access_log());
+    assert_eq!(log.len(), logged_before.len() + 1);
+    assert_eq!(log[..logged_before.len()], logged_before[..]);
+    assert_eq!(log.last().unwrap().0, "list_reports");
     client.close().await;
 }
 

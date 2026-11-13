@@ -29,7 +29,9 @@ migrations pending or the lock unreadable: `refused_unavailable`) can't be logge
 so the wrapper records it with `access_log::pending::record` in `<database>-access-pending`
 next to the database. Every call and listing that does open it first moves whatever
 waits there into the log, through `Store::flush_pending`, at the
-calls' own times; IDs make a repeated flush harmless. Tests: `tests/restore.rs`,
+calls' own times; IDs make a repeated flush harmless. A restore keeps the log too:
+`backup::restore` carries over the rows logged after the backup was taken
+(`access_log::carry_forward`). Tests: `tests/restore.rs`,
 `tests/unavailable.rs`; the file's own guarantees are tested in `coffer_core`.
 
 Queries run on `coffer_core::db::Reader`, which SQLite keeps read-only (`query_only`).

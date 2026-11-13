@@ -22,7 +22,9 @@
 //! anything is swapped, backs the current database up (reason
 //! [`Reason::Restore`]), swaps the checked copy in with a rename, and opens
 //! it with [`Database::open`], which migrates an older schema. A refused
-//! restore leaves the current database as it was.
+//! restore leaves the current database as it was. The AI access log isn't
+//! rolled back: rows newer than the backup's are carried over from the
+//! database it replaced ([`access_log::carry_forward`]).
 //!
 //! **Running MCP servers during a restore.** From the moment the backup has
 //! passed its checks until the restored database is open (and migrated),
@@ -507,6 +509,10 @@ pub struct Restored {
     pub migrated_to: Option<SchemaVersion>,
     /// The backup of the database it replaced, when there was one.
     pub pre_restore: Option<Backup>,
+    /// How many access-log rows newer than the backup's were carried over
+    /// from the database it replaced ([`access_log::carry_forward`]);
+    /// `None` when that failed (they're still in [`Restored::pre_restore`]).
+    pub log_rows_carried: Option<usize>,
 }
 
 /// Checks `backup` as [`restore`] would, without restoring it, and reports
@@ -579,9 +585,13 @@ pub fn check(db_path: &Path, backup: &Path) -> Result<RestoreCheck, Error> {
 /// other open connection in WAL mode (after waiting [`RELEASE_WAIT`]), but
 /// it can't rule one out.
 ///
-/// Once it's open, the calls MCP servers refused while the lock was held,
-/// waiting in the access log's pending file, are moved into its access log
-/// ([`access_log::pending`]).
+/// Once it's open (and migrated), the access-log rows the replaced database
+/// has that are newer than the backup's newest are copied in from the
+/// pre-restore backup, and rows past the log's 12-month retention deleted
+/// ([`access_log::carry_forward`]). Then the calls MCP servers refused while
+/// the lock was held, waiting in the access log's pending file, are moved
+/// in ([`access_log::pending`]). Neither can fail the restore: a failed
+/// carry is [`Restored::log_rows_carried`] `None`.
 ///
 /// From step 2 until the restored database is open, the restore lock
 /// ([`restore_lock_path`]) is held: MCP servers refuse calls while it is,
@@ -644,6 +654,21 @@ pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
         pre_restore: pre_restore.as_ref().map(|backup| backup.path.clone()),
         source,
     })?;
+    // The access-log rows written since the backup was taken stay in the
+    // log: the backup's copy stops at the backup. A failure is reported, not
+    // an error: the restore itself is done, and the rows are in the
+    // pre-restore backup.
+    let log_rows_carried = match &pre_restore {
+        None => Some(0),
+        Some(replaced) => match access_log::carry_forward(&mut db, &replaced.path) {
+            Ok(carried) => Some(carried),
+            Err(error) => {
+                tracing::warn!("couldn't carry the access log forward after a restore");
+                tracing::debug!(%error, "access log carry error");
+                None
+            }
+        },
+    };
     // Calls MCP servers refused while the lock was held (and any still
     // waiting from before) go into the restored database's log. A failure
     // leaves them waiting for the next call: the restore itself is done.
@@ -659,6 +684,7 @@ pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
         from_version,
         migrated_to: (version != from_version).then_some(version),
         pre_restore,
+        log_rows_carried,
     })
 }
 

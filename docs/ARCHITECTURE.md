@@ -320,6 +320,11 @@ on the designer's recommendation:
    - A backup with an older schema is restored and then migrated; a newer one is refused.
    - While a restore swaps the files, running MCP servers refuse calls. They reopen the
      database afterwards.
+   - A restore doesn't roll the access log back (added 2026-11-13, default): the log
+     records what AI clients did, which restoring data doesn't undo. Rows newer than the
+     backup's newest are carried over from the database it replaced, after the restored
+     file is migrated, and the 12-month retention applied (decision record "M2: MCP
+     server", F.9).
 
 ### Decision record: accounts you keep yourself (2026-11-10)
 
@@ -1101,6 +1106,19 @@ Everything else follows an earlier decision record or invariant.
      server's own log (default).
    - The log is listed newest first by time, then ID, so moved-in rows appear where they
      happened (default).
+9. **A restore keeps the access log** (decision record 2026-11-10, point 6). Restoring a
+   backup used to replace `mcp_access_log` with the backup's copy, so the rows written
+   between the backup and the restore were left only in the pre-restore backup. Now
+   `restore`, once the restored database is open and migrated and while it still holds
+   the restore lock, copies from the pre-restore backup (a snapshot of the replaced
+   database, only read) every log row newer than the restored log's newest, keeping its
+   time, then deletes rows past the 12-month retention, in one transaction
+   (`access_log::carry_forward`); then it flushes the pending file (F.8). The replaced
+   database may be at an older schema: before V11 it has no log, before V14 its rows have
+   no `pending_id` or `summarised_calls`. Rows at or before the backup's newest time are
+   the backup's own. A `pending_id` already present isn't copied twice. A failed carry
+   doesn't fail the restore, which is done by then: `coffer restore` says the rows are
+   in the pre-restore backup (default).
 
 ## Architecture
 
@@ -1907,7 +1925,8 @@ returning no data: getting a prompt.
 between calls. `coffer restore` holds the file lock on `<database>-restoring` while it
 swaps the files; the server checks it before and after opening and refuses the call while
 it's held, so the next call reads the restored file; the refused calls go into the
-restored database's log. The lock goes with the restore's process, so a crashed restore
+restored database's log, and so do the rows the replaced database logged after the
+backup was taken (F.9). The lock goes with the restore's process, so a crashed restore
 blocks nothing (decision record "M2: MCP server", F.1).
 
 Transaction descriptions are untrusted input (prompt-injection surface); inbox-only

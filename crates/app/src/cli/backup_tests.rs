@@ -241,6 +241,47 @@ fn restore_with_yes_restores_by_file_name() {
     assert_eq!(scratch.account_names(), ["Monzo", "Euro"]);
 }
 
+/// AI access-log rows written after the backup are kept, and the output
+/// says how many.
+#[test]
+fn restore_keeps_the_ai_access_log() {
+    use coffer_core::access_log::{self, NewEntry, Outcome};
+    use coffer_core::mcp_client::ClientName;
+
+    let scratch = Scratch::with_account();
+    scratch.ok(&["backup"]);
+    let backup = scratch.backups().remove(0);
+    for _ in 0..2 {
+        access_log::append(
+            &mut Database::open(&scratch.db).unwrap(),
+            &NewEntry {
+                client: ClientName::new("codex").unwrap(),
+                tool: "list_categories".to_owned(),
+                access_level: None,
+                outcome: Outcome::RefusedNotEnabled,
+                purpose: None,
+                args_redacted_json: "{}".to_owned(),
+                row_count: 0,
+                result_hash: None,
+                withheld_count: 0,
+            },
+        )
+        .unwrap();
+    }
+
+    let out = scratch.ok(&["restore", backup.path.to_str().unwrap(), "--yes"]);
+
+    assert!(
+        out.ends_with("Kept 2 AI access-log entries newer than the backup.\n"),
+        "{out}"
+    );
+    let db = Database::open(&scratch.db).unwrap();
+    assert_eq!(
+        access_log::recent(&db.reader().unwrap(), 10).unwrap().len(),
+        2
+    );
+}
+
 #[test]
 fn restore_warns_about_a_restore_that_stopped_and_goes_ahead() {
     let scratch = Scratch::with_account();

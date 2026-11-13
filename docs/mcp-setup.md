@@ -220,7 +220,9 @@ coffer ai-access revoke codex   # one client; it stays listed and can be enabled
 connection open between calls. While the files are swapped it refuses calls with
 "Coffer is restoring a backup", and its next call reads the restored database. Those
 refused calls are in the restored database's log as `refused_restoring`, at the time
-they were made.
+they were made. Restoring an older backup doesn't roll the log back either: the calls
+logged since that backup was taken are copied into the restored database, and
+`coffer restore` says how many.
 
 If a restore is killed or crashes, nothing stays blocked: the restore's lock on
 `coffer.db-restoring` goes with its process, and the database is complete either way (the
