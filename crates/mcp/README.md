@@ -104,7 +104,9 @@ Each tool's test file checks at least:
    outcome, `row_count` and `purpose`, and `args_redacted_json` holds no free text.
 
 Writing tools also check that they write only `suggestion` or `report`, with
-`source_client` set to the calling client.
+`source_client` set to the calling client. No tool changes or deletes an existing row:
+deleting saved reports is the user's (`coffer inbox delete-report`), and the matrix
+checks that no server code reaches it.
 
 Then add the tool to `MATRIX` in `tests/matrix.rs`, with its level, whether it writes,
 and valid arguments: `the_matrix_lists_every_registered_tool` fails until you do, and the

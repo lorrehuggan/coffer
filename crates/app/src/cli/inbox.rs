@@ -14,6 +14,11 @@
 //! - `coffer inbox reports`: the saved reports, newest first, one line each:
 //!   ID, period, source, date saved and title. No body.
 //! - `coffer inbox report <ID>`: one saved report in full, as plain text.
+//! - `coffer inbox delete-report <ID>... [--yes]` or
+//!   `coffer inbox delete-report --client <NAME> [--before <DATE>] [--yes]`:
+//!   deletes saved reports, all or none ([`inbox::delete_reports`]). Without
+//!   `--yes` it only lists what would go, like `coffer restore`. This is how
+//!   the user makes room for a client at the report cap.
 //!
 //! Approving here is the user's action: the IDs are named on the command
 //! line, and nothing is ever asked on stdin. Every ID is checked to exist
@@ -34,27 +39,31 @@
 //! line breaks with every line indented under a bar, so it can't pass for
 //! Coffer's own output. A body is printed as written, markdown and all:
 //! nothing is rendered, no link is followed, nothing is fetched. The
-//! summary in `list` leaves free text out altogether, and `reports` shows
-//! only the title and period. None of it decides anything.
+//! summary in `list` leaves free text out altogether, and `reports` and
+//! `delete-report` show only the title and period. None of it decides
+//! anything.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
 use anyhow::{Context, bail};
+use chrono::NaiveDate;
 use clap::builder::{PossibleValuesParser, TypedValueParser};
 use clap::{Args, Subcommand};
 use coffer_core::db::Database;
 use coffer_core::envelope;
 use coffer_core::inbox::payload::CategorizationItem;
 use coffer_core::inbox::{
-    self, Applied, ApproveOptions, Approved, COFFER_SOURCE, Filter, Payload, Suggestion,
-    SuggestionId, SuggestionKind, SuggestionStatus,
+    self, Applied, ApproveOptions, Approved, COFFER_SOURCE, Filter, Payload, ReportHeading,
+    ReportSelection, Suggestion, SuggestionId, SuggestionKind, SuggestionStatus,
 };
+use coffer_core::mcp_client::ClientName;
 use coffer_core::reporting::Limit;
 use coffer_core::reporting::catalog::{self, SavedReport};
 use coffer_core::rule::{RuleAction, RuleDefinition};
 
 use super::import::plural;
+use super::schedules::parse_date;
 use super::write_table;
 
 #[derive(Debug, Args)]
@@ -80,6 +89,9 @@ pub enum InboxCommand {
     Reports,
     /// Show a saved report in full, as plain text.
     Report(ReportArgs),
+    /// Delete saved reports, by ID or by client: all or none. Without
+    /// --yes, only shows what would be deleted.
+    DeleteReport(DeleteReportArgs),
 }
 
 #[derive(Debug, Default, Args)]
@@ -134,6 +146,36 @@ pub struct ReportArgs {
     pub id: i64,
 }
 
+#[derive(Debug, Args)]
+pub struct DeleteReportArgs {
+    /// The reports' IDs, as `coffer inbox reports` lists them.
+    #[arg(
+        value_name = "ID",
+        required_unless_present = "client",
+        conflicts_with = "client"
+    )]
+    pub ids: Vec<i64>,
+
+    /// Every report this client saved, instead of IDs.
+    #[arg(long, value_name = "NAME")]
+    pub client: Option<ClientName>,
+
+    /// With --client: only the reports saved before this day (YYYY-MM-DD,
+    /// UTC).
+    #[arg(
+        long,
+        value_name = "DATE",
+        requires = "client",
+        conflicts_with = "ids",
+        value_parser = parse_date
+    )]
+    pub before: Option<NaiveDate>,
+
+    /// Delete them. Without this, only shows what deleting would remove.
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+}
+
 fn status_parser() -> impl TypedValueParser<Value = SuggestionStatus> {
     PossibleValuesParser::new(SuggestionStatus::ALL.iter().map(|status| status.as_str())).map(
         |key| {
@@ -160,6 +202,7 @@ pub fn run(db: &mut Database, args: InboxArgs, out: &mut dyn Write) -> anyhow::R
         Some(InboxCommand::Reject(args)) => reject(db, &args, out),
         Some(InboxCommand::Reports) => reports(db, out),
         Some(InboxCommand::Report(args)) => report(db, &args, out),
+        Some(InboxCommand::DeleteReport(args)) => delete_report(db, &args, out),
     }
 }
 
@@ -633,19 +676,9 @@ pub fn reports(db: &Database, out: &mut dyn Write) -> anyhow::Result<()> {
     let rows: Vec<Vec<String>> = saved
         .items
         .iter()
-        .map(|r| {
-            let period = untrusted(&r.period, PERIOD_SHOWN);
-            let title = untrusted(&r.title, TEXT_SHOWN);
-            vec![
-                r.id.to_string(),
-                format!("{}{}", period.text, period.notes()),
-                source_name(&r.source_client),
-                r.created_at.chars().take(10).collect(),
-                format!("\"{}\"{}", title.text, title.notes()),
-            ]
-        })
+        .map(|r| report_row(r.id, &r.period, &r.source_client, &r.created_at, &r.title))
         .collect();
-    write_table(out, &["ID", "PERIOD", "FROM", "SAVED", "TITLE"], &rows)?;
+    write_report_table(out, &rows)?;
     writeln!(out)?;
     if saved.truncated {
         writeln!(out, "Only the newest {} are listed.", saved.len())?;
@@ -653,9 +686,41 @@ pub fn reports(db: &Database, out: &mut dyn Write) -> anyhow::Result<()> {
     writeln!(
         out,
         "Periods and titles are the AI clients' own words, unverified. \
-         `coffer inbox report <ID>` shows one in full."
+         `coffer inbox report <ID>` shows one in full; \
+         `coffer inbox delete-report <ID>` deletes it."
     )?;
+    let counts = inbox::report_counts(db).context("couldn't count the reports")?;
+    for (source, count) in counts {
+        if count >= inbox::MAX_REPORTS_PER_SOURCE {
+            writeln!(
+                out,
+                "{} has saved {count} reports, the most one client may keep, and can't save \
+                 more until you delete some: `coffer inbox delete-report --client {}` deletes \
+                 them (with --before <DATE>, only older ones).",
+                source_name(&source),
+                untrusted(&source, 64).text
+            )?;
+        }
+    }
     Ok(())
+}
+
+/// One line of a report table: ID, period, source, day saved and title,
+/// the client's words stripped and labelled as untrusted text.
+fn report_row(id: i64, period: &str, source: &str, created_at: &str, title: &str) -> Vec<String> {
+    let period = untrusted(period, PERIOD_SHOWN);
+    let title = untrusted(title, TEXT_SHOWN);
+    vec![
+        id.to_string(),
+        format!("{}{}", period.text, period.notes()),
+        source_name(source),
+        created_at.chars().take(10).collect(),
+        format!("\"{}\"{}", title.text, title.notes()),
+    ]
+}
+
+fn write_report_table(out: &mut dyn Write, rows: &[Vec<String>]) -> std::io::Result<()> {
+    write_table(out, &["ID", "PERIOD", "FROM", "SAVED", "TITLE"], rows)
 }
 
 /// `coffer inbox report`.
@@ -667,6 +732,73 @@ pub fn report(db: &Database, args: &ReportArgs, out: &mut dyn Write) -> anyhow::
     };
     write_report(out, &report)?;
     Ok(())
+}
+
+/// `coffer inbox delete-report`. Without `--yes` it lists what would be
+/// deleted and changes nothing.
+pub fn delete_report(
+    db: &mut Database,
+    args: &DeleteReportArgs,
+    out: &mut dyn Write,
+) -> anyhow::Result<()> {
+    let selection = match &args.client {
+        Some(source) => ReportSelection::Source {
+            source: source.clone(),
+            before: args.before,
+        },
+        None => ReportSelection::Ids(args.ids.clone()),
+    };
+    let reports = if args.yes {
+        inbox::delete_reports(db, &selection)
+    } else {
+        inbox::reports_to_delete(db, &selection)
+    }
+    .context("nothing was deleted")?;
+
+    if reports.is_empty() {
+        // Only a client's reports can be none.
+        let source = args.client.as_ref().map_or_else(String::new, |c| {
+            format!(" from {}", source_name(c.as_str()))
+        });
+        let before = args
+            .before
+            .map_or_else(String::new, |day| format!(" saved before {day}"));
+        writeln!(
+            out,
+            "No saved reports{source}{before}; nothing was deleted."
+        )?;
+        return Ok(());
+    }
+
+    let count = plural(reports.len(), "saved report");
+    if args.yes {
+        writeln!(out, "Deleted {count}:")?;
+    } else {
+        writeln!(out, "Deleting would remove {count}:")?;
+    }
+    write_headings(out, &reports)?;
+    writeln!(out)?;
+    writeln!(
+        out,
+        "Periods and titles are the AI clients' own words, unverified."
+    )?;
+    if !args.yes {
+        writeln!(
+            out,
+            "Nothing was deleted. Run the command again with --yes to delete {}; it can't be \
+             undone.",
+            if reports.len() == 1 { "it" } else { "them" }
+        )?;
+    }
+    Ok(())
+}
+
+fn write_headings(out: &mut dyn Write, reports: &[ReportHeading]) -> std::io::Result<()> {
+    let rows: Vec<Vec<String>> = reports
+        .iter()
+        .map(|r| report_row(r.id, &r.period, &r.source_client, &r.created_at, &r.title))
+        .collect();
+    write_report_table(out, &rows)
 }
 
 fn write_report(out: &mut dyn Write, report: &SavedReport) -> std::io::Result<()> {

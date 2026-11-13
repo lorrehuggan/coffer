@@ -141,7 +141,7 @@ pub struct DeleteArgs {
     pub yes: bool,
 }
 
-fn parse_date(text: &str) -> Result<NaiveDate, String> {
+pub(super) fn parse_date(text: &str) -> Result<NaiveDate, String> {
     NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d")
         .map_err(|_| format!("{text:?} isn't a date; use YYYY-MM-DD, e.g. 2026-11-03"))
 }

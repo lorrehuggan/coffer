@@ -23,9 +23,9 @@
 //!   ignores the output writer: stdout carries MCP messages only.
 //! - `coffer schedules detect|list|show|confirm|…`: recurring payments and
 //!   schedules ([`schedules`]).
-//! - `coffer inbox [list|show|approve|reject|reports|report]`: review AI
-//!   clients' suggestions and decide them, and read their saved reports
-//!   ([`inbox`]).
+//! - `coffer inbox [list|show|approve|reject|reports|report|delete-report]`:
+//!   review AI clients' suggestions and decide them, and read and delete
+//!   their saved reports ([`inbox`]).
 //! - `coffer categorize <ID>... <CATEGORY>`: set transactions' category as
 //!   the user, as one change batch ([`categorize`]).
 //!
@@ -76,7 +76,10 @@ pub use backup::{BackupArgs, RestoreArgs};
 pub use categorize::CategorizeArgs;
 pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
-pub use inbox::{ApproveArgs, InboxArgs, InboxCommand, ListArgs, RejectArgs, ReportArgs, ShowArgs};
+pub use inbox::{
+    ApproveArgs, DeleteReportArgs, InboxArgs, InboxCommand, ListArgs, RejectArgs, ReportArgs,
+    ShowArgs,
+};
 pub use mcp::McpArgs;
 pub use schedules::{SchedulesArgs, SchedulesCommand};
 pub use undo::UndoImportArgs;
