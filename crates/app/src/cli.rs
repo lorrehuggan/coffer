@@ -17,6 +17,8 @@
 //! - `coffer export --format csv|json`: the ledger as a file ([`export`]).
 //! - `coffer mcp --client <name>`: the MCP server over stdio ([`mcp`]). It
 //!   ignores the output writer: stdout carries MCP messages only.
+//! - `coffer schedules detect|list|show|confirm|…`: recurring payments and
+//!   schedules ([`schedules`]).
 //!
 //! Output is what the user asked for and nothing else. Errors are returned
 //! (as `anyhow` errors: this is the binary's layer) for `main` to print on
@@ -27,12 +29,15 @@ pub mod backup;
 pub mod export;
 pub mod import;
 pub mod mcp;
+pub mod schedules;
 pub mod undo;
 
 #[cfg(test)]
 mod backup_tests;
 #[cfg(test)]
 mod export_tests;
+#[cfg(test)]
+mod schedules_tests;
 #[cfg(test)]
 mod tests;
 
@@ -49,6 +54,7 @@ pub use backup::{BackupArgs, RestoreArgs};
 pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
 pub use mcp::McpArgs;
+pub use schedules::{SchedulesArgs, SchedulesCommand};
 pub use undo::UndoImportArgs;
 
 /// Coffer: a local-first personal finance dashboard.
@@ -86,6 +92,9 @@ pub enum Command {
     /// Run the MCP server over stdin/stdout for an AI client (Claude Code,
     /// Codex, …). Needs an existing database.
     Mcp(McpArgs),
+    /// Find recurring payments, confirm them as schedules, and manage
+    /// schedules.
+    Schedules(SchedulesArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -125,6 +134,10 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
             export::run(&db, &args, out)
         }
         Command::Mcp(args) => mcp::run(database, &args),
+        Command::Schedules(args) => {
+            let mut db = open_existing(database)?;
+            schedules::run(&mut db, &args, out)
+        }
     }
 }
 
