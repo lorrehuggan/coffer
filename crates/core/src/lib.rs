@@ -9,6 +9,7 @@ pub mod access_log;
 pub mod account;
 pub mod backup;
 pub mod balance;
+pub mod budget;
 pub mod category;
 pub mod change;
 pub mod db;
