@@ -166,11 +166,14 @@ async fn bad_arguments_are_a_logged_error_without_their_text() {
     let log = fixture.access_log();
     assert_eq!(log.len(), 2);
     assert_eq!(log[0].outcome, Outcome::Error);
-    assert_eq!(log[0].args_redacted_json, r#"{"n":"string"}"#);
+    assert_eq!(
+        log[0].args_redacted_json,
+        r#"{"n":{"length":28,"type":"string"}}"#
+    );
     assert_eq!(log[0].purpose.as_deref(), Some("testing"));
     assert_eq!(log[1].outcome, Outcome::Ok);
     assert_eq!(log[1].row_count, 3);
-    assert_eq!(log[1].args_redacted_json, r#"{"n":"number"}"#);
+    assert_eq!(log[1].args_redacted_json, r#"{"n":3}"#);
     client.close().await;
 }
 
