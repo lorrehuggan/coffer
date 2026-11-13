@@ -544,25 +544,35 @@ Import real statements into a local database from the command line.
   `merchant_display_source`); runs in `import::commit` before rules, aliases apply at
   once to derived names, and rules match the cleaned merchant (`ARCHITECTURE.md` → "Decision record: splits, tags and notes, manual rows, merchant
   names")
-- ⬜ M1.24 Rule actions beyond setting a category: set merchant, add tag, set note, exclude,
+- ✅ M1.24 Rule actions beyond setting a category: set merchant, add tag, set note, exclude,
   split template, my share. Each transaction records the rule that categorised it. Applying
   a rule to past transactions shows a preview and commits as an undoable change batch.
-  Each action kind's `value_json` shape is typed and validated in
-  `coffer_core::rule::RuleAction`; still to do: applying the actions, including
-  converting basis-point shares to minor units (`set_merchant` writes
-  `merchant_display_source = 'rule'`; `split_template` goes through `split::replace`;
-  `add_tag` finds or creates tags; applying to history skips split rows)
-- ⬜ M1.25 Refunds, reimbursements and shared costs: `transaction_link`
+  `coffer_core::change` (V8, `V8__change_batch.sql`): a `Recorder` that writes and records
+  field changes, `dry_run` previews, `undo` restoring only fields that still hold the
+  batch's value. `rule::apply_to_batch` applies every action at import, field by field
+  (tags included); shares and split lines from basis points exactly (half away from zero;
+  largest remainder); `rule::preview_apply` → `commit_apply` as one `rule_apply` batch,
+  skipping split rows, changing user-set values only on included rows, refusing a stale
+  preview and exclusions under a lock (`ARCHITECTURE.md` → "Decision record: M1 wave 4")
+- ✅ M1.25 Refunds, reimbursements and shared costs: `transaction_link`
   (`refund`/`reimbursement`/`settlement`). A refund nets against the purchase's category
   instead of counting as income; a reimbursable purchase stays outstanding until linked;
-  `my_share_minor` on transactions and split lines feeds an owed-to-me balance
-- ⬜ M1.26 Possible-duplicates queue: same account and amount within ±N days but different
+  `my_share_minor` on transactions and split lines feeds an owed-to-me balance.
+  `coffer_core::link`, `V9__transaction_link.sql` (which redefines `ledger_line` with link
+  rows, `in_reports` and `personal_minor`); deterministic suggestions at import (90-day
+  refunds, 60-day reimbursement sets); undo and manual deletes clear links
+- ✅ M1.26 Possible-duplicates queue: same account and amount within ±N days but different
   text (typically overlapping CSV and OFX exports). Merging excludes the duplicate, never
-  deletes it, and can be undone
-- ⬜ M1.27 Dated balance assertions: every balance snapshot is checked against the computed
+  deletes it, and can be undone. `coffer_core::duplicate`, `V10__duplicate_candidate.sql`;
+  detected in the import commit and by `scan`; merges are `duplicate_merge` change
+  batches that keep the best-sourced row and carry user-set values over
+- ✅ M1.27 Dated balance assertions: every balance snapshot is checked against the computed
   balance, and a failure names the window between the last passing assertion and the
   failing one. Per-account lock date (`reconciled_through`): anything that would change
-  transactions before it is flagged and needs an explicit unlock
+  transactions before it is flagged and needs an explicit unlock.
+  `coffer_core::reconciliation` (`account_checks`, `lock`, `unlock`); entered balances,
+  imports, manual edits, merges, rule applies and undos inside the lock are refused; a
+  rule's exclusion counts whatever its reason (user decision, 2026-11-12)
 - ✅ M1.28 Local backups: rotating `VACUUM INTO` snapshots (0600) before every import commit
   and migration; `coffer backup`, `coffer restore <file>` (integrity and schema-version
   checks before swapping). `coffer_core::backup`: `<data dir>/backups`, the last 10
@@ -570,8 +580,14 @@ Import real statements into a local database from the command line.
   `Database::open` back up first; `coffer backup [--list]`, `coffer restore <file>
   [--yes]`. MCP servers refusing calls during a restore come with M2
   (`ARCHITECTURE.md` → "Decision record: local backups")
-- ⬜ M1.29 `coffer export --format csv|json`: documented schema, filters by date, account,
-  category and tag; split lines keep their parent ID
+- ✅ M1.29 `coffer export --format csv|json`: documented schema, filters by date, account,
+  category and tag; split lines keep their parent ID. `coffer_core::export` (schema
+  version 1, columns in its module docs) reading `ledger_line`; `--output` files 0600,
+  `--force` to replace; notes and private tags only with `--include-notes` /
+  `--include-private-tags` (user decision, 2026-11-12), share labels never
+
+`crates/import/tests/m1_exit.rs` walks the exit criteria below end to end on synthetic
+data; M1.9's check against a real Monzo export is what's left.
 
 **Exit criteria:** your own CSV/OFX exports import without duplicates on
 re-import, reconcile where balances exist, and get categorized by rules. Splits, tags,

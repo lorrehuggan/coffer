@@ -16,7 +16,8 @@ charts, and exposes the data to AI clients through an MCP server.
 
 ## Current state
 
-M0 and the design track (D1–D6) are done and signed off; M1 is in progress. The Cargo
+M0 and the design track (D1–D6) are done and signed off; M1 is done except M1.9's
+check against a real Monzo export. The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
 (`crates/core/migrations/V1__initial_schema.sql`, M1.4) and the
@@ -25,7 +26,7 @@ normalized import output (`statement`: `Statement`, `StatementLine`, flagged row
 and categories (`category`: `CategoryKey`, M1.8; `CategoryKind`, `DEFAULT_CATEGORIES`
 and `CategoryTree` via `Database::categories`, seeded by `V2__default_categories.sql`,
 M1.14) and rules (`rule`: validated `RuleDefinition`, `Pattern`, `RuleAction`; the
-store and the `RuleSet` engine, `set_category` only; M1.15) and transfer-pair detection
+store and the `RuleSet` engine; M1.15, every action kind since M1.24) and transfer-pair detection
 (`transfer`, M1.16) and sub-accounts (`sub_account`: pots found by the bank's ID,
 auto-created, rows mirrored and paired as confirmed transfers; M1.17, migration
 `V4__sub_account_key.sql`) and the import commit (`import`: preview → backup → commit →
@@ -39,8 +40,16 @@ migrations; M1.28) and splits (`split`: lines summing exactly to the parent, the
 `note`; private tags; M1.21, `V6__tags.sql`) and manual rows and exclusions (`manual`,
 `exclusion`; M1.22, no migration) and merchant names (`merchant`: deterministic
 clean-up, aliases, `merchant_display_source`; run in the import commit before rules;
-M1.23, `V7__merchant_alias.sql`). Undo and manual deletes clear split lines and tag
-links. None of M1.20–M1.23 has CLI commands yet.
+M1.23, `V7__merchant_alias.sql`) and change batches (`change`: recorded, undoable
+changes to user-facing fields, `dry_run` previews; `V8__change_batch.sql`) and every rule
+action at import plus applying a rule to history (`rule::preview_apply`/`commit_apply`;
+M1.24) and refunds, reimbursements and shared costs (`link`; `V9__transaction_link.sql`,
+which redefines `ledger_line`; M1.25) and the possible-duplicates queue (`duplicate`;
+`V10__duplicate_candidate.sql`; M1.26) and balance checks and lock dates
+(`reconciliation`; M1.27) and export (`export`; M1.29). The import commit also detects
+possible duplicates and suggests links. Undo and manual deletes clear split lines, tag
+links, change items, links and duplicate candidates. M1.20–M1.27 have no CLI commands
+yet. `crates/import/tests/m1_exit.rs` walks the M1 exit criteria end to end.
 `crates/import` has the `Importer` trait, `SourceFile` and detection (M1.6) and the CSV
 importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 (`preset`: `Preset`, `Presets::bundled`; M1.8) and the first preset, `presets/uk/monzo.toml`
@@ -53,7 +62,8 @@ importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 Transactions screen on fixture data (`crates/app/src/transactions.rs`), and
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
 `import`, `accounts` (`list`, `add`), `undo-import`, `backup` (`--list`) and
-`restore <file> [--yes]` (M1.28); the other commands don't exist yet.
+`restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29); the other
+commands don't exist yet.
 `cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with
 Paper. Shared files stay at the root: `assets/` (fonts, brand) and `design/` (tokens).
 Check the tree before assuming a module exists.
