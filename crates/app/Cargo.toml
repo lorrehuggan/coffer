@@ -17,6 +17,8 @@ coffer-import.workspace = true
 coffer-mcp.workspace = true
 gpui-kit.workspace = true
 anyhow.workspace = true
+# `coffer export --from/--to` dates.
+chrono.workspace = true
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
