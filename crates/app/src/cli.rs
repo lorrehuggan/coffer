@@ -24,6 +24,7 @@
 
 pub mod accounts;
 pub mod backup;
+pub mod budgets;
 pub mod export;
 pub mod import;
 pub mod mcp;
@@ -31,6 +32,8 @@ pub mod undo;
 
 #[cfg(test)]
 mod backup_tests;
+#[cfg(test)]
+mod budgets_tests;
 #[cfg(test)]
 mod export_tests;
 #[cfg(test)]
@@ -86,6 +89,9 @@ pub enum Command {
     /// Run the MCP server over stdin/stdout for an AI client (Claude Code,
     /// Codex, …). Needs an existing database.
     Mcp(McpArgs),
+    /// List, set or remove budgets: what you mean to spend in a category
+    /// each month.
+    Budgets(budgets::BudgetsArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -125,6 +131,7 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
             export::run(&db, &args, out)
         }
         Command::Mcp(args) => mcp::run(database, &args),
+        Command::Budgets(args) => budgets::run(database, args, out),
     }
 }
 
