@@ -25,15 +25,27 @@
 //! [`POLL_INTERVAL`] by default, so an idle client hears about a change
 //! without calling.
 //!
+//! **Connections per call, and restores.** The server keeps no database
+//! connection open between calls: each `tools/list`, call and poll opens
+//! the database ([`Database::open_existing`]) and closes it when done. So a
+//! `coffer restore` is never blocked by an idle server, and the call after
+//! a restore reads the restored file. While a restore swaps the files it
+//! holds a lock file ([`backup::restoring`]); the server checks it before
+//! and after opening, and refuses the call with a message saying so. That
+//! refusal isn't in the access log: the log lives in the database being
+//! replaced. (Decision record "M2: MCP server (2026-11-13)".)
+//!
 //! Handlers are synchronous and short; they run on the runtime's thread
-//! under a lock on the connection they use. One client per process (stdio),
-//! so calls rarely overlap.
+//! under a lock that lets one call at a time hold connections. One client
+//! per process (stdio), so calls rarely overlap.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use coffer_core::access_log::{self, NewEntry, Outcome};
+use coffer_core::backup;
 use coffer_core::db::{self, Database, Reader};
 use coffer_core::mcp_client::{AccessLevel, ClientName};
 use coffer_core::setting;
@@ -68,8 +80,10 @@ pub struct Server {
 
 struct Inner {
     registry: Registry,
-    reader: Mutex<Reader>,
-    store: Store,
+    /// The database file, opened for each call ([`Inner::open`]).
+    path: PathBuf,
+    /// Held while a call, a listing or a poll has the database open.
+    busy: Mutex<()>,
     client: ClientName,
     /// The level whose tools the client last listed: `None` until it lists,
     /// `Some(None)` when it saw no tools.
@@ -101,12 +115,16 @@ impl Server {
             Ok(expired) => tracing::debug!(expired, "expired old access-log rows"),
             Err(error) => tracing::warn!(%error, "couldn't expire old access-log rows"),
         }
-        let reader = db.reader()?;
+        // Checks that a reader can be opened, then closes both: every call
+        // opens its own connections.
+        db.reader()?;
+        let path = db.path().to_path_buf();
+        drop(db);
         Ok(Server {
             inner: Arc::new(Inner {
                 registry,
-                reader: Mutex::new(reader),
-                store: Store::new(db, client.clone()),
+                path,
+                busy: Mutex::new(()),
                 client,
                 listed: Mutex::new(None),
                 poll: Some(POLL_INTERVAL),
@@ -133,8 +151,11 @@ impl Server {
     fn list(&self) -> Result<ListToolsResult, ErrorData> {
         let inner = &*self.inner;
         let level = {
-            let reader = inner.reader.lock().map_err(|_| unusable())?;
-            access::for_request(&reader, &inner.store)
+            let _busy = inner.busy.lock().map_err(|_| unusable())?;
+            let session = inner
+                .open()
+                .map_err(|unavailable| ErrorData::internal_error(unavailable.message(), None))?;
+            access::for_request(&session.reader, &session.store)
                 .map_err(|error| {
                     tracing::debug!(%error, "couldn't read the client's access");
                     ErrorData::internal_error("Coffer couldn't read this client's access", None)
@@ -198,16 +219,28 @@ impl Server {
             withheld_count: 0,
         };
 
+        let _busy = inner.busy.lock().map_err(|_| unusable())?;
+        let session = match inner.open() {
+            Ok(session) => session,
+            // Not logged: the log is in the database that can't be opened
+            // (or is being replaced).
+            Err(unavailable) => {
+                return Ok((
+                    CallToolResult::error(vec![ContentBlock::text(unavailable.message())]),
+                    false,
+                ));
+            }
+        };
+        let Session { reader, store } = &session;
         let mut changed = false;
         let result = {
-            let reader = inner.reader.lock().map_err(|_| unusable())?;
-            let gate = access::for_request(&reader, &inner.store).map(|access: Access| {
+            let gate = access::for_request(reader, store).map(|access: Access| {
                 entry.access_level = access.logged_level();
                 changed = self.level_changed(access.level());
                 access::gate(access, &spec)
             });
             match gate {
-                Ok(Gate::Allow(level)) => run(&reader, level, &inner.store, tool, args, &mut entry),
+                Ok(Gate::Allow(level)) => run(reader, level, store, tool, args, &mut entry),
                 Ok(Gate::Refuse(outcome)) => {
                     entry.outcome = outcome;
                     CallToolResult::error(vec![ContentBlock::text(access::refusal_message(
@@ -224,7 +257,7 @@ impl Server {
             }
         };
 
-        inner.store.log(&entry).map_err(|error| {
+        store.log(&entry).map_err(|error| {
             tracing::warn!(
                 tool = spec.name,
                 "couldn't write the access log; call refused"
@@ -255,10 +288,14 @@ impl Server {
                     break;
                 }
                 let level = {
-                    let Ok(reader) = server.inner.reader.lock() else {
+                    let Ok(_busy) = server.inner.busy.lock() else {
                         break;
                     };
-                    match access::current(&reader, &server.inner.client) {
+                    // Restoring, or unreadable for now: check next time.
+                    let Ok(session) = server.inner.open() else {
+                        continue;
+                    };
+                    match access::current(&session.reader, &server.inner.client) {
                         Ok(access) => access.level(),
                         Err(error) => {
                             tracing::debug!(%error, "couldn't check the client's access");
@@ -271,6 +308,58 @@ impl Server {
                 }
             }
         });
+    }
+}
+
+/// The connections one call uses, closed when it's dropped.
+struct Session {
+    reader: Reader,
+    store: Store,
+}
+
+/// Why the database couldn't be opened for a call.
+enum Unavailable {
+    /// A restore is swapping the database files ([`backup::restoring`]).
+    Restoring,
+    /// Opening failed: e.g. the database was migrated by a newer Coffer.
+    Open,
+}
+
+impl Unavailable {
+    fn message(&self) -> &'static str {
+        match self {
+            Unavailable::Restoring => {
+                "Coffer is restoring a backup. Try again in a moment; nothing was read."
+            }
+            Unavailable::Open => {
+                "Coffer couldn't open its database. The user may need to open Coffer or run \
+                 a `coffer` command to update it."
+            }
+        }
+    }
+}
+
+impl Inner {
+    /// Opens the database for one call: refused while a restore holds its
+    /// lock, checked before opening and again after, so a connection is
+    /// never used across the swap.
+    fn open(&self) -> Result<Session, Unavailable> {
+        if backup::restoring(&self.path) {
+            return Err(Unavailable::Restoring);
+        }
+        let opened = Database::open_existing(&self.path)
+            .and_then(|db| db.reader().map(|reader| (db, reader)));
+        let (db, reader) = opened.map_err(|error| {
+            tracing::debug!(%error, "couldn't open the database for a call");
+            Unavailable::Open
+        })?;
+        if backup::restoring(&self.path) {
+            return Err(Unavailable::Restoring);
+        }
+        Ok(Session {
+            reader,
+            store: Store::new(db, self.client.clone()),
+        })
     }
 }
 

@@ -70,6 +70,11 @@ fn assert_no_scratch_files(db_path: &Path) {
             dir.display()
         );
     }
+    assert!(
+        !restoring(db_path),
+        "the restore lock was left at {}",
+        restore_lock_path(db_path).display()
+    );
 }
 
 #[cfg(unix)]
@@ -677,6 +682,46 @@ fn restore_refuses_while_the_database_is_open() {
     assert_eq!(account::list(&open).unwrap()[0].name, "Current");
     assert_eq!(account_names(&setup.path), ["Current"]);
     assert_no_scratch_files(&setup.path);
+}
+
+#[test]
+fn restore_waits_for_a_running_call_to_close_its_connection() {
+    let setup = Setup::new();
+    let open = Database::open(&setup.path).unwrap();
+    let path = setup.path.clone();
+    let closer = std::thread::spawn(move || {
+        // A call that is running when the restore starts: it sees the lock
+        // when it ends, and closes its connection.
+        while !restoring(&path) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        drop(open);
+    });
+
+    restore(&setup.path, &setup.backup).unwrap();
+    closer.join().unwrap();
+
+    assert_eq!(account_names(&setup.path), ["Backed up"]);
+    assert_no_scratch_files(&setup.path);
+}
+
+#[test]
+fn a_held_restore_lock_refuses_a_second_restore() {
+    let setup = Setup::new();
+    let before = fs::read(&setup.path).unwrap();
+    let lock = restore_lock_path(&setup.path);
+    fs::write(&lock, "").unwrap();
+    assert!(restoring(&setup.path));
+
+    let err = restore(&setup.path, &setup.backup).unwrap_err();
+
+    assert!(matches!(err, Error::RestoreLocked { .. }), "{err:?}");
+    assert!(err.to_string().contains("-restoring"), "{err}");
+    // Someone else's lock stays; nothing was swapped or backed up.
+    assert!(lock.exists());
+    fs::remove_file(&lock).unwrap();
+    setup.assert_untouched(&before, 1);
 }
 
 #[test]

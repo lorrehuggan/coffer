@@ -24,6 +24,20 @@
 //! it with [`Database::open`], which migrates an older schema. A refused
 //! restore leaves the current database as it was.
 //!
+//! **Running MCP servers during a restore.** From the moment the backup has
+//! passed its checks until the restored database is open (and migrated),
+//! [`restore`] holds a lock file next to the database,
+//! `<database>-restoring` ([`restore_lock_path`]). An MCP server keeps no
+//! connection open between calls: before and after it opens the database
+//! for a call it checks [`restoring`], and refuses the call while the lock
+//! is there. So the swap never races a reader, and the next call after the
+//! restore opens the restored file. A call already running when the lock
+//! appears finishes first: the restore waits up to [`RELEASE_WAIT`] for its
+//! connection to close. The lock is a plain file (no network, no
+//! process-to-process messages), created with `create_new` so two restores
+//! can't overlap; one left by a crash is reported with its path, for the
+//! user to delete.
+//!
 //! Nothing here reads or logs transaction contents; errors name files,
 //! versions and SQLite's own messages only.
 
@@ -36,7 +50,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use chrono::{DateTime, Datelike, NaiveDateTime, TimeDelta, Utc};
 use rusqlite::Connection;
@@ -142,6 +156,13 @@ pub enum Error {
         database.display()
     )]
     OrphanSidecar { sidecar: PathBuf, database: PathBuf },
+
+    #[error(
+        "another restore is running ({} exists); if none is, a restore stopped before it \
+         finished: check the database, then delete that file",
+        lock.display()
+    )]
+    RestoreLocked { lock: PathBuf },
 }
 
 fn io_error(action: &'static str, path: &Path) -> impl FnOnce(io::Error) -> Error {
@@ -505,12 +526,15 @@ pub fn check(db_path: &Path, backup: &Path) -> Result<RestoreCheck, Error> {
 /// in place at its old version (migrations are one transaction) and the
 /// pre-restore backup holds what it replaced.
 ///
-/// No other Coffer process may have the database open during a restore:
-/// one that does keeps reading the replaced file. Step 3 notices an open
-/// connection in WAL mode, but it can't rule one out.
-// TODO(M2, lead): running MCP servers refuse calls while a restore swaps
-// the files, and reopen the database afterwards (ARCHITECTURE.md →
-// "Decision record: Settings, AI access and backups", point 6).
+/// No other Coffer process may hold the database open during a restore:
+/// one that does keeps reading the replaced file. MCP servers open it per
+/// call and check the restore lock, so they don't; step 2 notices any
+/// other open connection in WAL mode (after waiting [`RELEASE_WAIT`]), but
+/// it can't rule one out.
+///
+/// From step 2 until the restored database is open, the restore lock
+/// ([`restore_lock_path`]) is held: MCP servers refuse calls while it
+/// exists, and a call already running gets [`RELEASE_WAIT`] to finish.
 pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
     let exists = is_non_empty_file(db_path)?;
     if !db_path.exists() {
@@ -526,11 +550,13 @@ pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
     }
 
     let (staged, from_version) = stage(db_path, backup)?;
+    // Held until the restored database is open; removed on every return.
+    let _lock = RestoreLock::acquire(db_path)?;
 
     // Refuse an open database before backing it up, and again after (the
     // backup's own connection has come and gone).
     let pre_restore = if exists {
-        let backup = release(db_path)
+        let backup = release_waiting(db_path)
             .and_then(|()| create_from_path(db_path, Reason::Restore))
             .map_err(|source| match source {
                 Error::InUse { .. } => source,
@@ -544,7 +570,7 @@ pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
         None
     };
     if db_path.exists() {
-        release(db_path)?;
+        release_waiting(db_path)?;
     }
     // A leftover `-shm` without a `-wal` holds nothing; SQLite rebuilds it.
     remove_if_exists(&db::sidecar(db_path, "-shm"))?;
@@ -662,6 +688,65 @@ fn check_copy(copy: &Path, backup: &Path) -> Result<SchemaVersion, Error> {
 
 /// Checkpoints the database at `db_path` and closes it again, so its
 /// `-wal` and `-shm` go. If they remain, another connection has it open.
+/// How long [`restore`] waits for connections to the database to close
+/// once it holds the restore lock: a running MCP call finishes and closes
+/// its connection, and new calls are refused.
+pub const RELEASE_WAIT: Duration = Duration::from_secs(5);
+
+/// The restore lock for the database at `db_path`: `<database>-restoring`,
+/// next to it. It exists only while [`restore`] swaps the files.
+pub fn restore_lock_path(db_path: &Path) -> PathBuf {
+    db::sidecar(db_path, "-restoring")
+}
+
+/// Whether a restore is replacing the database at `db_path` now (its lock
+/// file exists). MCP servers check this before and after opening the
+/// database for a call, and refuse the call while it's `true`.
+pub fn restoring(db_path: &Path) -> bool {
+    restore_lock_path(db_path).exists()
+}
+
+/// The restore lock file, removed when dropped.
+struct RestoreLock {
+    path: PathBuf,
+}
+
+impl RestoreLock {
+    fn acquire(db_path: &Path) -> Result<RestoreLock, Error> {
+        let path = restore_lock_path(db_path);
+        match create_private_file(&path) {
+            Ok(()) => Ok(RestoreLock { path }),
+            Err(Error::Io { source, .. }) if source.kind() == io::ErrorKind::AlreadyExists => {
+                Err(Error::RestoreLocked { lock: path })
+            }
+            Err(err) => Err(err),
+        }
+    }
+}
+
+impl Drop for RestoreLock {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_file(&self.path) {
+            tracing::warn!(%error, path = %self.path.display(), "couldn't remove the restore lock");
+        }
+    }
+}
+
+/// [`release`], retried for up to [`RELEASE_WAIT`] while the database is
+/// in use: a call that was running when the restore lock appeared closes
+/// its connection when it finishes.
+fn release_waiting(db_path: &Path) -> Result<(), Error> {
+    let started = Instant::now();
+    loop {
+        match release(db_path) {
+            Err(Error::InUse { .. }) if started.elapsed() < RELEASE_WAIT => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            result => return result,
+        }
+    }
+}
+
 fn release(db_path: &Path) -> Result<(), Error> {
     let conn = db::connect(db_path)?;
     conn.busy_timeout(db::BUSY_TIMEOUT)?;
