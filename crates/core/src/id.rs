@@ -93,3 +93,7 @@ row_id!(
     /// A `change_batch` row.
     ChangeBatchId
 );
+row_id!(
+    /// A `transaction_link` row: a refund, reimbursement or settlement.
+    LinkId
+);
