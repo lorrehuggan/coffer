@@ -24,7 +24,7 @@
 //!
 //! [`detect`] is pure and deterministic: rows in, series out, no clock, no
 //! floats (amounts are integer minor units throughout). [`find`] runs it
-//! over the ledger ([`load_rows`]: one row per transaction, a split's lines
+//! over the ledger (`load_rows`: one row per transaction, a split's lines
 //! summed back) and leaves out dismissed series and series already
 //! scheduled.
 //!
@@ -1139,12 +1139,12 @@ pub(crate) fn find_in(conn: &rusqlite::Connection) -> Result<Vec<RecurringSeries
         .collect())
 }
 
-/// [`find_in`] on the database.
+/// `find_in` on the database: the series to show the user.
 pub fn find(db: &crate::db::Database) -> Result<Vec<RecurringSeries>, Error> {
     find_in(db.conn())
 }
 
-/// [`find_in`] on a read-only connection (the MCP server).
+/// `find_in` (as [`find`]) on a read-only connection (the MCP server).
 pub fn find_with_reader(reader: &crate::db::Reader) -> Result<Vec<RecurringSeries>, Error> {
     find_in(reader.conn())
 }

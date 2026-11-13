@@ -562,7 +562,6 @@ fn create_refuses_a_bad_schedule() {
 }
 
 #[test]
-#[ignore = "needs recurring detection (Block D lead runs it after merge)"]
 fn confirm_creates_a_schedule_from_a_detected_series() {
     let mut f = Fixture::new();
     f.import(vec![
