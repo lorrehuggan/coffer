@@ -10,7 +10,8 @@ publish.workspace = true
 coffer-core.workspace = true
 coffer-import.workspace = true
 rmcp.workspace = true
-tokio.workspace = true
+# `time`: the server checks a connected client's access on a timer.
+tokio = { workspace = true, features = ["time"] }
 schemars.workspace = true
 serde.workspace = true
 # Tool arguments arrive and results leave as JSON objects (rmcp's own type);
