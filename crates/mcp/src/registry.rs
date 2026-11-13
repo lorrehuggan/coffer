@@ -115,6 +115,15 @@ struct Args<A> {
     args: A,
 }
 
+/// The merchant label [`Call::merchant`] gives below `standard` when the
+/// database has no pseudonym key. Not a token, so it can't collide with one.
+pub const HIDDEN_MERCHANT: &str = "M-hidden";
+
+/// What [`Call::untrusted`] gives below `standard`, in place of bank text.
+/// Coffer's words, like the withheld marker.
+pub const HIDDEN_DESCRIPTION: &str =
+    "[hidden: descriptions name merchants, so they aren't shared at this access level]";
+
 /// What a handler may use during one call.
 pub struct Call<'a> {
     reader: &'a Reader,
@@ -163,18 +172,54 @@ impl<'a> Call<'a> {
             .ok_or(ToolError::Internal("this tool isn't registered as writing"))
     }
 
-    /// How a merchant is shown to this client: its display name, or at
-    /// `pseudonymous` a stable token.
+    /// How a merchant is shown to this client.
+    ///
+    /// - `standard`: the display name, without invisible characters
+    ///   ([`envelope::strip_invisible`]). A display name comes from bank
+    ///   text too (a row without a merchant takes its description), so one
+    ///   that reads like instructions ([`envelope::reads_like_instructions`])
+    ///   is withheld like a description: the marker, counted in the access
+    ///   log's `withheld_count`.
+    /// - `pseudonymous`: a stable token, `M-` and 12 hex digits
+    ///   ([`envelope::pseudonym`]): the same name gives the same token in
+    ///   this database, a different one in another.
+    /// - `aggregate` returns no rows, so no tool should call this; if one
+    ///   does, it gets the token too. Without a key (never the case at
+    ///   `pseudonymous`: the server refuses the call) it gets
+    ///   [`HIDDEN_MERCHANT`].
     pub fn merchant(&self, display: &str) -> MerchantLabel {
-        // Block B: wired up by the envelope work (envelope::pseudonym).
-        let _ = &self.pseudonym_key;
-        MerchantLabel::new(display.to_owned())
+        if self.level == AccessLevel::Standard {
+            let visible = envelope::strip_invisible(display);
+            if envelope::reads_like_instructions(&visible).is_some() {
+                return MerchantLabel::new(self.withhold(&visible));
+            }
+            return MerchantLabel::new(visible);
+        }
+        MerchantLabel::new(match &self.pseudonym_key {
+            Some(key) => envelope::pseudonym(key, display),
+            None => HIDDEN_MERCHANT.to_owned(),
+        })
+    }
+
+    /// The withheld marker for `text`, counted for the access log.
+    fn withhold(&self, text: &str) -> String {
+        self.withheld.set(self.withheld.get() + 1);
+        let sanitized = envelope::sanitize(text);
+        debug_assert!(sanitized.is_withheld());
+        sanitized.text
     }
 
     /// Bank text as `description_untrusted`: sanitised and capped, or
     /// withheld ([`envelope::sanitize`]). Counts what was withheld for the
     /// access log.
+    ///
+    /// Below `standard` it is always [`HIDDEN_DESCRIPTION`]: bank text names
+    /// the merchant (`BEAN THERE TESTVILLE GBR`), so sending it would undo
+    /// the pseudonyms. That isn't counted as withheld.
     pub fn untrusted(&self, raw: &str) -> UntrustedText {
+        if self.level < AccessLevel::Standard {
+            return UntrustedText::new(HIDDEN_DESCRIPTION.to_owned());
+        }
         let sanitized = envelope::sanitize(raw);
         if sanitized.is_withheld() {
             self.withheld.set(self.withheld.get() + 1);
