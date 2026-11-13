@@ -15,10 +15,16 @@
 //! - `coffer backup [--list]`, `coffer restore <file>`: local backups
 //!   ([`backup`]).
 //! - `coffer export --format csv|json`: the ledger as a file ([`export`]).
+//! - `coffer ai-access list|enable|level|revoke|ignore|off|on|log`: which AI
+//!   clients may use the MCP server, at which level ([`ai_access`]).
+//! - `coffer budgets [list|set|remove]`: monthly budgets per category
+//!   ([`budgets`]).
 //! - `coffer mcp --client <name>`: the MCP server over stdio ([`mcp`]). It
 //!   ignores the output writer: stdout carries MCP messages only.
 //! - `coffer schedules detect|list|show|confirm|…`: recurring payments and
 //!   schedules ([`schedules`]).
+//! - `coffer inbox [list|show|approve|reject]`: review AI clients'
+//!   suggestions and decide them ([`inbox`]).
 //!
 //! Output is what the user asked for and nothing else. Errors are returned
 //! (as `anyhow` errors: this is the binary's layer) for `main` to print on
@@ -30,6 +36,7 @@ pub mod backup;
 pub mod budgets;
 pub mod export;
 pub mod import;
+pub mod inbox;
 pub mod mcp;
 pub mod schedules;
 pub mod undo;
@@ -42,6 +49,8 @@ mod backup_tests;
 mod budgets_tests;
 #[cfg(test)]
 mod export_tests;
+#[cfg(test)]
+mod inbox_tests;
 #[cfg(test)]
 mod schedules_tests;
 #[cfg(test)]
@@ -60,6 +69,7 @@ pub use ai_access::{AiAccessArgs, AiAccessCommand};
 pub use backup::{BackupArgs, RestoreArgs};
 pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
+pub use inbox::{ApproveArgs, InboxArgs, InboxCommand, ListArgs, RejectArgs, ShowArgs};
 pub use mcp::McpArgs;
 pub use schedules::{SchedulesArgs, SchedulesCommand};
 pub use undo::UndoImportArgs;
@@ -108,6 +118,9 @@ pub enum Command {
     /// Find recurring payments, confirm them as schedules, and manage
     /// schedules.
     Schedules(SchedulesArgs),
+    /// Review the suggestions AI clients filed, and approve or reject them.
+    /// Lists the pending ones when given no command.
+    Inbox(InboxArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -152,6 +165,10 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
         Command::Schedules(args) => {
             let mut db = open_existing(database)?;
             schedules::run(&mut db, &args, out)
+        }
+        Command::Inbox(args) => {
+            let mut db = open_existing(database)?;
+            inbox::run(&mut db, args, out)
         }
     }
 }

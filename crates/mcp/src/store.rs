@@ -20,7 +20,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use coffer_core::access_log::{self, NewEntry};
 use coffer_core::db::Database;
-use coffer_core::inbox::{self, NewReport, NewSuggestion};
+use coffer_core::inbox::{self, Filed, NewReport, NewSuggestion};
 use coffer_core::mcp_client::{self, ClientName};
 
 use crate::registry::ToolError;
@@ -90,13 +90,22 @@ pub struct Inbox<'a> {
 }
 
 impl Inbox<'_> {
-    /// Files a pending suggestion and returns its ID.
+    /// Files a pending suggestion and returns its ID: the existing one when
+    /// an identical suggestion is already pending.
     pub fn suggest(&self, suggestion: &NewSuggestion) -> Result<i64, ToolError> {
+        Ok(self.file(suggestion)?.id.get())
+    }
+
+    /// Files a pending suggestion, saying whether an identical one was
+    /// already pending. A payload core refuses is
+    /// [`ToolError::InvalidArguments`], with core's message (IDs, keys and
+    /// limits, never the client's text), and nothing is written.
+    pub fn file(&self, suggestion: &NewSuggestion) -> Result<Filed, ToolError> {
         let mut db = self
             .store
             .lock()
             .map_err(|_| ToolError::Internal("the database connection is unusable"))?;
-        inbox::insert_suggestion(&mut db, &self.store.client, suggestion).map_err(ToolError::core)
+        inbox::file_suggestion(&mut db, &self.store.client, suggestion).map_err(refusal)
     }
 
     /// Saves a report and returns its ID.
@@ -105,6 +114,19 @@ impl Inbox<'_> {
             .store
             .lock()
             .map_err(|_| ToolError::Internal("the database connection is unusable"))?;
-        inbox::insert_report(&mut db, &self.store.client, report).map_err(ToolError::core)
+        inbox::insert_report(&mut db, &self.store.client, report).map_err(refusal)
+    }
+}
+
+/// What the client is told when core refuses an inbox write: why, for
+/// what the client sent; the generic error for anything else.
+fn refusal(error: inbox::Error) -> ToolError {
+    match error {
+        inbox::Error::Invalid(_)
+        | inbox::Error::RationaleTooLong
+        | inbox::Error::TooManyPending
+        | inbox::Error::BlankReportField { .. }
+        | inbox::Error::ReportTooLong { .. } => ToolError::InvalidArguments(error.to_string()),
+        error => ToolError::core(error),
     }
 }

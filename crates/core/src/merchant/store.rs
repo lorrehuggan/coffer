@@ -62,7 +62,17 @@ pub enum InvalidAlias {
 /// [`Error::Duplicate`].
 pub fn add(db: &mut Database, alias: &AliasDefinition) -> Result<(MerchantAliasId, usize), Error> {
     let tx = db.conn_mut().transaction()?;
-    refuse_duplicate(&tx, alias, None)?;
+    let added = add_in(&tx, alias)?;
+    tx.commit()?;
+    Ok(added)
+}
+
+/// [`add`] inside the caller's DB transaction.
+pub(crate) fn add_in(
+    tx: &Connection,
+    alias: &AliasDefinition,
+) -> Result<(MerchantAliasId, usize), Error> {
+    refuse_duplicate(tx, alias, None)?;
     tx.execute(
         "INSERT INTO merchant_alias (match_kind, pattern, display_name) VALUES (?1, ?2, ?3)",
         params![
@@ -72,8 +82,7 @@ pub fn add(db: &mut Database, alias: &AliasDefinition) -> Result<(MerchantAliasI
         ],
     )?;
     let id = MerchantAliasId::new(tx.last_insert_rowid());
-    let changed = AliasSet::load(&tx)?.recompute_all(&tx)?;
-    tx.commit()?;
+    let changed = AliasSet::load(tx)?.recompute_all(tx)?;
     Ok((id, changed))
 }
 

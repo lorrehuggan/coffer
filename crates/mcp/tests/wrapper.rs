@@ -55,8 +55,8 @@ const SUGGEST: ToolSpec = ToolSpec {
 
 fn suggestion() -> NewSuggestion {
     NewSuggestion {
-        kind: SuggestionKind::Categorization,
-        payload: json!({ "transaction_id": 1, "category": "food.groceries" }),
+        kind: SuggestionKind::MerchantAlias,
+        payload: json!({ "pattern": "TEST SHOP", "display_name": "Test shop" }),
         rationale: Some("test".to_owned()),
     }
 }

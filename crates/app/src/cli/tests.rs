@@ -238,11 +238,6 @@ fn parses_undo_import() {
 }
 
 #[test]
-fn later_commands_arent_there_yet() {
-    assert!(Cli::try_parse_from(["coffer", "inbox"]).is_err());
-}
-
-#[test]
 fn parses_mcp() {
     let cli = Cli::try_parse_from(["coffer", "mcp", "--client", "claude-code"]).unwrap();
     let Some(Command::Mcp(args)) = cli.command else {
@@ -280,6 +275,12 @@ fn read_only_commands_need_an_existing_database() {
     assert!(
         scratch
             .err(&["undo-import", "1"])
+            .contains("no Coffer database")
+    );
+    assert!(scratch.err(&["inbox"]).contains("no Coffer database"));
+    assert!(
+        scratch
+            .err(&["inbox", "approve", "1"])
             .contains("no Coffer database")
     );
     assert!(!scratch.db.exists(), "a read-only command creates nothing");
