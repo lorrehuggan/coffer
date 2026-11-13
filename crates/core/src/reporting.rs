@@ -96,6 +96,11 @@ pub enum Error {
 
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
+
+    /// A stored rule no longer validates. The message names the rule and
+    /// the problem, never its pattern or action text.
+    #[error(transparent)]
+    Rule(#[from] crate::rule::StoreError),
 }
 
 impl Error {
@@ -112,6 +117,7 @@ impl Error {
             | Error::UnknownTag
             | Error::InvalidAmountRange => true,
             Error::Money(_) | Error::Database(_) => false,
+            Error::Rule(_) => false,
         }
     }
 }
