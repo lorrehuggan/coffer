@@ -25,6 +25,7 @@
 pub mod accounts;
 pub mod ai_access;
 pub mod backup;
+pub mod budgets;
 pub mod export;
 pub mod import;
 pub mod mcp;
@@ -34,6 +35,8 @@ pub mod undo;
 mod ai_access_tests;
 #[cfg(test)]
 mod backup_tests;
+#[cfg(test)]
+mod budgets_tests;
 #[cfg(test)]
 mod export_tests;
 #[cfg(test)]
@@ -93,6 +96,9 @@ pub enum Command {
     /// Which AI clients may use the MCP server and at which level, the
     /// kill switch, and the AI access log.
     AiAccess(AiAccessArgs),
+    /// List, set or remove budgets: what you mean to spend in a category
+    /// each month.
+    Budgets(budgets::BudgetsArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -133,6 +139,7 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
         }
         Command::Mcp(args) => mcp::run(database, &args),
         Command::AiAccess(args) => ai_access::run(database, args, out),
+        Command::Budgets(args) => budgets::run(database, args, out),
     }
 }
 
