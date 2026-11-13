@@ -138,7 +138,10 @@ async fn where_did_my_money_go_last_month() {
     for &target in &targets {
         assert_eq!(
             category_of(&fixture, target),
-            (Some("bills.energy".to_owned()), Some("ai_approved".to_owned()))
+            (
+                Some("bills.energy".to_owned()),
+                Some("ai_approved".to_owned())
+            )
         );
     }
     let after = client
