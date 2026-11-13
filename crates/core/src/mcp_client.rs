@@ -7,18 +7,26 @@
 //! and at which [`AccessLevel`]. The MCP server registers only the tools at
 //! or below a client's level.
 //!
-//! Wave 0 reads a client's level and nothing else. Block B (access control)
-//! adds the rest here: recording a requested client, enabling, ignoring and
-//! changing the level from the CLI and the app, and the kill switch
-//! ([`crate::setting`]).
+//! A client's lifecycle ([`ClientStatus`]):
+//!
+//! - **requested**: the server saw a name it didn't know and recorded it
+//!   ([`record_requested`], the one write the server makes here). Not
+//!   enabled; every call is refused.
+//! - **known**: the user answered by enabling it ([`enable`], which starts
+//!   at `aggregate`). [`revoke`] keeps it known but not enabled.
+//! - **ignored**: the user hid the request ([`ignore`]). Not enabled.
+//!
+//! Only the app and the CLI, which hold `&mut Database`, enable a client or
+//! change its level; the server holds a [`Reader`] for everything but
+//! [`record_requested`]. The kill switch is [`crate::setting::mcp_enabled`].
 
 use std::fmt;
 use std::str::FromStr;
 
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
-use rusqlite::{OptionalExtension, ToSql};
+use rusqlite::{OptionalExtension, Row, ToSql, params};
 
-use crate::db::Reader;
+use crate::db::{Database, Reader};
 use crate::rule::{UnknownKey, key_enum};
 
 key_enum! {
@@ -117,17 +125,241 @@ pub enum ClientNameError {
     Reserved,
 }
 
-/// Why reading a client failed.
+/// Why reading or changing a client failed.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// No client has this name.
+    #[error("there is no AI client called `{0}`")]
+    NotFound(ClientName),
+
+    /// The client isn't enabled, so it has no level to change.
+    #[error("the AI client `{0}` isn't enabled; enable it first")]
+    NotEnabled(ClientName),
+
+    #[error(transparent)]
+    Setting(#[from] crate::setting::Error),
+
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 }
 
-/// The access level stored for `client`, `None` when it has no row.
+key_enum! {
+    /// Where a client's request stands, as `mcp_client.status` stores it.
+    ClientStatus, "client status" {
+        /// The server saw the name; the user hasn't answered.
+        Requested => "requested",
+        /// The user enabled it (it may since have been revoked).
+        Known => "known",
+        /// The user hid the request without enabling it.
+        Ignored => "ignored",
+    }
+}
+
+impl FromSql for ClientStatus {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<ClientStatus> {
+        value
+            .as_str()?
+            .parse()
+            .map_err(|error| FromSqlError::Other(Box::new(error)))
+    }
+}
+
+/// A client as the app and `coffer ai-access list` show it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientInfo {
+    pub name: ClientName,
+    pub status: ClientStatus,
+    pub enabled: bool,
+    /// The stored level. It only applies while [`ClientInfo::enabled`].
+    pub level: AccessLevel,
+    /// UTC, `YYYY-MM-DDTHH:MM:SS.SSSZ`.
+    pub created_at: String,
+    /// The latest of the client's request and its latest logged call, UTC;
+    /// `None` when neither is known.
+    pub last_seen_at: Option<String>,
+}
+
+/// What a client may do now, from its row alone (the kill switch is
+/// separate: [`crate::setting::mcp_enabled`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientAccess {
+    /// No row: the server records it with [`record_requested`].
+    Unknown,
+    /// Asked for access; the user hasn't answered.
+    Requested,
+    /// The user hid the request.
+    Ignored,
+    /// Enabled once, then revoked.
+    Revoked,
+    /// Enabled at this level.
+    Enabled(AccessLevel),
+}
+
+impl ClientAccess {
+    /// The level the client may use now, `None` when it may use no tool.
+    pub fn level(self) -> Option<AccessLevel> {
+        match self {
+            ClientAccess::Enabled(level) => Some(level),
+            _ => None,
+        }
+    }
+}
+
+const SELECT_CLIENT: &str = "SELECT c.name, c.status, c.enabled, c.access_level, c.created_at, \
+     NULLIF(max(coalesce(c.last_seen_at, ''), \
+                coalesce((SELECT max(l.at) FROM mcp_access_log l WHERE l.client = c.name), '')), '') \
+     FROM mcp_client c";
+
+fn client_info(row: &Row<'_>) -> rusqlite::Result<ClientInfo> {
+    let name: String = row.get(0)?;
+    Ok(ClientInfo {
+        name: ClientName::new(&name).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        status: row.get(1)?,
+        enabled: row.get(2)?,
+        level: row.get(3)?,
+        created_at: row.get(4)?,
+        last_seen_at: row.get(5)?,
+    })
+}
+
+/// Every client that has asked for access or been enabled, by name.
+pub fn list(reader: &Reader) -> Result<Vec<ClientInfo>, Error> {
+    let mut statement = reader
+        .conn()
+        .prepare(&format!("{SELECT_CLIENT} ORDER BY c.name"))?;
+    let rows = statement.query_map([], client_info)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// The client called `name`, `None` when it has no row.
+pub fn get(reader: &Reader, name: &ClientName) -> Result<Option<ClientInfo>, Error> {
+    get_on(reader.conn(), name)
+}
+
+fn get_on(conn: &rusqlite::Connection, name: &ClientName) -> Result<Option<ClientInfo>, Error> {
+    Ok(conn
+        .query_row(
+            &format!("{SELECT_CLIENT} WHERE c.name = ?1"),
+            [name.as_str()],
+            client_info,
+        )
+        .optional()?)
+}
+
+/// What `name` may do now. Read by the MCP server on every call.
+pub fn access(reader: &Reader, name: &ClientName) -> Result<ClientAccess, Error> {
+    let row: Option<(ClientStatus, bool, AccessLevel)> = reader
+        .conn()
+        .query_row(
+            "SELECT status, enabled, access_level FROM mcp_client WHERE name = ?1",
+            [name.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    Ok(match row {
+        None => ClientAccess::Unknown,
+        Some((_, true, level)) => ClientAccess::Enabled(level),
+        Some((ClientStatus::Requested, false, _)) => ClientAccess::Requested,
+        Some((ClientStatus::Ignored, false, _)) => ClientAccess::Ignored,
+        Some((ClientStatus::Known, false, _)) => ClientAccess::Revoked,
+    })
+}
+
+/// Records `name` as a client that asked for access: a `requested` row,
+/// not enabled. A name that already has a row is left as it is. Returns
+/// whether a row was created.
 ///
-/// Wave 0 reads the level whether or not the client is enabled. Block B
-/// replaces this with the full policy (enabled, requested, ignored).
+/// The only write the MCP server makes outside the inbox and its own log:
+/// it never enables a client or changes a level.
+pub fn record_requested(db: &mut Database, name: &ClientName) -> Result<bool, Error> {
+    let created = db.conn().execute(
+        "INSERT INTO mcp_client (name, status, enabled, last_seen_at) \
+         VALUES (?1, 'requested', 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) \
+         ON CONFLICT (name) DO NOTHING",
+        [name.as_str()],
+    )?;
+    Ok(created > 0)
+}
+
+/// Enables `name`, creating its row if the server hasn't seen it yet. A
+/// client that wasn't enabled starts at `aggregate`; one that already is
+/// keeps its level. Creates the pseudonym key on first use
+/// ([`crate::setting::ensure_pseudonym_key`]), so the server never writes
+/// settings.
+pub fn enable(db: &mut Database, name: &ClientName) -> Result<ClientInfo, Error> {
+    let tx = db.conn_mut().transaction()?;
+    tx.execute(
+        "INSERT INTO mcp_client (name, status, enabled, access_level) \
+         VALUES (?1, 'known', 1, 'aggregate') \
+         ON CONFLICT (name) DO UPDATE SET \
+             access_level = CASE WHEN enabled = 1 THEN access_level ELSE 'aggregate' END, \
+             status = 'known', \
+             enabled = 1",
+        [name.as_str()],
+    )?;
+    crate::setting::ensure_pseudonym_key_on(&tx)?;
+    let info = get_on(&tx, name)?.ok_or_else(|| Error::NotFound(name.clone()))?;
+    tx.commit()?;
+    Ok(info)
+}
+
+/// Sets an enabled client's level. Lowering it applies to the client's
+/// next call; raising it too, without restarting the server.
+pub fn set_level(db: &mut Database, name: &ClientName, level: AccessLevel) -> Result<(), Error> {
+    let changed = db.conn().execute(
+        "UPDATE mcp_client SET access_level = ?2 WHERE name = ?1 AND enabled = 1",
+        params![name.as_str(), level],
+    )?;
+    if changed == 0 {
+        return Err(missing_or_disabled(db, name));
+    }
+    Ok(())
+}
+
+/// Revokes `name`: it stays known, but isn't enabled, and its level goes
+/// back to `aggregate` for when it is enabled again.
+pub fn revoke(db: &mut Database, name: &ClientName) -> Result<(), Error> {
+    let changed = db.conn().execute(
+        "UPDATE mcp_client SET enabled = 0, access_level = 'aggregate' \
+         WHERE name = ?1 AND status = 'known'",
+        [name.as_str()],
+    )?;
+    if changed == 0 {
+        return Err(missing_or_disabled(db, name));
+    }
+    Ok(())
+}
+
+/// Hides `name`'s request without enabling it. An enabled client is
+/// revoked as well.
+pub fn ignore(db: &mut Database, name: &ClientName) -> Result<(), Error> {
+    let changed = db.conn().execute(
+        "UPDATE mcp_client SET status = 'ignored', enabled = 0, access_level = 'aggregate' \
+         WHERE name = ?1",
+        [name.as_str()],
+    )?;
+    if changed == 0 {
+        return Err(Error::NotFound(name.clone()));
+    }
+    Ok(())
+}
+
+fn missing_or_disabled(db: &Database, name: &ClientName) -> Error {
+    match get_on(db.conn(), name) {
+        Ok(Some(_)) => Error::NotEnabled(name.clone()),
+        Ok(None) => Error::NotFound(name.clone()),
+        Err(error) => error,
+    }
+}
+
+/// The access level stored for `client`, `None` when it has no row,
+/// whether or not it is enabled. The server uses [`access`].
 pub fn stored_level(reader: &Reader, client: &ClientName) -> Result<Option<AccessLevel>, Error> {
     Ok(reader
         .conn()
@@ -151,6 +383,103 @@ mod tests {
             assert_eq!(level.as_str().parse::<AccessLevel>().unwrap(), *level);
         }
         assert!("admin".parse::<AccessLevel>().is_err());
+    }
+
+    fn db() -> (tempfile::TempDir, Database) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = Database::open(&dir.path().join("coffer.db")).unwrap();
+        (dir, db)
+    }
+
+    fn name(name: &str) -> ClientName {
+        ClientName::new(name).unwrap()
+    }
+
+    #[test]
+    fn a_requested_client_is_not_enabled() {
+        let (_dir, mut db) = db();
+        let reader = db.reader().unwrap();
+        let codex = name("codex");
+        assert_eq!(access(&reader, &codex).unwrap(), ClientAccess::Unknown);
+        assert!(record_requested(&mut db, &codex).unwrap());
+        assert!(!record_requested(&mut db, &codex).unwrap());
+        assert_eq!(access(&reader, &codex).unwrap(), ClientAccess::Requested);
+        let info = get(&reader, &codex).unwrap().unwrap();
+        assert_eq!(info.status, ClientStatus::Requested);
+        assert!(!info.enabled);
+        assert!(info.last_seen_at.is_some());
+        // The server never writes a setting: no key yet.
+        assert_eq!(crate::setting::pseudonym_key(&reader).unwrap(), None);
+    }
+
+    #[test]
+    fn enabling_starts_at_aggregate_and_creates_the_key() {
+        let (_dir, mut db) = db();
+        let reader = db.reader().unwrap();
+        let codex = name("codex");
+        record_requested(&mut db, &codex).unwrap();
+        let info = enable(&mut db, &codex).unwrap();
+        assert_eq!(
+            (info.status, info.enabled, info.level),
+            (ClientStatus::Known, true, AccessLevel::Aggregate)
+        );
+        assert!(crate::setting::pseudonym_key(&reader).unwrap().is_some());
+
+        set_level(&mut db, &codex, AccessLevel::Standard).unwrap();
+        // Enabling again keeps the level.
+        assert_eq!(
+            enable(&mut db, &codex).unwrap().level,
+            AccessLevel::Standard
+        );
+        assert_eq!(
+            access(&reader, &codex).unwrap(),
+            ClientAccess::Enabled(AccessLevel::Standard)
+        );
+
+        // A name the server never saw can be enabled ahead of time.
+        let claude = name("claude-code");
+        assert_eq!(
+            enable(&mut db, &claude).unwrap().level,
+            AccessLevel::Aggregate
+        );
+        let names: Vec<_> = list(&reader)
+            .unwrap()
+            .into_iter()
+            .map(|info| info.name)
+            .collect();
+        assert_eq!(names, [claude, codex]);
+    }
+
+    #[test]
+    fn revoke_and_ignore_take_access_away() {
+        let (_dir, mut db) = db();
+        let reader = db.reader().unwrap();
+        let codex = name("codex");
+        enable(&mut db, &codex).unwrap();
+        set_level(&mut db, &codex, AccessLevel::Pseudonymous).unwrap();
+        revoke(&mut db, &codex).unwrap();
+        assert_eq!(access(&reader, &codex).unwrap(), ClientAccess::Revoked);
+        assert!(matches!(
+            set_level(&mut db, &codex, AccessLevel::Standard),
+            Err(Error::NotEnabled(_))
+        ));
+        // Enabled again, it starts over at aggregate.
+        assert_eq!(
+            enable(&mut db, &codex).unwrap().level,
+            AccessLevel::Aggregate
+        );
+
+        ignore(&mut db, &codex).unwrap();
+        assert_eq!(access(&reader, &codex).unwrap(), ClientAccess::Ignored);
+        assert!(matches!(revoke(&mut db, &codex), Err(Error::NotEnabled(_))));
+
+        let ghost = name("ghost");
+        assert!(matches!(ignore(&mut db, &ghost), Err(Error::NotFound(_))));
+        assert!(matches!(revoke(&mut db, &ghost), Err(Error::NotFound(_))));
+        assert!(matches!(
+            set_level(&mut db, &ghost, AccessLevel::Standard),
+            Err(Error::NotFound(_))
+        ));
     }
 
     #[test]

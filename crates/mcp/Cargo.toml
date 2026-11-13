@@ -10,7 +10,8 @@ publish.workspace = true
 coffer-core.workspace = true
 coffer-import.workspace = true
 rmcp.workspace = true
-tokio.workspace = true
+# `time`: the server checks a connected client's access on a timer.
+tokio = { workspace = true, features = ["time"] }
 schemars.workspace = true
 serde.workspace = true
 # Tool arguments arrive and results leave as JSON objects (rmcp's own type);
@@ -18,6 +19,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+# The access log's `result_hash`: SHA-256 of the canonical result JSON.
+sha2.workspace = true
 
 [dev-dependencies]
 # The in-process MCP client the tests call tools through (tests/support).

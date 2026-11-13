@@ -23,12 +23,15 @@
 //! stderr. Nothing is logged; transaction text never reaches a log.
 
 pub mod accounts;
+pub mod ai_access;
 pub mod backup;
 pub mod export;
 pub mod import;
 pub mod mcp;
 pub mod undo;
 
+#[cfg(test)]
+mod ai_access_tests;
 #[cfg(test)]
 mod backup_tests;
 #[cfg(test)]
@@ -45,6 +48,7 @@ use coffer_core::db::Database;
 use coffer_import::preset::Presets;
 
 pub use accounts::{AccountsArgs, AccountsCommand, AddAccountArgs};
+pub use ai_access::{AiAccessArgs, AiAccessCommand};
 pub use backup::{BackupArgs, RestoreArgs};
 pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
@@ -86,6 +90,9 @@ pub enum Command {
     /// Run the MCP server over stdin/stdout for an AI client (Claude Code,
     /// Codex, …). Needs an existing database.
     Mcp(McpArgs),
+    /// Which AI clients may use the MCP server and at which level, the
+    /// kill switch, and the AI access log.
+    AiAccess(AiAccessArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -125,6 +132,7 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
             export::run(&db, &args, out)
         }
         Command::Mcp(args) => mcp::run(database, &args),
+        Command::AiAccess(args) => ai_access::run(database, args, out),
     }
 }
 

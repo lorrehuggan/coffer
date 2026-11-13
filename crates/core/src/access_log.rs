@@ -9,8 +9,9 @@
 //! write (`AGENTS.md` → Invariants): no tool can reach it, and the client's
 //! only input is the untrusted `purpose` string.
 //!
-//! Rows are only appended (and later deleted when they expire, Block B);
-//! the schema refuses edits.
+//! Rows are only appended, and deleted when they are older than
+//! [`RETENTION_MONTHS`] ([`expire`], run when the server starts: the log's
+//! own housekeeping, not a tool write). The schema refuses edits.
 
 use std::fmt;
 use std::str::FromStr;
@@ -131,14 +132,39 @@ pub fn append(db: &mut Database, entry: &NewEntry) -> Result<i64, Error> {
     Ok(db.conn().last_insert_rowid())
 }
 
+/// How long a row is kept, in months. A default, not an invariant
+/// (decision record 2026-11-10, point 5).
+pub const RETENTION_MONTHS: u32 = 12;
+
+/// Deletes the rows older than [`RETENTION_MONTHS`] and returns how many
+/// went. The MCP server runs it when it starts.
+pub fn expire(db: &mut Database) -> Result<usize, Error> {
+    Ok(db.conn().execute(
+        "DELETE FROM mcp_access_log \
+         WHERE at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?1)",
+        [format!("-{RETENTION_MONTHS} months")],
+    )?)
+}
+
 /// The latest `limit` calls, newest first.
 pub fn recent(reader: &Reader, limit: u32) -> Result<Vec<LoggedCall>, Error> {
+    recent_for(reader, None, limit)
+}
+
+/// The latest `limit` calls, newest first, only `client`'s when given. The
+/// name is matched as stored, so it finds calls from a name that has no
+/// `mcp_client` row.
+pub fn recent_for(
+    reader: &Reader,
+    client: Option<&str>,
+    limit: u32,
+) -> Result<Vec<LoggedCall>, Error> {
     let mut statement = reader.conn().prepare(
         "SELECT id, at, client, tool, access_level, outcome, purpose, args_redacted_json, \
          row_count, result_hash, withheld_count \
-         FROM mcp_access_log ORDER BY id DESC LIMIT ?1",
+         FROM mcp_access_log WHERE ?1 IS NULL OR client = ?1 ORDER BY id DESC LIMIT ?2",
     )?;
-    let rows = statement.query_map([limit], |row| {
+    let rows = statement.query_map(params![client, limit], |row| {
         Ok(LoggedCall {
             id: row.get(0)?,
             at: row.get(1)?,
@@ -226,6 +252,51 @@ mod tests {
         ] {
             assert!(append(&mut db, &refused).is_err(), "{refused:?}");
         }
+    }
+
+    #[test]
+    fn filters_by_client() {
+        let dir = TempDir::new().unwrap();
+        let mut db = Database::open(&dir.path().join("coffer.db")).unwrap();
+        append(&mut db, &entry(Outcome::Ok)).unwrap();
+        append(
+            &mut db,
+            &NewEntry {
+                client: ClientName::new("codex").unwrap(),
+                ..entry(Outcome::RefusedNotEnabled)
+            },
+        )
+        .unwrap();
+        let reader = db.reader().unwrap();
+        let codex = recent_for(&reader, Some("codex"), 10).unwrap();
+        assert_eq!(codex.len(), 1);
+        assert_eq!(codex[0].outcome, Outcome::RefusedNotEnabled);
+        assert_eq!(recent_for(&reader, None, 1).unwrap().len(), 1);
+        assert!(recent_for(&reader, Some("nobody"), 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn rows_older_than_twelve_months_expire() {
+        let dir = TempDir::new().unwrap();
+        let mut db = Database::open(&dir.path().join("coffer.db")).unwrap();
+        let insert_at = |db: &Database, modifier: &str| {
+            db.conn()
+                .execute(
+                    "INSERT INTO mcp_access_log (at, client, tool, outcome) VALUES \
+                     (strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?1), 'codex', 'list_categories', 'ok')",
+                    [modifier],
+                )
+                .unwrap();
+        };
+        insert_at(&db, "-13 months");
+        insert_at(&db, "-370 days");
+        insert_at(&db, "-11 months");
+        insert_at(&db, "-360 days");
+        insert_at(&db, "-1 seconds");
+        assert_eq!(expire(&mut db).unwrap(), 2);
+        let kept = recent(&db.reader().unwrap(), 10).unwrap();
+        assert_eq!(kept.len(), 3);
+        assert_eq!(expire(&mut db).unwrap(), 0);
     }
 
     #[test]

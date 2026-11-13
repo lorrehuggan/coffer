@@ -7,9 +7,11 @@ Coffer's MCP server: `coffer mcp --client <name>` runs it over stdio. Design and
 
 `server.rs` handles every `tools/call` in one wrapper, **gate → call → log**:
 
-1. `access::client_level` reads the client's level (on every call), and `access::gate`
-   allows the call or refuses it with an outcome (`refused_level`, later `refused_off`,
-   `refused_not_enabled`).
+1. `access::for_request` reads the kill switch and the client's row (on every call and
+   every `tools/list`; an unknown name is recorded as `requested`), and `access::gate`
+   allows the call or refuses it with an outcome (`refused_off`, `refused_not_enabled`,
+   `refused_level`). When the level differs from what the client last listed, the server
+   sends `notifications/tools/list_changed`.
 2. The handler runs with a `Call`: the read-only connection (`Call::reader`), the
    client's level, constructors for output types and, only for tools registered as
    writing, the inbox.
@@ -17,8 +19,8 @@ Coffer's MCP server: `coffer mcp --client <name>` runs it over stdio. Design and
    written, the call fails and no data goes out.
 
 Queries run on `coffer_core::db::Reader`, which SQLite keeps read-only (`query_only`).
-The only writes are in `store.rs`: a suggestion, a report (through `Inbox`) and the
-access-log row (the wrapper's own).
+The only writes are in `store.rs`: a suggestion, a report (through `Inbox`), the
+access-log row (the wrapper's own) and the server's own client name as `requested`.
 
 ## Adding a tool
 
