@@ -619,8 +619,8 @@ server (2026-11-13)"; setup: [`mcp-setup.md`](mcp-setup.md).
   `pseudonymous` up, text search only at `standard` (user decisions, 2026-11-13)
 - ✅ M2.3 Inbox-only writes: `propose_categorizations`, `propose_rule`,
   `propose_transfer_pair`, `save_report`. `coffer_core::inbox`: typed, validated payloads,
-  one pending copy per payload, 200 pending suggestions and 500 reports per client,
-  `V13__inbox.sql` (decision columns and triggers); approve and reject with an impact
+  one pending copy per payload, 200 pending suggestions and 500 reports per client
+  (the user frees room with `coffer inbox delete-report`), `V13__inbox.sql` (decision columns and triggers); approve and reject with an impact
   preview
 - ✅ M2.4 `monthly_review` prompt: its steps name only the tools at the client's level and
   end with `save_report` (`crates/mcp/src/prompts.rs`)
@@ -633,8 +633,9 @@ server (2026-11-13)"; setup: [`mcp-setup.md`](mcp-setup.md).
   deterministic chains per cadence (weekly to yearly), fixed and variable amounts, noise
   rejection, "Not recurring" dismissals (`recurring_dismissal`, V12)
 - ✅ M2.7 CLI inbox until the GUI exists: `coffer inbox [approve|reject]`. Also `list`,
-  `show` (with the impact preview) and the saved reports; approving several IDs is all or
-  nothing; AI-written text is shown stripped and labelled unverified
+  `show` (with the impact preview) and the saved reports (`reports`, `report`,
+  `delete-report` by ID or by client, all or nothing, `--yes` to delete); approving
+  several IDs is all or nothing; AI-written text is shown stripped and labelled unverified
 - ✅ M2.8 Setup docs for Claude Code, Claude Desktop, and Codex
   ([`mcp-setup.md`](mcp-setup.md): configuration, levels, the kill switch, the log, a
   profile with Coffer as the only data source)
@@ -719,7 +720,7 @@ and duplicates) without the CLI.
 - ⬜ M4.4 Budgets: per-category monthly targets with progress
 - ⬜ M4.5 Net worth: balances over time across accounts
 - ⬜ M4.6 Multi-currency reporting in home currency; opt-in ECB rate fetch + manual rates
-- ⬜ M4.7 Reviews: browse saved MCP reports
+- ⬜ M4.7 Reviews: browse and delete saved MCP reports
 - ⬜ M4.8 Upcoming payments and a daily balance forecast per account from schedules,
   showing the lowest balance before the next income; `cash_flow_forecast` read tool
   (cached FX only)

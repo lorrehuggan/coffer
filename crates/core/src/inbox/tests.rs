@@ -525,7 +525,8 @@ fn caps_the_saved_reports_per_source() {
     );
     assert_eq!(
         error.to_string(),
-        "this client has saved 500 reports, the most one client may keep; no more can be saved"
+        "this client has saved 500 reports, the most one client may keep; no more can be saved \
+         until the user deletes some in Coffer (`coffer inbox delete-report`)"
     );
     assert_eq!(f.count("report"), MAX_REPORTS_PER_SOURCE as i64);
 

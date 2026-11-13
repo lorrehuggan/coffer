@@ -13,7 +13,11 @@
 //! - each call writes exactly one access-log row, for that tool, level and
 //!   outcome;
 //! - no tool writes outside `suggestion` and `report`, and only the tools
-//!   registered as writing add to them, filed as the calling client.
+//!   registered as writing add to them, filed as the calling client;
+//! - no tool changes or deletes a suggestion or report that was already
+//!   there (reports from the calling client and another one are seeded):
+//!   deleting a report is the user's, in `coffer inbox delete-report`, and
+//!   [`no_server_code_deletes_reports`] checks the server never calls it.
 //!
 //! [`MATRIX`] must list exactly the registered tools: a new tool fails
 //! [`the_matrix_lists_every_registered_tool`] until it is added here with
@@ -26,7 +30,8 @@ use std::collections::BTreeSet;
 use coffer_core::access_log::Outcome;
 use coffer_mcp::registry::Writes;
 use serde_json::{Value, json};
-use support::inbox::{InboxIds, inbox_counts, outside_inbox, seed, suggestions};
+use support::inbox::{InboxIds, inbox_counts, inbox_rows, outside_inbox, seed, suggestions};
+use support::reports::add_report;
 use support::*;
 
 const CLIENT: &str = "matrix-client";
@@ -210,6 +215,46 @@ fn the_matrix_lists_every_registered_tool() {
     }
 }
 
+/// The server's code never reaches core's report deletion, nor deletes
+/// from `report` itself. A source check, beside the matrix's check of
+/// every tool's effect, so a deletion path added for some other reason
+/// (a cleanup, a new store method) fails here too.
+#[test]
+fn no_server_code_deletes_reports() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = vec![src];
+    let mut checked = 0;
+    while let Some(path) = files.pop() {
+        if path.is_dir() {
+            files.extend(
+                std::fs::read_dir(&path)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path()),
+            );
+            continue;
+        }
+        if path.extension().is_none_or(|ext| ext != "rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let folded = text.to_ascii_lowercase();
+        for needle in [
+            "delete_reports",
+            "reports_to_delete",
+            "reportselection",
+            "delete from report",
+        ] {
+            assert!(
+                !folded.contains(needle),
+                "{} mentions {needle}",
+                path.display()
+            );
+        }
+        checked += 1;
+    }
+    assert!(checked > 5, "only {checked} source files found");
+}
+
 #[tokio::test]
 async fn every_tool_at_every_level() {
     let fixture = Fixture::new();
@@ -218,6 +263,8 @@ async fn every_tool_at_every_level() {
     // Enabling is the user's step, and creates the pseudonym key: compare
     // the database after it.
     fixture.set_client(CLIENT, Aggregate);
+    add_report(&fixture, CLIENT, "Seeded mine", "", None);
+    add_report(&fixture, "other-client", "Seeded theirs", "", None);
     let untouched = outside_inbox(&fixture);
 
     for &level in LEVELS {
@@ -232,6 +279,7 @@ async fn every_tool_at_every_level() {
 
             let logged = fixture.access_log().len();
             let (suggestions_before, reports_before) = inbox_counts(&fixture);
+            let inbox_before = inbox_rows(&fixture);
             let args = (entry.args)(&ids);
 
             if expected {
@@ -276,6 +324,14 @@ async fn every_tool_at_every_level() {
                 untouched,
                 "{at} wrote outside the inbox"
             );
+            let inbox_after = inbox_rows(&fixture);
+            for (key, row) in &inbox_before {
+                assert_eq!(
+                    inbox_after.get(key),
+                    Some(row),
+                    "{at} changed or deleted {key:?}"
+                );
+            }
             let (suggestions_after, reports_after) = inbox_counts(&fixture);
             let wrote = (suggestions_after - suggestions_before) + (reports_after - reports_before);
             match (entry.writes, expected) {

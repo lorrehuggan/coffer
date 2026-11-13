@@ -84,7 +84,8 @@ Transactions screen on fixture data (`crates/app/src/transactions.rs`), and
 `restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2
 `mcp --client <name>`, `ai-access` (`list`, `enable`, `level`, `revoke`, `ignore`, `off`,
 `on`, `log`), `budgets` (`list`, `set`, `remove`), `schedules` (`detect`, `list`, `show`,
-`confirm`, …), `inbox` (`list`, `show`, `approve`, `reject`, and saved reports) and
+`confirm`, …), `inbox` (`list`, `show`, `approve`, `reject`, and saved reports:
+`reports`, `report`, `delete-report`, the user's way under the 500-report cap) and
 `categorize <transaction-id>... <category-key>`.
 `cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with
 Paper. Shared files stay at the root: `assets/` (fonts, brand) and `design/` (tokens).

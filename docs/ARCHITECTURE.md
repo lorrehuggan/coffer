@@ -1052,8 +1052,10 @@ Everything else follows an earlier decision record or invariant.
    tools at the client's level, so it never names one the client can't call; getting it
    isn't logged, since it returns no data (default).
 3. **Saved reports are capped at 500 per client**; the 501st is refused with a clear
-   error, counted and inserted in one transaction (default). Coffer has no command to
-   delete a report yet (M3).
+   error, counted and inserted in one transaction (default). The error tells the client
+   that the user can make room with `coffer inbox delete-report`, and names nothing of
+   the user's. `coffer inbox reports` notes any client at the cap with the command that
+   clears it (default).
 4. **`coffer inbox approve 1 2 3` is all or nothing** (`inbox::approve_all`, one
    transaction). A repeated ID is refused before anything is tried; a suggestion that an
    earlier approval in the same list settled is skipped, not an error, and the CLI says
@@ -1062,6 +1064,22 @@ Everything else follows an earlier decision record or invariant.
    has no bodies; a report is printed as plain text, each body line prefixed `  | ` so it
    can't pass for Coffer's own output, labelled as written by the client and unverified.
    The CLI strips exactly what `envelope::strip_invisible` strips (default).
+   **`coffer inbox delete-report <id>... [--yes]`** and
+   **`coffer inbox delete-report --client <name> [--before <YYYY-MM-DD>] [--yes]`**
+   delete saved reports (`inbox::delete_reports`): the user's only way to free a
+   client's allowance, so the cap is never a dead end. Without `--yes` they list what
+   would go (ID, period, client, date, title, stripped and labelled as above) and change
+   nothing, as `coffer restore` and `coffer schedules delete` do; nothing is asked on
+   stdin. IDs are all or nothing in one transaction: an unknown or repeated ID deletes
+   none. `--before` is the start of that day in UTC, as `created_at` is stored; a client
+   with no matching reports deletes nothing and isn't an error. No backup is taken first
+   (deleting reports changes no money data); a report stays in backups taken before it
+   was deleted until they rotate out. Nothing else refers to a report by ID: no foreign
+   key, suggestion payload, `applied_json` or change batch names one, and the access log
+   keeps only a hash of `save_report`'s result; `report.id` is `AUTOINCREMENT`, so a
+   deleted ID is never reused. No MCP tool or server code path deletes a report: the
+   tool × level matrix checks that no call changes or removes an existing suggestion or
+   report, and that the server's source never calls core's deletion (default).
 6. **`coffer categorize <transaction-id>... <category-key>`** sets categories as the user
    through `inbox::own::recategorize`, so Coffer's own rule suggestions fire from the CLI
    until the GUI's inline edit (M3). It refuses a repeated ID, an unknown category or
@@ -1836,8 +1854,9 @@ are listed per currency, never added across currencies. Every tool takes an opti
 `propose_transfer_pair`, `propose_merchant_alias`, `propose_refund_link`, `save_report`.
 Payloads are validated against the database when filed and again when approved; an
 identical pending suggestion returns the existing ID (`already_pending`). Caps: 200
-pending suggestions and 500 saved reports per client. The source is always the calling
-client, never an argument.
+pending suggestions and 500 saved reports per client; only the user deletes reports
+(`coffer inbox delete-report`), never a tool. The source is always the calling client,
+never an argument.
 
 **Prompts**: `monthly_review(month)` — patterns, anomalies, subscription creep, budget
 variance and suggestions, ending with `save_report`. Its steps name only tools registered

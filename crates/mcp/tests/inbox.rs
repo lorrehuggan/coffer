@@ -708,7 +708,7 @@ fn assert_only_shapes(redacted: &Value, tool: &str) {
 }
 
 #[tokio::test]
-async fn save_report_beyond_the_per_client_cap_is_refused_and_writes_nothing() {
+async fn save_report_beyond_the_per_client_cap_is_refused_until_the_user_deletes_one() {
     use coffer_core::inbox::{self, MAX_REPORTS_PER_SOURCE, NewReport};
     use coffer_core::mcp_client::ClientName;
 
@@ -732,11 +732,32 @@ async fn save_report_beyond_the_per_client_cap_is_refused_and_writes_nothing() {
     let result = client.call(save.tool, (save.args)(&ids, MARKER)).await;
     let text = error_text(&result);
     assert!(text.contains("saved 500 reports"), "{text}");
+    // It says how the user makes room, and nothing else of the user's.
+    assert!(text.contains("`coffer inbox delete-report`"), "{text}");
     assert!(!text.contains(MARKER), "{text}");
+    assert_no_pii(&serde_json::to_value(&result).unwrap());
     assert_eq!(inbox_counts(&fixture), (0, MAX_REPORTS_PER_SOURCE));
     assert_eq!(outside_inbox(&fixture), before);
     let call = fixture.access_log().pop().unwrap();
     assert_eq!(call.tool, "save_report");
     assert_eq!(call.outcome, Outcome::Error);
+
+    // The user deletes the oldest, as `coffer inbox delete-report` does;
+    // the same connection can save again, up to the cap.
+    let oldest = reports(&fixture)[0].0;
+    {
+        let mut db = fixture.open();
+        let deleted =
+            inbox::delete_reports(&mut db, &inbox::ReportSelection::Ids(vec![oldest])).unwrap();
+        assert_eq!(deleted.len(), 1);
+    }
+    let saved = client.call_ok(save.tool, (save.args)(&ids, MARKER)).await;
+    let id = saved["report_id"].as_i64().unwrap();
+    assert!(id > oldest, "{saved}");
+    assert_eq!(inbox_counts(&fixture), (0, MAX_REPORTS_PER_SOURCE));
+    assert_eq!(fixture.access_log().pop().unwrap().outcome, Outcome::Ok);
+    let refused = client.call(save.tool, (save.args)(&ids, MARKER)).await;
+    assert!(error_text(&refused).contains("saved 500 reports"));
+    assert_eq!(outside_inbox(&fixture), before);
     client.close().await;
 }

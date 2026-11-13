@@ -18,7 +18,8 @@
 //!   has at most [`MAX_PENDING_PER_SOURCE`] pending suggestions
 //!   ([`Error::TooManyPending`]): the user clears some first. Each source
 //!   has at most [`MAX_REPORTS_PER_SOURCE`] saved reports
-//!   ([`Error::TooManyReports`]).
+//!   ([`Error::TooManyReports`]) until the user deletes some
+//!   ([`delete_reports`], `coffer inbox delete-report`).
 //! - **Once.** A pending suggestion of the same kind with the same canonical
 //!   payload, from any source, is the same suggestion: filing it again
 //!   returns the existing ID ([`Filed::duplicate`]) and writes nothing. The
@@ -36,11 +37,17 @@
 //! marks it `approved` in the same DB transaction; rejecting marks it
 //! `rejected` with an optional reason ([`approve`], [`reject`]).
 //! [`impact`] reports what approving would change, against today's data.
+//!
+//! # Deleting reports
+//!
+//! Only the user deletes saved reports ([`delete_reports`]): by ID or by
+//! client, all or nothing. No MCP tool can.
 
 mod approve;
 mod impact;
 pub mod own;
 pub mod payload;
+mod reports;
 
 use std::fmt;
 use std::str::FromStr;
@@ -59,6 +66,9 @@ pub use impact::{
     WIDE_MERCHANTS, impact,
 };
 pub use payload::{Invalid, Payload};
+pub use reports::{
+    ReportHeading, ReportSelection, delete_reports, report_counts, reports_to_delete,
+};
 
 /// The longest rationale, in characters.
 pub const MAX_RATIONALE_CHARS: usize = 1_000;
@@ -77,7 +87,7 @@ pub const MAX_REPORT_BODY_CHARS: usize = 100_000;
 
 /// How many saved reports one source may have. Reports are never decided
 /// like suggestions, so this caps the total: the user deletes old ones in
-/// Coffer before the client can save more.
+/// Coffer ([`delete_reports`]) before the client can save more.
 pub const MAX_REPORTS_PER_SOURCE: usize = 500;
 
 /// The longest reason the user gives for a rejection, in characters (the
@@ -202,7 +212,8 @@ pub enum Error {
     TooManyPending,
 
     #[error(
-        "this client has saved {max} reports, the most one client may keep; no more can be saved"
+        "this client has saved {max} reports, the most one client may keep; no more can be \
+         saved until the user deletes some in Coffer (`coffer inbox delete-report`)"
     )]
     TooManyReports { max: usize },
 
@@ -214,6 +225,12 @@ pub enum Error {
 
     #[error("there is no suggestion {0}")]
     NotFound(SuggestionId),
+
+    #[error("there is no report {0}")]
+    ReportNotFound(i64),
+
+    #[error("report {0} is named twice")]
+    ReportNamedTwice(i64),
 
     #[error("suggestion {0} is stored with a payload that doesn't parse")]
     Corrupt(SuggestionId),

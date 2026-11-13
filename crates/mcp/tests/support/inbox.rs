@@ -4,7 +4,9 @@
 //!   returns the IDs: money in and out on the Monzo account, a matching
 //!   transfer pair across two accounts, and a split transaction.
 //! - [`outside_inbox`] snapshots every table an MCP tool must not write;
-//!   [`suggestions`], [`reports`] and [`inbox_counts`] read what it may.
+//!   [`suggestions`], [`reports`] and [`inbox_counts`] read what it may,
+//!   and [`inbox_rows`] every inbox row in full, to check a tool only ever
+//!   adds to it.
 
 use std::collections::BTreeMap;
 
@@ -197,4 +199,30 @@ pub fn reports(fixture: &Fixture) -> Vec<(i64, String)> {
 /// How many suggestions and reports there are.
 pub fn inbox_counts(fixture: &Fixture) -> (usize, usize) {
     (suggestions(fixture).len(), reports(fixture).len())
+}
+
+/// Every suggestion and report row in full, by table and ID: a tool may
+/// add rows, never change or delete one.
+pub fn inbox_rows(fixture: &Fixture) -> BTreeMap<(&'static str, i64), String> {
+    let conn = read_only(fixture);
+    let mut rows = BTreeMap::new();
+    for table in ["suggestion", "report"] {
+        let mut statement = conn
+            .prepare(&format!("SELECT * FROM {table} ORDER BY id"))
+            .unwrap();
+        let columns = statement.column_count();
+        let read = statement
+            .query_map([], |row| {
+                let values = (0..columns)
+                    .map(|i| row.get::<_, SqlValue>(i))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok((row.get::<_, i64>("id")?, format!("{values:?}")))
+            })
+            .unwrap();
+        for row in read {
+            let (id, values) = row.unwrap();
+            rows.insert((table, id), values);
+        }
+    }
+    rows
 }
