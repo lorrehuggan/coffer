@@ -3,9 +3,9 @@
 //! ([`crate::server`]) calls these and nothing else decides access.
 //!
 //! This file decides access: the enabled / requested / ignored policy and
-//! the kill switch, read on every call. [`redact`] decides what the log
-//! keeps of a call: the redacted arguments, the purpose and the result
-//! hash.
+//! the kill switch, read on every call. The `redact` submodule decides what
+//! the log keeps of a call: [`redact_args`], [`purpose`] and
+//! [`result_hash`].
 
 mod redact;
 
