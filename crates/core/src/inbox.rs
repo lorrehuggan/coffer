@@ -16,7 +16,9 @@
 //! - **Caps.** A rationale is at most [`MAX_RATIONALE_CHARS`] characters, a
 //!   categorisation at most [`payload::MAX_ITEMS`] items, and each source
 //!   has at most [`MAX_PENDING_PER_SOURCE`] pending suggestions
-//!   ([`Error::TooManyPending`]): the user clears some first.
+//!   ([`Error::TooManyPending`]): the user clears some first. Each source
+//!   has at most [`MAX_REPORTS_PER_SOURCE`] saved reports
+//!   ([`Error::TooManyReports`]).
 //! - **Once.** A pending suggestion of the same kind with the same canonical
 //!   payload, from any source, is the same suggestion: filing it again
 //!   returns the existing ID ([`Filed::duplicate`]) and writes nothing. The
@@ -51,7 +53,7 @@ use crate::id::ChangeBatchId;
 use crate::mcp_client::{ClientName, RESERVED_CLIENT_NAME};
 use crate::rule::{UnknownKey, key_enum};
 
-pub use approve::{Applied, ApproveError, ApproveOptions, Approved, approve, reject};
+pub use approve::{Applied, ApproveError, ApproveOptions, Approved, approve, approve_all, reject};
 pub use impact::{
     AliasImpact, CategorizationImpact, Detail, Impact, LinkImpact, RuleImpact, TransferImpact,
     WIDE_MERCHANTS, impact,
@@ -72,6 +74,11 @@ pub const MAX_REPORT_PERIOD_CHARS: usize = 32;
 
 /// The longest report body, in characters.
 pub const MAX_REPORT_BODY_CHARS: usize = 100_000;
+
+/// How many saved reports one source may have. Reports are never decided
+/// like suggestions, so this caps the total: the user deletes old ones in
+/// Coffer before the client can save more.
+pub const MAX_REPORTS_PER_SOURCE: usize = 500;
 
 /// The longest reason the user gives for a rejection, in characters (the
 /// schema checks the same).
@@ -194,6 +201,12 @@ pub enum Error {
     )]
     TooManyPending,
 
+    #[error(
+        "this client has saved {max} reports, the most it may keep: the user can delete old \
+         ones in Coffer before more can be saved"
+    )]
+    TooManyReports { max: usize },
+
     #[error("a report's {field} can't be blank")]
     BlankReportField { field: &'static str },
 
@@ -298,7 +311,9 @@ pub(crate) fn pending_identical(
     .optional()
 }
 
-/// Saves a report from `source` and returns its ID.
+/// Saves a report from `source` and returns its ID. A source that already
+/// has [`MAX_REPORTS_PER_SOURCE`] reports is refused
+/// ([`Error::TooManyReports`]) and nothing is written.
 pub fn insert_report(
     db: &mut Database,
     source: &ClientName,
@@ -316,7 +331,22 @@ pub fn insert_report(
             return Err(Error::ReportTooLong { field, max });
         }
     }
-    db.conn().execute(
+    // Count and insert in one write transaction, so two servers for the
+    // same client can't both pass the cap.
+    let tx = db
+        .conn_mut()
+        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let saved: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM report WHERE source_client = ?1",
+        [source.as_str()],
+        |row| row.get(0),
+    )?;
+    if usize::try_from(saved).unwrap_or(usize::MAX) >= MAX_REPORTS_PER_SOURCE {
+        return Err(Error::TooManyReports {
+            max: MAX_REPORTS_PER_SOURCE,
+        });
+    }
+    tx.execute(
         "INSERT INTO report (period, title, body_markdown, source_client) \
          VALUES (?1, ?2, ?3, ?4)",
         params![
@@ -326,7 +356,9 @@ pub fn insert_report(
             source.as_str(),
         ],
     )?;
-    Ok(db.conn().last_insert_rowid())
+    let id = tx.last_insert_rowid();
+    tx.commit()?;
+    Ok(id)
 }
 
 // Reading -----------------------------------------------------------------------

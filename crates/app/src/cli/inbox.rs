@@ -7,35 +7,51 @@
 //!   and amounts. `--all`, `--status` and `--kind` choose others.
 //! - `coffer inbox show <ID>`: one suggestion in full and, while it is
 //!   pending, what approving it would change now ([`inbox::impact`]).
-//! - `coffer inbox approve <ID>... [--apply-to-history]`: applies each and
-//!   marks it approved. `--apply-to-history` is for rules only.
+//! - `coffer inbox approve <ID>... [--apply-to-history]`: applies them all
+//!   and marks them approved, or none of them. `--apply-to-history` is for
+//!   rules only.
 //! - `coffer inbox reject <ID>... [--reason <TEXT>]`: marks each rejected.
+//! - `coffer inbox reports`: the saved reports, newest first, one line each:
+//!   ID, period, source, date saved and title. No body.
+//! - `coffer inbox report <ID>`: one saved report in full, as plain text.
 //!
 //! Approving here is the user's action: the IDs are named on the command
 //! line, and nothing is ever asked on stdin. Every ID is checked to exist
 //! and be pending before anything is decided, so a typo or a decided ID
-//! writes nothing. Each approval is then its own DB transaction.
+//! writes nothing. The approvals then run in one DB transaction
+//! ([`inbox::approve_all`]): if one fails, none is applied. A suggestion
+//! that a rule earlier in the list settled is reported as settled, not
+//! refused.
 //!
 //! **Untrusted text.** Rationales, rule patterns, merchant names and tag
 //! names in a payload are an AI client's words, or (for Coffer's own
-//! suggestions) taken from transaction text. They are printed on one line
-//! each, labelled with where they came from, stripped of control,
-//! zero-width and bidi characters (saying how many were removed), and cut
-//! to a length. The summary in `list` leaves them out altogether. None of
-//! it decides anything. Saved reports aren't shown here yet.
+//! suggestions) taken from transaction text; a saved report's period, title
+//! and body are an AI client's words. They are printed labelled with where
+//! they came from, stripped of the characters the MCP envelope strips
+//! ([`envelope::is_invisible`]: control, zero-width, bidi and other
+//! invisible characters), saying how many were removed, and cut to a
+//! length. Each is on one line, except a report's body, which keeps its
+//! line breaks with every line indented under a bar, so it can't pass for
+//! Coffer's own output. A body is printed as written, markdown and all:
+//! nothing is rendered, no link is followed, nothing is fetched. The
+//! summary in `list` leaves free text out altogether, and `reports` shows
+//! only the title and period. None of it decides anything.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
 use anyhow::{Context, bail};
 use clap::builder::{PossibleValuesParser, TypedValueParser};
 use clap::{Args, Subcommand};
 use coffer_core::db::Database;
+use coffer_core::envelope;
 use coffer_core::inbox::payload::CategorizationItem;
 use coffer_core::inbox::{
     self, Applied, ApproveOptions, Approved, COFFER_SOURCE, Filter, Payload, Suggestion,
     SuggestionId, SuggestionKind, SuggestionStatus,
 };
+use coffer_core::reporting::Limit;
+use coffer_core::reporting::catalog::{self, SavedReport};
 use coffer_core::rule::{RuleAction, RuleDefinition};
 
 use super::import::plural;
@@ -55,10 +71,15 @@ pub enum InboxCommand {
     List(ListArgs),
     /// Show a suggestion in full, and what approving it would change now.
     Show(ShowArgs),
-    /// Approve suggestions: apply each one and mark it approved.
+    /// Approve suggestions: apply them and mark them approved, all or
+    /// none.
     Approve(ApproveArgs),
     /// Reject suggestions: mark each one rejected. Nothing else changes.
     Reject(RejectArgs),
+    /// List the reports AI clients saved, newest first (titles only).
+    Reports,
+    /// Show a saved report in full, as plain text.
+    Report(ReportArgs),
 }
 
 #[derive(Debug, Default, Args)]
@@ -106,6 +127,13 @@ pub struct RejectArgs {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Args)]
+pub struct ReportArgs {
+    /// The report's ID, as `coffer inbox reports` lists it.
+    #[arg(value_name = "ID")]
+    pub id: i64,
+}
+
 fn status_parser() -> impl TypedValueParser<Value = SuggestionStatus> {
     PossibleValuesParser::new(SuggestionStatus::ALL.iter().map(|status| status.as_str())).map(
         |key| {
@@ -130,6 +158,8 @@ pub fn run(db: &mut Database, args: InboxArgs, out: &mut dyn Write) -> anyhow::R
         Some(InboxCommand::Show(args)) => show(db, &args, out),
         Some(InboxCommand::Approve(args)) => approve(db, &args, out),
         Some(InboxCommand::Reject(args)) => reject(db, &args, out),
+        Some(InboxCommand::Reports) => reports(db, out),
+        Some(InboxCommand::Report(args)) => report(db, &args, out),
     }
 }
 
@@ -445,31 +475,22 @@ pub fn approve(db: &mut Database, args: &ApproveArgs, out: &mut dyn Write) -> an
     let options = ApproveOptions {
         apply_to_history: args.apply_to_history,
     };
-    let mut done: Vec<SuggestionId> = Vec::new();
-    let mut settled: BTreeSet<SuggestionId> = BTreeSet::new();
-    for (index, s) in suggestions.iter().enumerate() {
-        if settled.contains(&s.id) {
-            writeln!(
+    let ids: Vec<SuggestionId> = suggestions.iter().map(|s| s.id).collect();
+    let approved = match inbox::approve_all(db, &ids, options) {
+        Ok(approved) => approved,
+        Err(error) => bail!("{error}; nothing was approved"),
+    };
+    let mut approved: BTreeMap<SuggestionId, Approved> =
+        approved.into_iter().map(|a| (a.id, a)).collect();
+    for s in &suggestions {
+        match approved.remove(&s.id) {
+            Some(one) => write_approved(out, &one)?,
+            // `approve_all` skips only what an earlier rule settled.
+            None => writeln!(
                 out,
                 "Suggestion {} ({}) was settled by the rule approved above: it is approved.",
                 s.id, s.kind
-            )?;
-            continue;
-        }
-        match inbox::approve(db, s.id, options) {
-            Ok(approved) => {
-                write_approved(out, &approved)?;
-                settled.extend(approved.settled.iter().copied());
-                done.push(s.id);
-            }
-            Err(error) => {
-                let left: Vec<SuggestionId> = suggestions[index..].iter().map(|s| s.id).collect();
-                bail!(
-                    "couldn't approve suggestion {}: {error}{}",
-                    s.id,
-                    partial("approved", &done, &left)
-                );
-            }
+            )?,
         }
     }
     Ok(())
@@ -592,6 +613,97 @@ fn ids(ids: &[SuggestionId], noun: &str) -> String {
     }
 }
 
+// Saved reports -----------------------------------------------------------------
+
+/// The longest report period shown, in characters (the longest stored).
+const PERIOD_SHOWN: usize = inbox::MAX_REPORT_PERIOD_CHARS;
+
+/// The longest report body shown, in characters: the longest stored, so a
+/// body is cut only if it was stored some other way.
+const BODY_SHOWN: usize = inbox::MAX_REPORT_BODY_CHARS;
+
+/// `coffer inbox reports`.
+pub fn reports(db: &Database, out: &mut dyn Write) -> anyhow::Result<()> {
+    let reader = db.reader().context("couldn't read the reports")?;
+    let saved = catalog::reports(&reader, Limit::MAX).context("couldn't read the reports")?;
+    if saved.is_empty() {
+        writeln!(out, "No saved reports.")?;
+        return Ok(());
+    }
+    let rows: Vec<Vec<String>> = saved
+        .items
+        .iter()
+        .map(|r| {
+            let period = untrusted(&r.period, PERIOD_SHOWN);
+            let title = untrusted(&r.title, TEXT_SHOWN);
+            vec![
+                r.id.to_string(),
+                format!("{}{}", period.text, period.notes()),
+                source_name(&r.source_client),
+                r.created_at.chars().take(10).collect(),
+                format!("\"{}\"{}", title.text, title.notes()),
+            ]
+        })
+        .collect();
+    write_table(out, &["ID", "PERIOD", "FROM", "SAVED", "TITLE"], &rows)?;
+    writeln!(out)?;
+    if saved.truncated {
+        writeln!(out, "Only the newest {} are listed.", saved.len())?;
+    }
+    writeln!(
+        out,
+        "Periods and titles are the AI clients' own words, unverified. \
+         `coffer inbox report <ID>` shows one in full."
+    )?;
+    Ok(())
+}
+
+/// `coffer inbox report`.
+pub fn report(db: &Database, args: &ReportArgs, out: &mut dyn Write) -> anyhow::Result<()> {
+    let reader = db.reader().context("couldn't read the report")?;
+    let Some(report) = catalog::report(&reader, args.id).context("couldn't read the report")?
+    else {
+        bail!("there is no report {}", args.id);
+    };
+    write_report(out, &report)?;
+    Ok(())
+}
+
+fn write_report(out: &mut dyn Write, report: &SavedReport) -> std::io::Result<()> {
+    let from = source_name(&report.source_client);
+    writeln!(
+        out,
+        "Report {}: saved by {from}, {}",
+        report.id, report.created_at
+    )?;
+    writeln!(
+        out,
+        "{}",
+        labelled("Period", &from, &report.period, PERIOD_SHOWN)
+    )?;
+    writeln!(
+        out,
+        "{}",
+        labelled("Title", &from, &report.title, TEXT_SHOWN)
+    )?;
+    writeln!(
+        out,
+        "Body (written by {from}, an AI client; unverified, shown as plain text):"
+    )?;
+    let (lines, shown) = untrusted_lines(&report.body_markdown, BODY_SHOWN);
+    if lines.is_empty() {
+        writeln!(out, "  | (empty)")?;
+    }
+    for line in &lines {
+        if line.is_empty() {
+            writeln!(out, "  |")?;
+        } else {
+            writeln!(out, "  | {line}")?;
+        }
+    }
+    writeln!(out, "End of report {}.{}", report.id, shown.notes())
+}
+
 // Untrusted text ----------------------------------------------------------------
 
 /// Untrusted text made safe to print on one line.
@@ -635,9 +747,14 @@ fn labelled(label: &str, from: &str, raw: &str, max: usize) -> String {
 }
 
 /// Strips `raw` for a terminal: line breaks, tabs and other whitespace
-/// become single spaces; control, zero-width, bidi and other invisible
-/// characters are removed and counted; the rest is cut to `max` characters.
-/// (`coffer_core::envelope::sanitize` is for text going to an AI client.)
+/// become single spaces (trimmed at the ends); the characters the MCP
+/// envelope strips ([`envelope::is_invisible`]: every control character
+/// but whitespace, zero-width, bidi and other invisible characters) are
+/// removed and counted; the rest is cut to `max` characters. Whitespace is
+/// tested first, as the envelope's own clean-up does, so a line separator
+/// between two words is a space. Unlike `envelope::sanitize` (for text
+/// going to an AI client) nothing is withheld or rewritten: the user reads
+/// what the client wrote.
 fn untrusted(raw: &str, max: usize) -> Shown {
     let mut text = String::new();
     let mut hidden = 0;
@@ -645,7 +762,7 @@ fn untrusted(raw: &str, max: usize) -> Shown {
     for c in raw.chars() {
         if c.is_whitespace() {
             space = !text.is_empty();
-        } else if c.is_control() || is_invisible(c) {
+        } else if envelope::is_invisible(c) {
             hidden += 1;
         } else {
             if space {
@@ -663,31 +780,32 @@ fn untrusted(raw: &str, max: usize) -> Shown {
     Shown { text, hidden, cut }
 }
 
-/// Format characters that print as nothing, or reorder or hide what comes
-/// after them: zero-width and joiners, bidi controls and isolates, the BOM,
-/// variation selectors, Unicode tags, interlinear annotations, and blank
-/// fillers.
-fn is_invisible(c: char) -> bool {
-    matches!(
-        u32::from(c),
-        0x00AD
-            | 0x034F
-            | 0x061C
-            | 0x115F..=0x1160
-            | 0x17B4..=0x17B5
-            | 0x180B..=0x180F
-            | 0x200B..=0x200F
-            | 0x202A..=0x202E
-            | 0x2060..=0x206F
-            | 0x3164
-            | 0xFE00..=0xFE0F
-            | 0xFEFF
-            | 0xFFA0
-            | 0xFFF0..=0xFFFB
-            | 0x1BCA0..=0x1BCA3
-            | 0x1D173..=0x1D17A
-            | 0xE0000..=0xE0FFF
-    )
+/// Untrusted text that keeps its line breaks: each line of `raw` stripped
+/// as [`untrusted`] strips it, runs of blank lines kept as one, blank lines
+/// at the ends dropped, and `max` characters shown in all (line breaks not
+/// counted).
+fn untrusted_lines(raw: &str, max: usize) -> (Vec<String>, Shown) {
+    let mut lines: Vec<String> = Vec::new();
+    let mut total = Shown {
+        text: String::new(),
+        hidden: 0,
+        cut: 0,
+    };
+    let mut left = max;
+    for line in raw.split('\n') {
+        let shown = untrusted(line, left);
+        total.hidden += shown.hidden;
+        total.cut += shown.cut;
+        left -= shown.text.chars().count();
+        let blank = shown.text.is_empty();
+        if !(blank && lines.last().is_none_or(String::is_empty)) {
+            lines.push(shown.text);
+        }
+    }
+    if lines.last().is_some_and(String::is_empty) {
+        lines.pop();
+    }
+    (lines, total)
 }
 
 #[cfg(test)]
@@ -723,6 +841,37 @@ mod tests {
         );
         assert_eq!(shown.notes(), " [and 2 more characters not shown]");
         assert_eq!(untrusted("é".repeat(3).as_str(), 3).cut, 0);
+    }
+
+    #[test]
+    fn strips_exactly_what_the_envelope_strips() {
+        // The first three planes and the tag and variation-selector
+        // block, without whitespace.
+        let raw: String = (0u32..0x3_0000)
+            .chain(0xE_0000..0xE_1000)
+            .filter_map(char::from_u32)
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let stripped = envelope::strip_invisible(&raw);
+        let shown = untrusted(&raw, usize::MAX);
+        assert_eq!(shown.text, stripped);
+        assert_eq!(shown.hidden, raw.chars().count() - stripped.chars().count());
+        // Whitespace the envelope would strip (a carriage return, the line
+        // and paragraph separators) is a space here, as in its clean-up.
+        let shown = untrusted("a\r\u{2028}b\u{2029}c", 10);
+        assert_eq!((shown.text.as_str(), shown.hidden), ("a b c", 0));
+    }
+
+    #[test]
+    fn lines_keep_their_breaks_and_share_the_limit() {
+        let (lines, shown) =
+            untrusted_lines("\n# Title\u{200b}\r\n\n\n\nSome\ttext\n- item\n\n", 100);
+        assert_eq!(lines, ["# Title", "", "Some text", "- item"]);
+        assert_eq!((shown.hidden, shown.cut), (1, 0));
+
+        let (lines, shown) = untrusted_lines("abcd\nefgh\nijkl", 6);
+        assert_eq!(lines, ["abcd", "ef"]);
+        assert_eq!(shown.cut, 6);
     }
 
     #[test]

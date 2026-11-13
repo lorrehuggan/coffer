@@ -6,7 +6,8 @@
 //! - [`rules`]: every rule in evaluation order, with what its actions do,
 //!   minus what never leaves the app ([`ActionSummary`]): private tag
 //!   names, note text and share labels.
-//! - [`reports`]: the saved reports, newest first, capped.
+//! - [`reports`]: the saved reports, newest first, capped; [`report`]: one
+//!   by ID.
 //!
 //! Account names, rule patterns, merchant names and report text are the
 //! user's (or an AI client's) own text: nothing here logs them.
@@ -14,7 +15,7 @@
 use std::collections::HashSet;
 
 use chrono::NaiveDate;
-use rusqlite::Row;
+use rusqlite::{OptionalExtension, Row};
 
 use crate::account::{self, AccountKind};
 use crate::category::CategoryKey;
@@ -301,18 +302,33 @@ pub fn reports(reader: &Reader, limit: Limit) -> Result<Capped<SavedReport>, Err
     // One more than the limit, to tell whether the list was cut.
     let fetch = i64::try_from(limit.get() + 1).unwrap_or(i64::MAX);
     let rows = statement
-        .query_map([fetch], |row| {
-            Ok(SavedReport {
-                id: row.get(0)?,
-                period: row.get(1)?,
-                title: row.get(2)?,
-                body_markdown: row.get(3)?,
-                source_client: row.get(4)?,
-                created_at: row.get(5)?,
-            })
-        })?
+        .query_map([fetch], saved_report)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Capped::new(rows, limit))
+}
+
+/// Saved report `id`, or `None` when there is none.
+pub fn report(reader: &Reader, id: i64) -> Result<Option<SavedReport>, Error> {
+    Ok(reader
+        .conn()
+        .query_row(
+            "SELECT id, period, title, body_markdown, source_client, created_at FROM report \
+             WHERE id = ?1",
+            [id],
+            saved_report,
+        )
+        .optional()?)
+}
+
+fn saved_report(row: &Row<'_>) -> rusqlite::Result<SavedReport> {
+    Ok(SavedReport {
+        id: row.get(0)?,
+        period: row.get(1)?,
+        title: row.get(2)?,
+        body_markdown: row.get(3)?,
+        source_client: row.get(4)?,
+        created_at: row.get(5)?,
+    })
 }
 
 #[cfg(test)]

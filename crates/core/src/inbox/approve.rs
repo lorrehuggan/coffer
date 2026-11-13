@@ -40,6 +40,8 @@
 //! a write underneath refuse for a lock, the approval is refused as
 //! [`ApproveError::Locked`].
 //!
+//! [`approve_all`] approves several in one DB transaction, all or none.
+//!
 //! The suggestion's `change_batch_id` is the batch the approval recorded (a
 //! categorisation's, or a rule's apply to history), and `applied_json` what
 //! else it made, by ID. Nothing here logs transaction text or the payload.
@@ -120,6 +122,18 @@ pub struct Approved {
 pub enum ApproveError {
     #[error(transparent)]
     Inbox(Error),
+
+    /// [`approve_all`]: approving suggestion `id` failed, so none of the
+    /// list was approved.
+    #[error("couldn't approve suggestion {id}: {error}")]
+    InList {
+        id: SuggestionId,
+        error: Box<ApproveError>,
+    },
+
+    /// [`approve_all`]: the list names suggestion `id` more than once.
+    #[error("suggestion {0} is named more than once")]
+    Repeated(SuggestionId),
 
     #[error("suggestion {id} is already {status}")]
     NotPending {
@@ -253,6 +267,52 @@ pub fn approve(
         kind = approved.kind.as_str(),
         settled = approved.settled.len(),
         "approved a suggestion"
+    );
+    Ok(approved)
+}
+
+/// Approves every suggestion in `ids`, in order, in one DB transaction: all
+/// of them or, on any error, none. The error is [`ApproveError::InList`],
+/// naming the suggestion that failed, or [`ApproveError::Repeated`] when an
+/// ID is listed twice; then nothing is written and every suggestion stays
+/// pending.
+///
+/// A suggestion that an earlier one in the list settled (a categorisation
+/// a rule's apply to history already made, [`Approved::settled`]) is
+/// skipped, not refused: it is approved already, which is what the user
+/// asked. It has no entry of its own in the result; it is in the settling
+/// suggestion's `settled`. Listed before the rule, it is approved on its
+/// own first and the rule doesn't settle it.
+pub fn approve_all(
+    db: &mut Database,
+    ids: &[SuggestionId],
+    options: ApproveOptions,
+) -> Result<Vec<Approved>, ApproveError> {
+    let mut seen = BTreeSet::new();
+    if let Some(&repeated) = ids.iter().find(|id| !seen.insert(**id)) {
+        return Err(ApproveError::Repeated(repeated));
+    }
+    let tx = db
+        .conn_mut()
+        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let mut approved: Vec<Approved> = Vec::with_capacity(ids.len());
+    let mut settled = BTreeSet::new();
+    for &id in ids {
+        if settled.contains(&id) {
+            continue;
+        }
+        let one = approve_in(&tx, id, options).map_err(|error| ApproveError::InList {
+            id,
+            error: Box::new(error),
+        })?;
+        settled.extend(one.settled.iter().copied());
+        approved.push(one);
+    }
+    tx.commit()?;
+    tracing::debug!(
+        approved = approved.len(),
+        settled = settled.len(),
+        "approved suggestions together"
     );
     Ok(approved)
 }

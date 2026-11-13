@@ -332,3 +332,15 @@ fn a_report_saved_now_has_a_timestamp() {
     assert_eq!(at.len(), 24, "{at}");
     assert!(at.ends_with('Z'));
 }
+
+#[test]
+fn a_report_is_read_by_id() {
+    let mut ledger = TestLedger::new();
+    let id = save(&mut ledger, "October", Some("2026-11-01T09:00:00.000Z"));
+    let found = report(&ledger.reader(), id).unwrap().unwrap();
+    assert_eq!(found.id, id);
+    assert_eq!(found.title, "October");
+    assert_eq!(found.body_markdown, "Body of October");
+    assert_eq!(found.created_at, "2026-11-01T09:00:00.000Z");
+    assert_eq!(report(&ledger.reader(), id + 1).unwrap(), None);
+}

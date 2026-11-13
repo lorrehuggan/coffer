@@ -816,3 +816,170 @@ fn lock_errors_underneath_are_reported_as_locked() {
     });
     assert!(matches!(&error, ApproveError::Locked(rows) if rows == &[TransactionId::new(7)]));
 }
+
+// Several at once ---------------------------------------------------------------------
+
+#[test]
+fn approve_all_applies_every_suggestion_in_one_go() {
+    let mut f = Fixture::new();
+    let coffee = f.row(day(1), -350, "Coffee", None);
+    let out = f.row(day(2), -5000, "To savings", None);
+    let inn = f.row_on(f.savings, day(2), 5000, "From current", None);
+    let categorize = f.file(
+        SuggestionKind::Categorization,
+        categorization(json!([{"transaction_id": coffee.get(), "category": "food.eating_out"}])),
+    );
+    let pair = f.file(
+        SuggestionKind::TransferPair,
+        json!({"outflow_id": out.get(), "inflow_id": inn.get()}),
+    );
+    let rule = f.file(SuggestionKind::Rule, grocery_rule());
+
+    let approved = approve_all(
+        &mut f.db,
+        &[pair, categorize, rule],
+        ApproveOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        approved.iter().map(|a| a.id).collect::<Vec<_>>(),
+        [pair, categorize, rule]
+    );
+    assert!(matches!(approved[0].applied, Applied::TransferPair { .. }));
+    assert!(matches!(
+        approved[1].applied,
+        Applied::Categorized {
+            batch: Some(_),
+            transactions: 1
+        }
+    ));
+    assert!(matches!(
+        approved[2].applied,
+        Applied::Rule { history: None, .. }
+    ));
+    for id in [pair, categorize, rule] {
+        assert_eq!(get(&f.db, id).unwrap().status, SuggestionStatus::Approved);
+    }
+    assert_eq!(f.category_of(coffee).as_deref(), Some("food.eating_out"));
+    assert!(
+        approve_all(&mut f.db, &[], ApproveOptions::default())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn approve_all_with_one_bad_id_applies_none() {
+    let mut f = Fixture::new();
+    let coffee = f.row(day(1), -350, "Coffee", None);
+    let gone = f.row(day(2), -900, "Lunch", None);
+    let good = f.file(
+        SuggestionKind::Categorization,
+        categorization(json!([{"transaction_id": coffee.get(), "category": "food.eating_out"}])),
+    );
+    let rule = f.file(SuggestionKind::Rule, grocery_rule());
+    let stale = f.file(
+        SuggestionKind::Categorization,
+        categorization(json!([{"transaction_id": gone.get(), "category": "food.groceries"}])),
+    );
+    manual::delete(&mut f.db, gone).unwrap();
+    let before = snapshot(&f);
+
+    // A suggestion that no longer fits, last: the two before it roll back.
+    let error = approve_all(&mut f.db, &[good, rule, stale], HISTORY).unwrap_err();
+    assert!(
+        matches!(&error, ApproveError::InList { id, error }
+            if *id == stale
+                && matches!(**error, ApproveError::Invalid(Invalid::TransactionNotFound(row))
+                    if row == gone)),
+        "{error}"
+    );
+    assert!(
+        error.to_string().starts_with(&format!(
+            "couldn't approve suggestion {stale}: the suggestion no longer fits"
+        )),
+        "{error}"
+    );
+    assert_eq!(snapshot(&f), before);
+    assert_eq!(f.category_of(coffee), None);
+    for id in [good, rule, stale] {
+        assert_pending(&f, id);
+    }
+
+    // An ID that doesn't exist.
+    let missing = SuggestionId::new(9_999);
+    let error = approve_all(&mut f.db, &[good, missing], ApproveOptions::default()).unwrap_err();
+    assert!(
+        matches!(&error, ApproveError::InList { id, error }
+            if *id == missing && matches!(**error, ApproveError::Inbox(Error::NotFound(_)))),
+        "{error}"
+    );
+    assert_eq!(snapshot(&f), before);
+    assert_pending(&f, good);
+
+    // One already decided.
+    reject(&mut f.db, stale, None).unwrap();
+    let error = approve_all(&mut f.db, &[good, stale], ApproveOptions::default()).unwrap_err();
+    assert!(
+        matches!(&error, ApproveError::InList { id, error }
+            if *id == stale && matches!(**error, ApproveError::NotPending { .. })),
+        "{error}"
+    );
+    assert_pending(&f, good);
+
+    // The same ID twice is refused before anything is tried.
+    let error = approve_all(&mut f.db, &[good, rule, good], ApproveOptions::default()).unwrap_err();
+    assert!(
+        matches!(error, ApproveError::Repeated(id) if id == good),
+        "{error}"
+    );
+    assert_pending(&f, good);
+    assert_pending(&f, rule);
+}
+
+#[test]
+fn approve_all_skips_a_suggestion_an_earlier_one_settled() {
+    let mut f = Fixture::new();
+    let a = f.row(day(1), -2000, "Tesco", None);
+    let b = f.row(day(2), -1500, "Tesco", None);
+    let covered = f.file(
+        SuggestionKind::Categorization,
+        categorization(json!([
+            {"transaction_id": a.get(), "category": "food.groceries"},
+            {"transaction_id": b.get(), "category": "food.groceries"},
+        ])),
+    );
+    let rule = f.file(SuggestionKind::Rule, grocery_rule());
+
+    // The rule first: it settles the categorisation, which is skipped.
+    let approved = approve_all(&mut f.db, &[rule, covered], HISTORY).unwrap();
+    assert_eq!(approved.len(), 1);
+    assert_eq!(approved[0].id, rule);
+    assert_eq!(approved[0].settled, [covered]);
+    let settled = get(&f.db, covered).unwrap();
+    assert_eq!(settled.status, SuggestionStatus::Approved);
+    assert_eq!(settled.applied, Some(json!({"settled_by": rule.get()})));
+
+    // The categorisation first: approved on its own, so the rule settles
+    // nothing.
+    let mut f = Fixture::new();
+    let a = f.row(day(1), -2000, "Tesco", None);
+    let first = f.file(
+        SuggestionKind::Categorization,
+        categorization(json!([{"transaction_id": a.get(), "category": "food.groceries"}])),
+    );
+    let rule = f.file(SuggestionKind::Rule, grocery_rule());
+    let approved = approve_all(&mut f.db, &[first, rule], HISTORY).unwrap();
+    assert_eq!(
+        approved.iter().map(|a| a.id).collect::<Vec<_>>(),
+        [first, rule]
+    );
+    assert!(approved[1].settled.is_empty());
+    assert!(matches!(
+        approved[0].applied,
+        Applied::Categorized {
+            batch: Some(_),
+            transactions: 1
+        }
+    ));
+}
