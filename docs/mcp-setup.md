@@ -20,9 +20,14 @@ Every call is recorded in Coffer's access log.
 
 ## Before you start
 
-- Coffer must be installed and on your `PATH` (`coffer --version`), and a database must
-  exist: import something first (`coffer import <file>`). The server never creates or
-  migrates a database.
+- You need the `coffer` binary. Coffer isn't packaged yet, so build it from the repository
+  in the dev shell (`cargo build --release -p coffer-app`) and use the absolute path of
+  `target/release/coffer` (`realpath target/release/coffer`). Clients start the server
+  without your shell's `PATH`, so every example below gives `command` as an absolute path,
+  shown as `/path/to/coffer`. A binary built in the dev shell also runs outside it: it
+  finds its libraries in the Nix store. If a garbage collection removes them, rebuild.
+- A database must exist: import something first (`coffer import <file>`). The server
+  never creates or migrates a database.
 - If you keep your data somewhere other than the default data directory, set
   `COFFER_DATA_DIR` in the client's configuration (each example below shows where).
 
@@ -59,28 +64,44 @@ prompts. Coffer records its name as `requested`, so `coffer ai-access list` show
 asked. `coffer ai-access ignore <name>` hides a request.
 
 A change applies to a running client's next call: you don't need to restart it. When a
-level goes down (or a client is revoked), the server also tells the client to list its
-tools again.
+client's level changes (or it's revoked, or the kill switch is off), the server also sends
+`notifications/tools/list_changed`, within about 5 seconds even when the client is idle.
+Claude Code then fetches the new tool list. Codex and Claude Desktop don't document what
+they do with it, so restart them to see the new list. Either way, a tool above the level is
+refused when called.
 
 ## 2. Configure the client
 
-Each example names the client after itself; use the name you enabled.
+Each example names the client after itself; use the name you enabled. Replace
+`/path/to/coffer` with the absolute path of your `coffer` binary (see "Before you start"),
+and leave out `COFFER_DATA_DIR` when you use the default data directory. Notes such as
+*(checked)* say how each step was checked in November 2026: Claude Code 2.1.316 and Codex
+CLI 0.166.0 were run on Linux against a synthetic database; the rest comes from each
+client's documentation only.
 
 ### Claude Code
 
-Add Coffer as a server for your user (all projects):
+Add Coffer for your user, in every project *(checked)*:
 
 ```sh
-claude mcp add --scope user coffer -- coffer mcp --client claude-code
+claude mcp add --scope user coffer -e COFFER_DATA_DIR=/path/to/your/coffer/data \
+  -- /path/to/coffer mcp --client claude-code
 ```
 
-or in a project's `.mcp.json`:
+Put the server name (`coffer`) before `-e`: `-e` takes several values, and a name right
+after it is read as another `KEY=value` and rejected. Everything after `--` is the
+command Claude Code runs. `--scope user` writes the server to `~/.claude.json` (in your
+home directory on every OS, or under `CLAUDE_CONFIG_DIR` if you set it). Without
+`--scope`, the server is added for the current directory only (`local` scope, also in
+`~/.claude.json`).
+
+Or add it to one project, in a `.mcp.json` at the project's root *(checked)*:
 
 ```json
 {
   "mcpServers": {
     "coffer": {
-      "command": "coffer",
+      "command": "/path/to/coffer",
       "args": ["mcp", "--client", "claude-code"],
       "env": { "COFFER_DATA_DIR": "/path/to/your/coffer/data" }
     }
@@ -88,41 +109,106 @@ or in a project's `.mcp.json`:
 }
 ```
 
-Leave out `env` when you use the default data directory. `/mcp` in Claude Code shows
-whether the server connected and lists its tools.
+Claude Code asks you to approve a project's `.mcp.json` servers when you first start
+`claude` there. Until you do, they show as `⏸ Pending approval`.
+
+**Check it works** *(checked)*. `claude mcp list` (or `claude mcp get coffer`) starts the
+server, checks it, and doesn't call a model:
+
+```text
+$ claude mcp list
+Checking MCP server health…
+
+coffer: /path/to/coffer mcp --client claude-code - ✔ Connected
+```
+
+- `✔ Connected` means the server started and found the database. It doesn't mean
+  the client is enabled: a name Coffer doesn't know connects too, and it gets no tools.
+  `coffer ai-access list` shows whether it's enabled. A name the server saw but you haven't
+  enabled is listed as `requested`.
+- `✘ Failed to connect — ENOENT: Executable not found in $PATH`: `command` isn't an
+  absolute path to the binary.
+- `✘ Failed to connect — CONNECTION_CLOSED`: the server started and then stopped. To see
+  why, run the same command in a terminal with stdin closed, for example
+  `COFFER_DATA_DIR=/path/to/your/coffer/data /path/to/coffer mcp --client claude-code < /dev/null`.
+  `there is no Coffer database at …` means the data directory is wrong or empty.
+  `connection closed: initialize request` means the server found the database and only
+  stopped because nothing talked to it, so the server itself is fine.
+
+In a session, `/mcp` lists Coffer's tools.
 
 ### Claude Desktop
 
-Edit `claude_desktop_config.json` (Settings → Developer → Edit Config; on macOS it is
-`~/Library/Application Support/Claude/claude_desktop_config.json`):
+*(Documentation only: Claude Desktop wasn't installed where this was checked.)* Claude
+Desktop runs on macOS and Windows. On Linux it's in beta, for Ubuntu 22.04+ and Debian 12+
+only; on other distributions, use Claude Code. Edit `claude_desktop_config.json`:
+
+| OS | File |
+|---|---|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Linux | `~/.config/Claude/claude_desktop_config.json` |
+
+The app opens it for you from **Settings → Developer → Edit Config**, and creates it if it
+doesn't exist. In newer versions the local MCP servers are under **Settings → Desktop app →
+Extensions**.
 
 ```json
 {
   "mcpServers": {
     "coffer": {
-      "command": "coffer",
-      "args": ["mcp", "--client", "claude-desktop"]
+      "command": "/path/to/coffer",
+      "args": ["mcp", "--client", "claude-desktop"],
+      "env": { "COFFER_DATA_DIR": "/path/to/your/coffer/data" }
     }
   }
 }
 ```
 
-Claude Desktop may not see your shell's `PATH`; if the server doesn't start, use the
-full path to `coffer` (`which coffer`) as `command`. Restart Claude Desktop after
-editing.
+`command` must be an absolute path: Claude Desktop doesn't see your shell's `PATH`. On
+Windows, write each `\` in a path as `\\`. Quit Claude Desktop completely and start it
+again after each edit.
+
+**Check it works.** Click **+** in the chat box, then **Connectors**: Coffer should be
+listed with its tools. The **Local MCP servers** section (or Settings → Developer in older
+versions) shows its status. If it doesn't start, look in Claude Desktop's logs:
+`mcp-server-coffer.log` holds the server's error output. The logs are in
+`~/Library/Logs/Claude` (macOS), `%APPDATA%\Claude\logs` (Windows) or
+`~/.config/Claude/logs` (Linux). Then run the command in a terminal, as described under
+Claude Code above.
 
 ### Codex
 
-In `~/.codex/config.toml`:
+Add Coffer with the CLI *(checked)*:
+
+```sh
+codex mcp add coffer --env COFFER_DATA_DIR=/path/to/your/coffer/data \
+  -- /path/to/coffer mcp --client codex
+```
+
+or write it yourself in `~/.codex/config.toml` (`%USERPROFILE%\.codex\config.toml` on
+Windows, or `$CODEX_HOME/config.toml` if you set `CODEX_HOME`). This is what the command
+above writes *(checked)*:
 
 ```toml
 [mcp_servers.coffer]
-command = "coffer"
+command = "/path/to/coffer"
 args = ["mcp", "--client", "codex"]
-# env = { COFFER_DATA_DIR = "/path/to/your/coffer/data" }
+
+[mcp_servers.coffer.env]
+COFFER_DATA_DIR = "/path/to/your/coffer/data"
 ```
 
-or `codex mcp add coffer -- coffer mcp --client codex`.
+A project's `.codex/config.toml` works too, but only in a project you've marked as
+trusted. The Codex CLI, the IDE extension and the ChatGPT desktop app share this file.
+
+**Check it works.** `codex mcp list` and `codex mcp get coffer` show the configuration
+*(checked)*, but they don't start the server: their `enabled` is the setting, not a
+connection. To check the command itself, run it in a terminal as described under Claude
+Code above *(checked: the command Codex wrote, started the way an MCP client starts it,
+listed the seven `aggregate` tools and the `monthly_review` prompt)*. In a Codex session,
+`/mcp` lists the servers that are running *(documentation only)*. Codex gives a server 10
+seconds to start (`startup_timeout_sec`).
 
 ## 3. Use a profile with Coffer as the only data source
 
@@ -138,20 +224,58 @@ then sends it somewhere. So run Coffer in a client profile that has:
 
 How to do that, per client (check your client's current documentation; options change):
 
-- **Claude Code**: start a session with only Coffer's server and without the web
-  tools, from a directory that holds nothing else:
+- **Claude Code**: put the `.mcp.json` above in a file of its own, say
+  `coffer-only.json`, in an empty directory, and start sessions from there with:
 
   ```sh
-  claude --strict-mcp-config --mcp-config coffer-only.json \
-         --disallowedTools WebFetch WebSearch
+  ENABLE_CLAUDEAI_MCP_SERVERS=false \
+    claude --strict-mcp-config --mcp-config coffer-only.json --tools ""
   ```
 
-  where `coffer-only.json` holds the `.mcp.json` above. You can also deny `WebFetch` and
-  `WebSearch` under `permissions.deny` in that directory's `.claude/settings.json`.
-- **Claude Desktop**: keep Coffer the only entry under `mcpServers`, and turn off web
-  search and other connectors for the conversations where you use it.
-- **Codex**: keep Coffer the only `[mcp_servers]` entry in the profile you use for it,
-  leave web search off, and keep the sandbox's network access off.
+  - `--strict-mcp-config` uses only the servers in `--mcp-config` and ignores every
+    other MCP configuration, such as your user, project and local servers.
+  - `--tools ""` turns off every built-in tool: the shell, file tools, `WebFetch` and
+    `WebSearch`. MCP tools aren't affected, so Coffer's tools stay.
+  - `ENABLE_CLAUDEAI_MCP_SERVERS=false` keeps out the connectors you've added on
+    claude.ai *(documentation only)*.
+
+  If you want some built-in tools, name them instead (`--tools "Read"`), or keep the
+  defaults and remove the web tools with `--disallowedTools WebFetch WebSearch`. That
+  still leaves the shell, which can reach the network. These options each take a list,
+  so put nothing after them: a prompt there is read as another file or tool name. *(Checked:
+  `claude --help`, and Claude Code accepted these flags with this file. A session can't
+  be started without signing in, so the session itself wasn't checked.)*
+  `claude mcp list` ignores `--mcp-config`. To check the file, use it as a project's
+  `.mcp.json` once (see "Check it works" above).
+- **Claude Desktop** *(documentation only)*: keep Coffer the only entry under
+  `mcpServers`, turn off other extensions under Settings → Desktop app → Extensions, and
+  turn off web search and other connectors (**+** → **Connectors**) in the conversations
+  where you use Coffer.
+- **Codex**: profiles (`--profile`) only add settings on top of `~/.codex/config.toml`,
+  so they can't remove servers already set up there. Give Coffer a Codex home of its
+  own instead, say `~/.codex-coffer`, and start Codex with `CODEX_HOME=~/.codex-coffer codex`.
+  Its `config.toml` *(checked: Codex accepts these settings and rejects invalid values;
+  what they do comes from its documentation)*:
+
+  ```toml
+  web_search = "disabled"     # the default, "cached", is on
+  sandbox_mode = "read-only"  # commands run without network access
+
+  [features]
+  apps = false                # no ChatGPT connectors
+
+  [mcp_servers.coffer]
+  command = "/path/to/coffer"
+  args = ["mcp", "--client", "codex"]
+
+  [mcp_servers.coffer.env]
+  COFFER_DATA_DIR = "/path/to/your/coffer/data"
+  ```
+
+  Codex keeps its login in its home too, so sign in once with
+  `CODEX_HOME=~/.codex-coffer codex login`. Web search and connectors aren't covered by
+  the sandbox's network rules, which is why they're turned off here on their own
+  *(documentation only)*.
 
 ## 4. Ask, review, approve
 
