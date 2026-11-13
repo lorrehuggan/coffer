@@ -125,6 +125,7 @@ fn refusal(error: inbox::Error) -> ToolError {
         inbox::Error::Invalid(_)
         | inbox::Error::RationaleTooLong
         | inbox::Error::TooManyPending
+        | inbox::Error::TooManyReports { .. }
         | inbox::Error::BlankReportField { .. }
         | inbox::Error::ReportTooLong { .. } => ToolError::InvalidArguments(error.to_string()),
         error => ToolError::core(error),

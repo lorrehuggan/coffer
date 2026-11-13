@@ -23,8 +23,11 @@
 //!   ignores the output writer: stdout carries MCP messages only.
 //! - `coffer schedules detect|list|show|confirm|…`: recurring payments and
 //!   schedules ([`schedules`]).
-//! - `coffer inbox [list|show|approve|reject]`: review AI clients'
-//!   suggestions and decide them ([`inbox`]).
+//! - `coffer inbox [list|show|approve|reject|reports|report]`: review AI
+//!   clients' suggestions and decide them, and read their saved reports
+//!   ([`inbox`]).
+//! - `coffer categorize <ID>... <CATEGORY>`: set transactions' category as
+//!   the user, as one change batch ([`categorize`]).
 //!
 //! Output is what the user asked for and nothing else. Errors are returned
 //! (as `anyhow` errors: this is the binary's layer) for `main` to print on
@@ -34,6 +37,7 @@ pub mod accounts;
 pub mod ai_access;
 pub mod backup;
 pub mod budgets;
+pub mod categorize;
 pub mod export;
 pub mod import;
 pub mod inbox;
@@ -47,6 +51,8 @@ mod ai_access_tests;
 mod backup_tests;
 #[cfg(test)]
 mod budgets_tests;
+#[cfg(test)]
+mod categorize_tests;
 #[cfg(test)]
 mod export_tests;
 #[cfg(test)]
@@ -67,9 +73,10 @@ use coffer_import::preset::Presets;
 pub use accounts::{AccountsArgs, AccountsCommand, AddAccountArgs};
 pub use ai_access::{AiAccessArgs, AiAccessCommand};
 pub use backup::{BackupArgs, RestoreArgs};
+pub use categorize::CategorizeArgs;
 pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
-pub use inbox::{ApproveArgs, InboxArgs, InboxCommand, ListArgs, RejectArgs, ShowArgs};
+pub use inbox::{ApproveArgs, InboxArgs, InboxCommand, ListArgs, RejectArgs, ReportArgs, ShowArgs};
 pub use mcp::McpArgs;
 pub use schedules::{SchedulesArgs, SchedulesCommand};
 pub use undo::UndoImportArgs;
@@ -121,6 +128,9 @@ pub enum Command {
     /// Review the suggestions AI clients filed, and approve or reject them.
     /// Lists the pending ones when given no command.
     Inbox(InboxArgs),
+    /// Set the category of transactions, as your own choice, recorded as
+    /// one change batch: `coffer categorize 12 13 food.groceries`.
+    Categorize(CategorizeArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -169,6 +179,10 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
         Command::Inbox(args) => {
             let mut db = open_existing(database)?;
             inbox::run(&mut db, args, out)
+        }
+        Command::Categorize(args) => {
+            let mut db = open_existing(database)?;
+            categorize::run(&mut db, &args, out)
         }
     }
 }

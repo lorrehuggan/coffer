@@ -706,3 +706,37 @@ fn assert_only_shapes(redacted: &Value, tool: &str) {
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
 }
+
+#[tokio::test]
+async fn save_report_beyond_the_per_client_cap_is_refused_and_writes_nothing() {
+    use coffer_core::inbox::{self, MAX_REPORTS_PER_SOURCE, NewReport};
+    use coffer_core::mcp_client::ClientName;
+
+    let fixture = Fixture::new();
+    let ids = seed(&fixture);
+    {
+        let mut db = fixture.open();
+        let source = ClientName::new(CLIENT).unwrap();
+        let report = NewReport {
+            period: "2026-10".to_owned(),
+            title: "Seeded".to_owned(),
+            body_markdown: String::new(),
+        };
+        for _ in 0..MAX_REPORTS_PER_SOURCE {
+            inbox::insert_report(&mut db, &source, &report).unwrap();
+        }
+    }
+    let client = fixture.connect(CLIENT, AccessLevel::Aggregate).await;
+    let before = outside_inbox(&fixture);
+    let save = case("save_report");
+    let result = client.call(save.tool, (save.args)(&ids, MARKER)).await;
+    let text = error_text(&result);
+    assert!(text.contains("saved 500 reports"), "{text}");
+    assert!(!text.contains(MARKER), "{text}");
+    assert_eq!(inbox_counts(&fixture), (0, MAX_REPORTS_PER_SOURCE));
+    assert_eq!(outside_inbox(&fixture), before);
+    let call = fixture.access_log().pop().unwrap();
+    assert_eq!(call.tool, "save_report");
+    assert_eq!(call.outcome, Outcome::Error);
+    client.close().await;
+}

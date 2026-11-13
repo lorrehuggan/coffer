@@ -497,6 +497,45 @@ fn saves_reports_within_their_caps() {
 }
 
 #[test]
+fn caps_the_saved_reports_per_source() {
+    let mut f = Fixture::new();
+    let client = ClientName::new("claude-code").unwrap();
+    let other = ClientName::new("codex").unwrap();
+    let report = NewReport {
+        period: "2026-10".to_owned(),
+        title: "October".to_owned(),
+        body_markdown: "Spending was down.".to_owned(),
+    };
+    // All but the last through SQL, to keep the test fast.
+    f.conn()
+        .execute(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1) \
+             INSERT INTO report (period, title, body_markdown, source_client) \
+             SELECT '2026-10', 'Seeded', '', ?2 FROM n",
+            rusqlite::params![MAX_REPORTS_PER_SOURCE as i64 - 1, client.as_str()],
+        )
+        .unwrap();
+    insert_report(&mut f.db, &client, &report).unwrap();
+    assert_eq!(f.count("report"), MAX_REPORTS_PER_SOURCE as i64);
+
+    let error = insert_report(&mut f.db, &client, &report).unwrap_err();
+    assert!(
+        matches!(error, Error::TooManyReports { max } if max == MAX_REPORTS_PER_SOURCE),
+        "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "this client has saved 500 reports, the most it may keep: the user can delete old ones \
+         in Coffer before more can be saved"
+    );
+    assert_eq!(f.count("report"), MAX_REPORTS_PER_SOURCE as i64);
+
+    // Another source has its own allowance.
+    insert_report(&mut f.db, &other, &report).unwrap();
+    assert_eq!(f.count("report"), MAX_REPORTS_PER_SOURCE as i64 + 1);
+}
+
+#[test]
 fn rejecting_records_the_reason_once() {
     let mut f = Fixture::new();
     let a = f.row(day(1), -100, "A", None);
