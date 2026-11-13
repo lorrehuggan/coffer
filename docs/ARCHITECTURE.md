@@ -1840,9 +1840,9 @@ AI's inputs to it are the untrusted `purpose` (stored without invisible characte
 the arguments, redacted by the tool's schema: numbers, booleans, dates and schema enum
 values are kept, any other string becomes `{"length":N,"type":"string"}`, undeclared keys
 are only counted (`"_undeclared": N`). `result_hash` is SHA-256 of the result's canonical
-JSON (compact, keys sorted). `coffer ai-access log` shows the log. Two exceptions, both
-returning no data: a refusal while a restore holds its lock (the log is in the database
-being replaced) and getting a prompt.
+JSON (compact, keys sorted). `coffer ai-access log` shows the log. Exceptions, all
+returning no data: a refusal while a restore holds its lock or when the database can't be
+opened (the log is in that database), and getting a prompt.
 
 **Restores.** The server opens the database for each call and keeps no connection
 between calls. `coffer restore` holds `<database>-restoring` while it swaps the files;
