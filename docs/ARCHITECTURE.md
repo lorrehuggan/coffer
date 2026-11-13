@@ -1035,8 +1035,21 @@ Everything else follows an earlier decision record or invariant.
    tools at the client's level, so it never names one the client can't call; getting it
    isn't logged, since it returns no data (default).
 3. **Saved reports are capped at 500 per client**; the 501st is refused with a clear
-   error (default).
-4. The tool × level matrix (`crates/mcp/tests/matrix.rs`) lists every tool with its level
+   error, counted and inserted in one transaction (default). Coffer has no command to
+   delete a report yet (M3).
+4. **`coffer inbox approve 1 2 3` is all or nothing** (`inbox::approve_all`, one
+   transaction). A repeated ID is refused before anything is tried; a suggestion that an
+   earlier approval in the same list settled is skipped, not an error, and the CLI says
+   which rule settled it (default). `reject` still decides each ID on its own.
+5. **`coffer inbox reports` and `coffer inbox report <id>`** show saved reports: the list
+   has no bodies; a report is printed as plain text, each body line prefixed `  | ` so it
+   can't pass for Coffer's own output, labelled as written by the client and unverified.
+   The CLI strips exactly what `envelope::strip_invisible` strips (default).
+6. **`coffer categorize <transaction-id>... <category-key>`** sets categories as the user
+   through `inbox::own::recategorize`, so Coffer's own rule suggestions fire from the CLI
+   until the GUI's inline edit (M3). It refuses a repeated ID, an unknown category or
+   a split row, and prints the change batch and any rule suggestion it filed (default).
+7. The tool × level matrix (`crates/mcp/tests/matrix.rs`) lists every tool with its level
    and arguments; a new tool fails it until added.
 
 ## Architecture

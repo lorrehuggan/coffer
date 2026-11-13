@@ -169,8 +169,15 @@ coffer inbox approve 14 --apply-to-history   # a rule, also applied to past rows
 coffer inbox reject 15 --reason "wrong category"
 ```
 
-`coffer inbox --help` lists the commands for saved reports too. Text an AI wrote is shown
-labelled as unverified, without hidden characters.
+Saved reports:
+
+```sh
+coffer inbox reports               # saved reports, newest first (no bodies)
+coffer inbox report 7              # one report, as plain text
+```
+
+Text an AI wrote is shown labelled as unverified, without hidden characters; a report's
+markdown and links are printed as they are, never rendered or opened.
 
 ## 5. Check what the AI read: the access log
 

@@ -202,8 +202,7 @@ pub enum Error {
     TooManyPending,
 
     #[error(
-        "this client has saved {max} reports, the most it may keep: the user can delete old \
-         ones in Coffer before more can be saved"
+        "this client has saved {max} reports, the most one client may keep; no more can be saved"
     )]
     TooManyReports { max: usize },
 
