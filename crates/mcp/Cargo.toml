@@ -13,5 +13,19 @@ rmcp.workspace = true
 tokio.workspace = true
 schemars.workspace = true
 serde.workspace = true
+# Tool arguments arrive and results leave as JSON objects (rmcp's own type);
+# already in the tree via rmcp.
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+# The in-process MCP client the tests call tools through (tests/support).
+# Adds tokio-stream (MIT) to the tree, for tests only.
+rmcp = { workspace = true, features = ["client"] }
+# The fixture database lives in a scratch directory.
+tempfile.workspace = true
+# tests/support reuses crates/import/tests/common, which reads with rusqlite.
+rusqlite.workspace = true
+# Dates for the manual row the fixture database seeds.
+chrono.workspace = true

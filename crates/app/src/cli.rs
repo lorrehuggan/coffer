@@ -15,6 +15,8 @@
 //! - `coffer backup [--list]`, `coffer restore <file>`: local backups
 //!   ([`backup`]).
 //! - `coffer export --format csv|json`: the ledger as a file ([`export`]).
+//! - `coffer mcp --client <name>`: the MCP server over stdio ([`mcp`]). It
+//!   ignores the output writer: stdout carries MCP messages only.
 //!
 //! Output is what the user asked for and nothing else. Errors are returned
 //! (as `anyhow` errors: this is the binary's layer) for `main` to print on
@@ -24,6 +26,7 @@ pub mod accounts;
 pub mod backup;
 pub mod export;
 pub mod import;
+pub mod mcp;
 pub mod undo;
 
 #[cfg(test)]
@@ -45,6 +48,7 @@ pub use accounts::{AccountsArgs, AccountsCommand, AddAccountArgs};
 pub use backup::{BackupArgs, RestoreArgs};
 pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
+pub use mcp::McpArgs;
 pub use undo::UndoImportArgs;
 
 /// Coffer: a local-first personal finance dashboard.
@@ -79,6 +83,9 @@ pub enum Command {
     /// Export transactions (split lines as rows) as CSV or JSON. Notes and
     /// private tags only when asked for.
     Export(ExportArgs),
+    /// Run the MCP server over stdin/stdout for an AI client (Claude Code,
+    /// Codex, …). Needs an existing database.
+    Mcp(McpArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -87,7 +94,7 @@ pub enum Command {
 /// `accounts add` and `import` create the database if there is none;
 /// `restore` creates it from the backup; `backup --list` reads only the
 /// backups directory. The other commands need the database to exist
-/// already.
+/// already; `mcp` also needs it up to date and never migrates it.
 pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Result<()> {
     match command {
         Command::Import(args) => {
@@ -117,6 +124,7 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
             let db = open_existing(database)?;
             export::run(&db, &args, out)
         }
+        Command::Mcp(args) => mcp::run(database, &args),
     }
 }
 
