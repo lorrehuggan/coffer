@@ -153,9 +153,11 @@ pub use apply::{
     Applied, ApplyError, ApplyPreview, BatchApplied, PlannedChange, PlannedLine, RowPlan,
     SkippedSplit, SplitSkip, Target, commit_apply, preview_apply,
 };
+pub(crate) use apply::{commit_apply_in, preview_apply_in};
 pub use engine::{MatchInput, Outcome, RuleSet, SetBy, apply_to_batch};
 pub(crate) use engine::{collapse_whitespace, fold};
 pub use pattern::{MAX_PATTERN_LEN, Pattern, PatternError, REGEX_NEST_LIMIT, REGEX_SIZE_LIMIT};
+pub(crate) use store::create_at_in;
 pub use store::{
     InvalidRule, StoreError, StoredRule, create, create_at, delete, get, list, move_to,
 };

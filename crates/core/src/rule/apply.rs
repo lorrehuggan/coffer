@@ -795,6 +795,27 @@ pub fn commit_apply(
     preview: &ApplyPreview,
     included: &BTreeSet<TransactionId>,
 ) -> Result<Applied, ApplyError> {
+    let tx = db
+        .conn_mut()
+        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let applied = commit_apply_in(&tx, preview, included)?;
+    tx.commit()?;
+    tracing::info!(
+        rule = %preview.rule,
+        transactions = applied.transactions,
+        items = applied.items,
+        included = included.len(),
+        "applied a rule to past transactions"
+    );
+    Ok(applied)
+}
+
+/// [`commit_apply`] inside the caller's DB transaction.
+pub(crate) fn commit_apply_in(
+    tx: &Connection,
+    preview: &ApplyPreview,
+    included: &BTreeSet<TransactionId>,
+) -> Result<Applied, ApplyError> {
     if let Some(id) = included.iter().find(|id| {
         !preview
             .rows
@@ -803,10 +824,7 @@ pub fn commit_apply(
     }) {
         return Err(ApplyError::NotIncludable(*id));
     }
-    let tx = db
-        .conn_mut()
-        .transaction_with_behavior(TransactionBehavior::Immediate)?;
-    if plan_history(&tx, preview.rule)? != *preview {
+    if plan_history(tx, preview.rule)? != *preview {
         return Err(ApplyError::Stale);
     }
     let locked: Vec<TransactionId> = preview
@@ -823,24 +841,24 @@ pub fn commit_apply(
     let mut recorder = Recorder::new(ChangeKind::RuleApply);
     for row in &preview.rows {
         let include = included.contains(&row.transaction);
-        writer.write(&tx, row.transaction, &row.changes, include, &mut recorder)?;
+        writer.write(tx, row.transaction, &row.changes, include, &mut recorder)?;
     }
     let transactions = recorder.transactions();
     let items = recorder.changes().count();
-    let batch = recorder.finish(&tx).map_err(StoreError::from)?;
-    tx.commit()?;
-    tracing::info!(
-        rule = %preview.rule,
-        transactions,
-        items,
-        included = included.len(),
-        "applied a rule to past transactions"
-    );
+    let batch = recorder.finish(tx).map_err(StoreError::from)?;
     Ok(Applied {
         batch,
         transactions,
         items,
     })
+}
+
+/// [`preview_apply`] inside the caller's DB transaction.
+pub(crate) fn preview_apply_in(
+    conn: &Connection,
+    rule: RuleId,
+) -> Result<ApplyPreview, ApplyError> {
+    plan_history(conn, rule)
 }
 
 /// The plan for applying `rule` to every transaction, inside the caller's

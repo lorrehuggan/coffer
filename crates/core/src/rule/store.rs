@@ -150,7 +150,18 @@ pub fn create_at(
     position: usize,
 ) -> Result<RuleId, StoreError> {
     let tx = db.conn_mut().transaction()?;
-    let mut order = ordered_ids(&tx)?;
+    let id = create_at_in(&tx, rule, position)?;
+    tx.commit()?;
+    Ok(id)
+}
+
+/// [`create_at`] inside the caller's DB transaction.
+pub(crate) fn create_at_in(
+    tx: &Connection,
+    rule: &RuleDefinition,
+    position: usize,
+) -> Result<RuleId, StoreError> {
+    let mut order = ordered_ids(tx)?;
     if position > order.len() {
         return Err(StoreError::NoPosition {
             position,
@@ -186,8 +197,7 @@ pub fn create_at(
         )?;
     }
     order.insert(position, id);
-    renumber(&tx, &order)?;
-    tx.commit()?;
+    renumber(tx, &order)?;
     Ok(id)
 }
 
