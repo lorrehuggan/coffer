@@ -61,6 +61,7 @@ use crate::link;
 use crate::merchant;
 use crate::money::{Currency, Money};
 use crate::rule;
+use crate::schedule;
 use crate::split;
 use crate::statement::{
     RowProblem, SourceFormat, SourceLocation, Statement, StatementLine, SubAccountRef,
@@ -135,6 +136,9 @@ pub enum Error {
 
     #[error("refund and reimbursement suggestions: {0}")]
     Links(#[from] link::Error),
+
+    #[error("scheduled payments: {0}")]
+    Schedules(#[from] schedule::Error),
 
     /// The backup taken before the commit failed, so nothing was imported
     /// (M1.28).
@@ -458,6 +462,9 @@ pub struct CommitSummary {
     /// Refund and reimbursement links suggested for the new rows, each a
     /// `suggested` `transaction_link` (M1.25).
     pub link_suggestions: usize,
+    /// Scheduled payments the new rows fulfilled, each a `schedule_match`
+    /// (M2.10).
+    pub schedule_matches: usize,
 }
 
 /// Plans importing `statement` into `account`. Reads only.
@@ -590,6 +597,7 @@ pub fn commit(
         splits_skipped: 0,
         duplicates: 0,
         link_suggestions: 0,
+        schedule_matches: 0,
     };
     // The new rows that are sub-account transfers, for the mirror below.
     let mut pot_rows: Vec<(TransactionId, SubAccountRef)> = Vec::new();
@@ -722,6 +730,10 @@ pub fn commit(
     // reimbursements for new money in, which skip rows in a transfer.
     summary.duplicates = duplicate::detect_for_batch(&tx, batch, DuplicateWindow::DEFAULT)?.len();
     summary.link_suggestions = link::suggest_for_batch(&tx, batch)?;
+    // Scheduled payments the new rows fulfil (M2.10), last: rules may have
+    // excluded a row or named its merchant, and pairing may have made it a
+    // transfer.
+    summary.schedule_matches = schedule::match_batch(&tx, batch)?;
 
     tx.commit()?;
     tracing::info!(
@@ -738,6 +750,7 @@ pub fn commit(
         splits_skipped = summary.splits_skipped,
         duplicates = summary.duplicates,
         link_suggestions = summary.link_suggestions,
+        schedule_matches = summary.schedule_matches,
         "committed an import"
     );
     Ok(Committed::Batch(summary))
@@ -1230,14 +1243,15 @@ pub fn undo(db: &mut Database, batch: BatchId) -> Result<UndoPreview, Error> {
     // Rows that reference a transaction go first (no `ON DELETE`): split
     // lines, tag links, change items, refund/reimbursement/settlement links
     // (either side, so money in from another batch is unlinked again) and
-    // duplicate candidates. Schedule matches are cleared here when they
-    // arrive; until then a reference makes the delete fail, and the whole
-    // undo with it.
+    // duplicate candidates, and schedule matches (the occurrence is open
+    // again). A table that references a transaction and isn't cleared here
+    // makes the delete fail, and the whole undo with it.
     split::clear_batch(&tx, batch)?;
     tag::clear_batch(&tx, batch)?;
     change::clear_batch(&tx, batch)?;
     link::clear_batch(&tx, batch)?;
     duplicate::clear_batch(&tx, batch)?;
+    schedule::clear_batch(&tx, batch)?;
     tx.execute("DELETE FROM \"transaction\" WHERE batch_id = ?1", [batch])?;
     tx.execute("DELETE FROM balance_snapshot WHERE batch_id = ?1", [batch])?;
     tx.execute("DELETE FROM import_flag WHERE batch_id = ?1", [batch])?;

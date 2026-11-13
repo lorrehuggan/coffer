@@ -28,6 +28,7 @@ mod pseudonyms;
 #[allow(unused_imports)] // Not every test binary checks pseudonyms.
 pub use pseudonyms::*;
 pub mod reports;
+pub mod recurring;
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
