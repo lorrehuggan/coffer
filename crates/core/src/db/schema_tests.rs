@@ -34,6 +34,7 @@ const TABLES: &[&str] = &[
     "suggestion",
     "tag",
     "transaction",
+    "transaction_link",
     "transaction_split",
     "transaction_tag",
     "transfer_group",
@@ -2099,4 +2100,232 @@ fn merchant_display_source_is_checked() {
     assert_refused(set("NULL", "'user'"));
     assert_refused(set("''", "'user'"));
     assert_refused(set("'  '", "'rule'"));
+}
+
+impl Fixture {
+    /// Inserts a manual transaction of `minor` in `currency` on `account`.
+    fn manual_amount(&self, account: i64, minor: i64, currency: &str) -> i64 {
+        self.conn()
+            .execute(
+                "INSERT INTO \"transaction\" (account_id, date, amount_minor, currency, \
+                 description_raw, description_normalized, origin) \
+                 VALUES (?1, '2026-11-03', ?2, ?3, 'Shop', 'SHOP', 'manual')",
+                params![account, minor, currency],
+            )
+            .unwrap();
+        self.conn().last_insert_rowid()
+    }
+
+    fn link(
+        &self,
+        kind: &str,
+        inflow: i64,
+        target: Option<i64>,
+        label: Option<&str>,
+        minor: i64,
+        status: &str,
+    ) -> rusqlite::Result<i64> {
+        self.conn().execute(
+            "INSERT INTO transaction_link (kind, inflow_id, target_id, share_label, \
+             amount_minor, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![kind, inflow, target, label, minor, status],
+        )?;
+        Ok(self.conn().last_insert_rowid())
+    }
+}
+
+#[test]
+fn links_join_money_in_to_money_out_in_one_currency() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let euros = fixture.add_account(None, "Euro", "current", "EUR").unwrap();
+    let purchase = fixture.manual_amount(account, -1000, "GBP");
+    let refund = fixture.manual_amount(account, 1000, "GBP");
+    let euro_refund = fixture.manual_amount(euros, 1000, "EUR");
+    let link = |kind, inflow, target, label, minor| {
+        fixture.link(kind, inflow, target, label, minor, "confirmed")
+    };
+
+    // Shape: a settlement names a person, the others a purchase.
+    assert_refused(link("refund", refund, None, None, 100));
+    assert_refused(link("refund", refund, Some(purchase), Some("Sam"), 100));
+    assert_refused(link("settlement", refund, Some(purchase), Some("Sam"), 100));
+    assert_refused(link("settlement", refund, None, Some(""), 100));
+    assert_refused(link("loan", refund, Some(purchase), None, 100));
+    // Sides, sign, currency, no self-link, a positive amount.
+    assert_refused(link("refund", purchase, Some(refund), None, 100));
+    assert_refused(link("refund", refund, Some(refund), None, 100));
+    assert_refused(link("refund", euro_refund, Some(purchase), None, 100));
+    assert_refused(link("refund", refund, Some(purchase), None, 0));
+    assert_refused(link("refund", refund, Some(purchase), None, -100));
+    assert_refused(fixture.link("refund", refund, Some(purchase), None, 100, "maybe"));
+    // A reimbursement repays a claim.
+    assert_refused(link("reimbursement", refund, Some(purchase), None, 100));
+
+    // Caps: each link, and confirmed links together, on both sides.
+    assert_refused(link("refund", refund, Some(purchase), None, 1001));
+    let first = link("refund", refund, Some(purchase), None, 600).unwrap();
+    let second_purchase = fixture.manual_amount(account, -500, "GBP");
+    assert_refused(link("refund", refund, Some(second_purchase), None, 401));
+    link("refund", refund, Some(second_purchase), None, 400).unwrap();
+    let second_refund = fixture.manual_amount(account, 1000, "GBP");
+    assert_refused(link("refund", second_refund, Some(purchase), None, 401));
+    // A suggestion only has to fit on its own.
+    fixture
+        .link(
+            "refund",
+            second_refund,
+            Some(purchase),
+            None,
+            1000,
+            "suggested",
+        )
+        .unwrap();
+    // One link per pair.
+    assert_refused(link("refund", refund, Some(purchase), None, 100));
+
+    // Confirming over the cap is refused; rejecting frees it.
+    let suggestion: i64 = fixture
+        .conn()
+        .query_row(
+            "SELECT id FROM transaction_link WHERE status = 'suggested'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let set_status = |id: i64, status: &str| {
+        fixture.conn().execute(
+            "UPDATE transaction_link SET status = ?1 WHERE id = ?2",
+            params![status, id],
+        )
+    };
+    assert_refused(set_status(suggestion, "confirmed"));
+    set_status(first, "rejected").unwrap();
+    // A rejected pair isn't suggested again, but can be confirmed.
+    assert_refused(set_status(first, "suggested"));
+    // Only the amount and status change.
+    for column in [
+        "kind = 'reimbursement'",
+        "inflow_id = inflow_id + 1",
+        "created_at = '2026-01-01T00:00:00.000Z'",
+    ] {
+        assert_refused(fixture.conn().execute(
+            &format!("UPDATE transaction_link SET {column} WHERE id = ?1"),
+            [first],
+        ));
+    }
+    // With the first link rejected, the suggestion fits.
+    set_status(suggestion, "confirmed").unwrap();
+    assert_refused(set_status(first, "confirmed"));
+
+    // A purchase too large for exact pro-rata arithmetic.
+    let huge = fixture.manual_amount(account, -3_037_000_500, "GBP");
+    let big_refund = fixture.manual_amount(account, 3_037_000_500, "GBP");
+    assert_refused(link("refund", big_refund, Some(huge), None, 100));
+}
+
+#[test]
+fn a_linked_transaction_keeps_its_amount_and_its_inflow_stays_whole() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let purchase = fixture.manual_amount(account, -1000, "GBP");
+    let refund = fixture.manual_amount(account, 1000, "GBP");
+    let link = fixture
+        .link("refund", refund, Some(purchase), None, 500, "suggested")
+        .unwrap();
+    for row in [purchase, refund] {
+        assert_refused(fixture.conn().execute(
+            "UPDATE \"transaction\" SET amount_minor = amount_minor * 2 WHERE id = ?1",
+            [row],
+        ));
+    }
+    assert_refused(fixture.conn().execute(
+        "UPDATE \"transaction\" SET my_share_minor = 500, share_label = 'Sam' WHERE id = ?1",
+        [refund],
+    ));
+    assert_refused(fixture.split_line(refund, 1, 500, None));
+    // The purchase can be split; deleting a linked row is refused until its
+    // links go.
+    fixture.split_line(purchase, 1, -400, None).unwrap();
+    fixture.split_line(purchase, 2, -600, None).unwrap();
+    assert_refused(
+        fixture
+            .conn()
+            .execute(
+                "DELETE FROM transaction_split WHERE transaction_id = ?1",
+                [purchase],
+            )
+            .and_then(|_| {
+                fixture
+                    .conn()
+                    .execute("DELETE FROM \"transaction\" WHERE id = ?1", [purchase])
+            }),
+    );
+
+    // Once rejected, the link holds nothing back.
+    fixture
+        .conn()
+        .execute(
+            "UPDATE transaction_link SET status = 'rejected' WHERE id = ?1",
+            [link],
+        )
+        .unwrap();
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET amount_minor = 2000 WHERE id = ?1",
+            [refund],
+        )
+        .unwrap();
+}
+
+#[test]
+fn ledger_line_nets_confirmed_links_only() {
+    let fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let shopping = fixture.default_category("shopping");
+    let purchase = fixture.manual_amount(account, -1000, "GBP");
+    fixture
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET category_id = ?1, category_source = 'user' WHERE id = ?2",
+            [shopping, purchase],
+        )
+        .unwrap();
+    let refund = fixture.manual_amount(account, 1500, "GBP");
+    let link = fixture
+        .link("refund", refund, Some(purchase), None, 1000, "suggested")
+        .unwrap();
+    let rows = |transaction: i64| -> Vec<(i64, Option<i64>, Option<i64>, Option<i64>)> {
+        let mut statement = fixture
+            .conn()
+            .prepare(
+                "SELECT amount_minor, category_id, link_id, target_id FROM ledger_line \
+                 WHERE transaction_id = ?1 ORDER BY link_id IS NOT NULL",
+            )
+            .unwrap();
+        statement
+            .query_map([transaction], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert_eq!(rows(refund), [(1500, None, None, None)]);
+    fixture
+        .conn()
+        .execute(
+            "UPDATE transaction_link SET status = 'confirmed' WHERE id = ?1",
+            [link],
+        )
+        .unwrap();
+    assert_eq!(
+        rows(refund),
+        [
+            (500, None, None, None),
+            (1000, Some(shopping), Some(link), Some(purchase))
+        ]
+    );
+    assert_eq!(rows(purchase), [(-1000, Some(shopping), None, None)]);
 }

@@ -104,6 +104,11 @@ pub enum Error {
     #[error("transaction {0} isn't split")]
     NotSplit(TransactionId),
 
+    /// The money in of a confirmed refund, reimbursement or settlement:
+    /// its linked part takes the purchase's category, so it isn't split.
+    #[error("transaction {0} is linked as money in; unlink it before splitting it")]
+    Linked(TransactionId),
+
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 }
@@ -245,6 +250,10 @@ pub fn replace(
         return Err(Error::InTransfer(transaction));
     }
     validate(parent.amount, lines)?;
+    // Drops suggestions where it is the money in, which a split ends.
+    if !crate::link::release_inflow(conn, transaction)? {
+        return Err(Error::Linked(transaction));
+    }
 
     let mut find_category = conn.prepare_cached("SELECT id FROM category WHERE key = ?1")?;
     let mut categories = Vec::with_capacity(lines.len());

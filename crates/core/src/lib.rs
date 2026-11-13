@@ -14,6 +14,7 @@ pub mod db;
 pub mod exclusion;
 pub mod id;
 pub mod import;
+pub mod link;
 pub mod manual;
 pub mod merchant;
 pub mod money;
