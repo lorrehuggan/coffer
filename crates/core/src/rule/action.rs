@@ -30,6 +30,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{ActionKind, UnknownKey, key_enum};
 use crate::category::{CategoryKey, CategoryKeyError};
+use crate::exclusion::ExclusionReason;
 use crate::tag::{self, TagName, TagNameError};
 
 key_enum! {
@@ -43,6 +44,18 @@ key_enum! {
         Disputed => "disputed",
         /// Anything else; needs a note, so a rule can't use it.
         Other => "other",
+    }
+}
+
+impl ExcludeReason {
+    /// The same reason as the `exclusion` module has it.
+    pub const fn exclusion_reason(self) -> ExclusionReason {
+        match self {
+            ExcludeReason::Duplicate => ExclusionReason::Duplicate,
+            ExcludeReason::BankError => ExclusionReason::BankError,
+            ExcludeReason::Disputed => ExclusionReason::Disputed,
+            ExcludeReason::Other => ExclusionReason::Other,
+        }
     }
 }
 
@@ -449,6 +462,13 @@ mod tests {
 
     fn shape(kind: ActionKind) -> Result<RuleAction, ActionValueError> {
         Err(ActionValueError::Shape { kind })
+    }
+
+    #[test]
+    fn exclude_reasons_are_the_exclusion_modules_reasons() {
+        for reason in ExcludeReason::ALL {
+            assert_eq!(reason.exclusion_reason().as_str(), reason.as_str());
+        }
     }
 
     #[test]

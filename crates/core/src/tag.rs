@@ -369,6 +369,17 @@ pub fn clear_batch(conn: &Connection, batch: BatchId) -> rusqlite::Result<usize>
     )
 }
 
+/// The ID of the tag named `name` ignoring case, creating it (not private)
+/// when there is none. For rules' `add_tag`, which name tags rather than
+/// refer to them. Opens no transaction of its own.
+pub(crate) fn find_or_create(conn: &Connection, name: &TagName) -> rusqlite::Result<TagId> {
+    if let Some(tag) = find_in(conn, name)? {
+        return Ok(tag.id);
+    }
+    conn.execute("INSERT INTO tag (name) VALUES (?1)", [name.as_str()])?;
+    Ok(TagId::new(conn.last_insert_rowid()))
+}
+
 /// Whether `names` repeat a name, ignoring case.
 pub(crate) fn has_repeat(names: &[TagName]) -> bool {
     let mut seen = HashSet::new();
