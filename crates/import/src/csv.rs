@@ -55,6 +55,8 @@ pub struct CsvImporter {
     mapping: CsvMapping,
     /// The preset's category map: source category → Coffer category.
     category_map: BTreeMap<String, CategoryKey>,
+    /// The preset's category for sub-account transfers, ahead of the map.
+    sub_account_category: Option<CategoryKey>,
 }
 
 impl CsvImporter {
@@ -67,6 +69,7 @@ impl CsvImporter {
             preset_id: None,
             mapping,
             category_map: BTreeMap::new(),
+            sub_account_category: None,
         })
     }
 
@@ -84,6 +87,16 @@ impl CsvImporter {
         self
     }
 
+    /// Gives every sub-account transfer (a line with a
+    /// [`SubAccountRef`](coffer_core::statement::SubAccountRef)) this
+    /// category instead of what the category map has for it. For banks that
+    /// file pot transfers under a category that also holds other rows
+    /// (Monzo's "Transfers").
+    pub fn with_sub_account_category(mut self, category: Option<CategoryKey>) -> CsvImporter {
+        self.sub_account_category = category;
+        self
+    }
+
     pub fn mapping(&self) -> &CsvMapping {
         &self.mapping
     }
@@ -92,6 +105,11 @@ impl CsvImporter {
     /// gave one.
     pub fn category_map(&self) -> &BTreeMap<String, CategoryKey> {
         &self.category_map
+    }
+
+    /// The category sub-account transfers get, if a preset gave one.
+    pub fn sub_account_category(&self) -> Option<&CategoryKey> {
+        self.sub_account_category.as_ref()
     }
 
     pub fn preset_id(&self) -> Option<&str> {
@@ -154,11 +172,14 @@ impl Importer for CsvImporter {
                 None => positions
                     .line(&self.mapping, &record.fields)
                     .map(|mut line| {
-                        line.category = line
-                            .source_category
-                            .as_deref()
-                            .and_then(|source| self.category_map.get(source.trim()))
-                            .cloned();
+                        line.category = match (&line.sub_account, &self.sub_account_category) {
+                            (Some(_), Some(category)) => Some(category.clone()),
+                            _ => line
+                                .source_category
+                                .as_deref()
+                                .and_then(|source| self.category_map.get(source.trim()))
+                                .cloned(),
+                        };
                         line
                     }),
             };

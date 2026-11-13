@@ -462,12 +462,15 @@ Import real statements into a local database from the command line.
   columns neither read nor ignored. A test requires every bundled preset to import its
   fixture in `fixtures/presets/`. Contributor reference: `presets/README.md`
   (`ARCHITECTURE.md` → "Presets"). `[sub_account_transfer]` came with M1.17
-- 🚧 M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export).
+- ✅ M1.9 First preset: `presets/uk/monzo.toml` with a redacted fixture (built from a real export).
   The preset (`uk-monzo`, signed `Amount`, `multiline_fields = true`, Monzo categories
-  mapped to default keys) and a synthetic fixture with one row per known quirk are in, with
-  tests in `crates/import/tests/preset_uk_monzo.rs`. Still to do: check the fixture's
-  assumptions (pot rows, £0.00 card checks, quoting, line endings) against a real export
-  (`ARCHITECTURE.md` → "Presets")
+  mapped to default keys) and a synthetic fixture with one row per known quirk, with
+  tests in `crates/import/tests/preset_uk_monzo.rs`. Checked by structure against a real
+  export (2026-11-13): it has no pot IDs, so pots are keyed by name, and pot transfers
+  sit in "Transfers", so `[sub_account_transfer] category` gives them
+  `transfer.savings`. The real file imports with nothing flagged and re-imports with
+  nothing new (`ARCHITECTURE.md` → "Presets"; "Decision record: sub-accounts", points
+  8–9)
 - ✅ M1.10 OFX/QFX importer (SGML 1.x and XML 2.x), `FITID` IDs, `LEDGERBAL` balances.
   `coffer_import::ofx`: `OfxImporter` over Coffer's own tolerant SGML/XML reader (`ofx-kit`
   dropped: it fails whole files on one bad row and guesses encodings). Bank and credit
@@ -507,7 +510,7 @@ Import real statements into a local database from the command line.
   `[sub_account_transfer]` in presets (Monzo's pots in `presets/uk/monzo.toml` and its
   fixture); `coffer_core::sub_account` plans the pots in the preview and mirrors the
   rows in `import::commit`, before rules and transfer detection, as `confirmed`
-  transfer groups; pots are found by the bank's ID (`account.sub_account_key`,
+  transfer groups; pots are found by key (`account.sub_account_key`,
   `V4__sub_account_key.sql`) and stay when their import is undone. Starling Spaces and
   Revolut Vaults need their presets (`ARCHITECTURE.md` → "Decision record:
   sub-accounts")
@@ -587,7 +590,7 @@ Import real statements into a local database from the command line.
   `--include-private-tags` (user decision, 2026-11-12), share labels never
 
 `crates/import/tests/m1_exit.rs` walks the exit criteria below end to end on synthetic
-data; M1.9's check against a real Monzo export is what's left.
+data, and a real Monzo export imports and re-imports cleanly (M1.9).
 
 **Exit criteria:** your own CSV/OFX exports import without duplicates on
 re-import, reconcile where balances exist, and get categorized by rules. Splits, tags,

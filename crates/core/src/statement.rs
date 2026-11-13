@@ -181,10 +181,10 @@ pub enum RowProblem {
     Unsupported { reason: &'static str },
 
     /// The preset recognises the row as a transfer to or from a sub-account
-    /// (a pot), but the column with the sub-account's ID is blank. Without
-    /// the ID the pot side can't be recorded, and half a transfer isn't
-    /// imported.
-    #[error("the row is a {kind} transfer, but the {kind}'s ID is missing")]
+    /// (a pot), but the column that identifies the sub-account (its ID, or
+    /// for Monzo its name) is blank. Without it the pot side can't be
+    /// recorded, and half a transfer isn't imported.
+    #[error("the row is a {kind} transfer, but doesn't say which {kind}")]
     SubAccountKeyMissing { kind: SubAccountKind },
 }
 
@@ -286,8 +286,8 @@ impl fmt::Display for SubAccountKind {
     }
 }
 
-/// The sub-account at the other end of a transfer row: which pot, by the
-/// bank's ID for it.
+/// The sub-account at the other end of a transfer row: which pot, by its
+/// key at the bank.
 ///
 /// `key` is how the pot is found again (`account.sub_account_key`, unique
 /// under its parent); `name` is only what a new pot is called. Pots are
@@ -295,8 +295,9 @@ impl fmt::Display for SubAccountKind {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SubAccountRef {
     pub kind: SubAccountKind,
-    /// The bank's stable ID for the pot (Monzo's `pot_…`), trimmed and never
-    /// empty.
+    /// What identifies the pot at the bank, trimmed and never empty: a
+    /// stable ID where the export has one, else its name (Monzo's export
+    /// has no pot ID).
     pub key: String,
     /// The pot's name on this row, when the file gives one. It can differ
     /// between rows for the same key (the user renamed the pot).

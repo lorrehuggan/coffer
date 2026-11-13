@@ -653,12 +653,10 @@ fn pot_transfers_show_in_the_preview_and_the_summary() {
     assert!(
         out.contains(
             "Pots:      4 transfers mirrored onto 2 pots as confirmed transfers\n  \
-             creates pot \"Emergency Fund\"\n  creates pot \"Holiday Fund\"\n"
+             creates pot \"Rainy Day\"\n  creates pot \"Holiday Fund\"\n"
         ),
         "{out}"
     );
-    // The pots' IDs at the bank stay out of the output.
-    assert!(!out.contains("pot_0000"), "{out}");
 
     let out = scratch.ok(&["import", &monzo]);
     assert!(

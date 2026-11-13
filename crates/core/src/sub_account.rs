@@ -4,12 +4,13 @@
 //!
 //! A bank's export lists money moving into and out of a pot as rows of the
 //! parent account. A preset's `[sub_account_transfer]` recognises those rows
-//! and puts the pot's ID on the line ([`StatementLine::sub_account`]). When
+//! and puts the pot's key on the line ([`StatementLine::sub_account`]). When
 //! the import commits such a row, [`mirror`] records the pot's side of it:
 //!
-//! - **The pot is found by its key**, the bank's stable ID for it
-//!   (`account.sub_account_key`, unique under its parent), never by name,
-//!   since the user renames pots. A key the parent has no pot for creates
+//! - **The pot is found by its key** (`account.sub_account_key`, unique
+//!   under its parent), matched exactly: the bank's stable ID for it where
+//!   the export has one, so a renamed pot stays one pot, else its name
+//!   (Monzo, whose export has no pot ID). A key the parent has no pot for creates
 //!   one: kind `pot`, the parent's currency and institution, named after
 //!   the pot's name on the latest-dated row with that key (a later row in
 //!   the input on a tie), or after the key when no row names it. An
@@ -87,7 +88,7 @@ pub enum Error {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewPot {
     pub kind: SubAccountKind,
-    /// The bank's ID for it (`account.sub_account_key`).
+    /// Its key at the bank (`account.sub_account_key`).
     pub key: String,
     /// What it will be called.
     pub name: String,
@@ -144,7 +145,7 @@ impl MirrorSummary {
     }
 }
 
-/// A pot and the bank's ID for it, if it has one.
+/// A pot and its key at the bank, if it has one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pot {
     pub account: Account,

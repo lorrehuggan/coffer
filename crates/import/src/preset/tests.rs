@@ -701,6 +701,13 @@ fn bundled_presets_map_to_default_categories() {
                 preset.id()
             );
         }
+        if let Some(key) = preset.sub_account_category() {
+            assert!(
+                coffer_core::category::default_category(key.as_str()).is_some(),
+                "{}: sub-account transfers get {key}, which isn't a default category",
+                preset.id()
+            );
+        }
     }
 }
 
@@ -897,6 +904,64 @@ fn sub_account_transfer_rows_carry_their_pot() {
             kind: SubAccountKind::Pot
         }
         .to_string(),
-        "the row is a pot transfer, but the pot's ID is missing"
+        "the row is a pot transfer, but doesn't say which pot"
+    );
+}
+
+#[test]
+fn sub_account_category_is_read_and_checked() {
+    assert_eq!(
+        Preset::from_toml(POTS).unwrap().sub_account_category(),
+        None
+    );
+    let with = POTS.replace(
+        "name = { column = \"Name\" }\n",
+        "name = { column = \"Name\" }\ncategory = \"transfer.savings\"\n",
+    );
+    let preset = Preset::from_toml(&with).unwrap();
+    assert_eq!(
+        preset.sub_account_category(),
+        Some(&key("transfer.savings"))
+    );
+    let bad = toml_error(&with.replace("\"transfer.savings\"", "\"Transfer Savings\""));
+    assert!(bad.contains("category"), "{bad}");
+}
+
+/// `[sub_account_transfer] category` goes on every sub-account transfer,
+/// ahead of `category_map`, and on nothing else.
+#[test]
+fn sub_account_category_goes_on_pot_transfers_only() {
+    let text = POTS
+        .replace(
+            "source_type = { column = \"Type\" }\n",
+            "source_type = { column = \"Type\" }\nsource_category = { column = \"Category\" }\n",
+        )
+        .replace(
+            "name = { column = \"Name\" }\n",
+            "name = { column = \"Name\" }\ncategory = \"transfer.savings\"\n",
+        )
+        + "\n[category_map]\n\"Transfers\" = \"transfer\"\n\"Eating out\" = \"food.eating_out\"\n";
+    let preset = Preset::from_toml(&text).unwrap();
+    let file = SourceFile::from_bytes(
+        "s.csv",
+        "Date,Amount,Description,Name,Type,Category\n\
+         01/11/2026,-20.00,pot_1,Rainy Day,Pot transfer,Transfers\n\
+         02/11/2026,12.00,,A. Friend,Monzo-to-Monzo,Transfers\n\
+         03/11/2026,-3.40,BEAN THERE,Bean There,Card payment,Eating out\n\
+         04/11/2026,-1.00,pot_2,Holiday,Pot transfer,\n",
+    );
+    let statement = preset.importer().import(&file).unwrap();
+    let categories: Vec<_> = statement
+        .lines()
+        .map(|(_, line)| line.category.as_ref().map(CategoryKey::as_str))
+        .collect();
+    assert_eq!(
+        categories,
+        [
+            Some("transfer.savings"),
+            Some("transfer"),
+            Some("food.eating_out"),
+            Some("transfer.savings"),
+        ]
     );
 }

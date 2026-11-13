@@ -28,7 +28,7 @@ Built for one user first; released as open source (UK, US, euro area at launch).
 | PDF | Deferred. Plan: local text extraction + per-layout templates; any model-based extraction opt-in only |
 | Categorization | Local rules engine first; AI-proposed categories/rules land in the Inbox for approval; approvals become rules. The app also files `rule` suggestions itself (source `coffer`) after repeated identical manual recategorisations: deterministic counting, no ML. Learned classifiers are not used |
 | Transfers | Auto-detect opposite-amount pairs across own accounts within 3 days (`TransferWindow::DEFAULT`); user confirms; excluded from income/spend |
-| Pots / sub-accounts | Monzo Pots, Starling Spaces, Revolut Vaults etc. are sub-accounts of their parent. A preset's `[sub_account_transfer]` identifies pot transfers; the import commit creates the pot when its bank ID is new, mirrors the row onto it (`origin = mirrored`) and pairs the two as a confirmed transfer. Pots count toward net worth (opening balance entered once per pot). See "Decision record: sub-accounts" |
+| Pots / sub-accounts | Monzo Pots, Starling Spaces, Revolut Vaults etc. are sub-accounts of their parent. A preset's `[sub_account_transfer]` identifies pot transfers; the import commit creates the pot when its key (the bank's ID for it, or its name where the export has no ID, as Monzo's doesn't) is new, mirrors the row onto it (`origin = mirrored`) and pairs the two as a confirmed transfer. Pots count toward net worth (opening balance entered once per pot). See "Decision record: sub-accounts" |
 | AI integration | `coffer mcp` stdio MCP server (`rmcp`). Read-only query tools + inbox-only writes. No account numbers or PII in tool output |
 | Splits | A transaction can be split into lines that sum exactly to its amount, in its currency (enforced in core, in the same DB transaction as the edit). Reports, budgets and MCP read the `ledger_line` view: one row per split line, or the transaction itself when it isn't split |
 | Tags and notes | Many tags per transaction, alongside categories. Tag names are user text: MCP sees them only at `standard` access, and never for tags marked private. The imported note stays read-only; the user's note is a separate field. Neither note is exposed over MCP by default |
@@ -522,7 +522,7 @@ Decided while building M1.17 (`coffer_core::sub_account`, `V4__sub_account_key.s
 wiring it into `import::commit`. The preset format is under "Presets".
 
 1. **Pots are found by key, never by name.** `account.sub_account_key` (V4) holds the
-   bank's ID for the pot (Monzo's `pot_…`), only on pots, unique per parent, and
+   bank's ID for the pot, only on pots, unique per parent, and
    read-only once set. A key the parent has no pot for creates one: kind `pot`, the
    parent's currency and institution, named from the latest-dated row that names it (the
    later row on a tie), else after the key. Existing pots keep their names, so a pot
@@ -557,6 +557,21 @@ wiring it into `import::commit`. The preset format is under "Presets".
    longer counts pots: their rows come with the parent's export, and once an import has
    created pots the parent must stay the only candidate. A pot still takes a file named
    with `--account`.
+8. **Amended 2026-11-13 (M1.9, user decision): Monzo pots are keyed by name.** Point 1
+   assumed Monzo's export gives a pot ID (`pot_…` in `Description`). Checked against a
+   real export, it doesn't: `Description` is empty on every pot transfer, and only
+   `Name` says which pot it is. Rather than flag every pot transfer, the Monzo preset
+   uses `key = Name`. The cost: renaming a pot in the Monzo app makes a new pot in
+   Coffer at the next import (its earlier rows stay on the old one), and two pots with
+   the same name are one. The core is unchanged: it still matches `sub_account_key`
+   exactly and never renames a pot; the key is just a name for this bank. A preset whose
+   export has a stable ID keeps using it. If Monzo adds pot IDs, the preset moves to
+   them in a new decision, since existing keys would no longer match.
+9. **Pot transfers can carry their own category (2026-11-13, user decision).**
+   `[sub_account_transfer] category` gives every matching row that category ahead of
+   `category_map` (stored as `preset_map`, like the map's). Monzo files pot transfers
+   under "Transfers", which also holds payments to and from people, so the map can't
+   tell them apart; the Monzo preset sets `transfer.savings`.
 
 ### Decision record: local backups (2026-11-11)
 
@@ -1129,12 +1144,14 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
     sit in "Money Out" as positive values). `Currency` is read as the row currency, so
     a row not in pounds is flagged rather than taken as GBP.
   - `Name` is the merchant (the pot's name for a pot transfer), `Description` the raw
-    text (the pot's ID for a pot transfer). `[sub_account_transfer]` recognises pot
-    transfers by `Type` = "Pot transfer" (M1.17).
+    text (empty for a pot transfer or a Monzo-to-Monzo payment). `[sub_account_transfer]`
+    recognises pot transfers by `Type` = "Pot transfer" (M1.17) and keys them by `Name`
+    ("Decision record: sub-accounts", point 8).
   - `Address` is ignored, so merchant addresses never reach the database from Monzo.
-  - Monzo's "Transfers" category isn't mapped: Monzo also files payments to and from
-    people under it, which are spending or income. "Savings" (what Monzo gives pot
-    transfers) maps to `transfer.savings`; Family and Finances map to the `family` and
+  - Monzo's "Transfers" category isn't mapped: Monzo files pot transfers and payments to
+    and from people under it, and the latter are spending or income. Pot transfers get
+    `transfer.savings` from `[sub_account_transfer] category` instead. "Savings" maps to
+    `transfer.savings`; Family and Finances map to the `family` and
     `finance` groups; "General" and "Expenses" are left for rules or the user.
 - **`[sub_account_transfer]`** (M1.17, decided 2026-11-11): `kind` (`"pot"` only),
   `when = { column, is }`, `key = { column }`, optional `name = { column }`. A row whose
@@ -1145,7 +1162,16 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
   (`RowProblem::SubAccountKeyMissing`) rather than imported without its pot side. Its
   columns count as read (detection, `unread_columns`, `ignore`). Starling Spaces and
   Revolut Vaults become new `kind`s with their own columns. Monzo: `when = Type is "Pot
-  transfer"`, `key = Description` (`pot_…`), `name = Name`.
+  transfer"`, `key = Name`, `name = Name`, `category = "transfer.savings"` (points 8 and 9
+  of that record). Optional `category`: a default category key every matching row gets,
+  ahead of `category_map`.
+  - **Checked against a real Monzo export (2026-11-13, M1.9),** by structure only (header,
+    counts, value shapes, distinct types and categories): the header matches; the file
+    is UTF-8 without a BOM, LF line endings, quoting only where needed; £0.00 card checks
+    have `Money Out` "0.00"; pot transfers and Monzo-to-Monzo payments have an empty
+    `Description`; pot transfers are in "Transfers"; IDs are all `tx_…` and unique.
+    The fixture follows it. Notes over several lines and refunds in `Money Out` didn't
+    occur in that export and stay as fixture rows from Monzo's known behaviour.
 
 ### The OFX importer
 

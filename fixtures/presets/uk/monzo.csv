@@ -1,16 +1,16 @@
 Transaction ID,Date,Time,Type,Name,Emoji,Category,Amount,Currency,Local amount,Local currency,Notes and #tags,Address,Receipt,Description,Category split,Money Out,Money In
 tx_0000FAKE000000000000001,01/10/2026,07:58:12,Faster payment,Example Employer Ltd,,Income,2150.00,GBP,2150.00,GBP,,,,EXAMPLE EMPLOYER LTD SALARY OCT,,,2150.00
-tx_0000FAKE000000000000002,01/10/2026,08:30:00,Pot transfer,Rainy Day,,Savings,-200.00,GBP,-200.00,GBP,,,,pot_0000FAKEPOT00000000001,,-200.00,
+tx_0000FAKE000000000000002,01/10/2026,08:30:00,Pot transfer,Rainy Day,,Transfers,-200.00,GBP,-200.00,GBP,,,,,,-200.00,
 tx_0000FAKE000000000000003,02/10/2026,08:14:51,Card payment,Bean There,☕,Eating out,-3.40,GBP,-3.40,GBP,,"1 Fake Street, Testville, TE1 1ST",,BEAN THERE TESTVILLE GBR,,-3.40,
 tx_0000FAKE000000000000004,02/10/2026,08:16:03,Card payment,Bean There,☕,Eating out,-3.40,GBP,-3.40,GBP,,"1 Fake Street, Testville, TE1 1ST",,BEAN THERE TESTVILLE GBR,,-3.40,
 tx_0000FAKE000000000000005,03/10/2026,12:41:09,Card payment,Café Lumière,🥐,Eating out,-8.62,GBP,-10.00,EUR,,"9 Rue Imaginaire, 75000 Paris",,CAFE LUMIERE PARIS FRA,,-8.62,
 tx_0000FAKE000000000000006,04/10/2026,19:02:44,Card payment,Fake Pizza Co,🍕,Eating out,-24.00,GBP,-24.00,GBP,"Team dinner, ""the usual""
 #work #shared","2 Fake Road, Testville, TE1 2ND",,FAKE PIZZA CO TESTVILLE GBR,,-24.00,
 tx_0000FAKE000000000000007,06/10/2026,10:15:00,Card payment,Bean There,☕,Eating out,3.40,GBP,3.40,GBP,refund #coffee,"1 Fake Street, Testville, TE1 1ST",,BEAN THERE TESTVILLE GBR,,3.40,
-tx_0000FAKE000000000000008,07/10/2026,09:00:01,Card payment,Example Streaming,📺,General,0.00,GBP,0.00,GBP,,,,EXAMPLE STREAMING CARD CHECK,,,
+tx_0000FAKE000000000000008,07/10/2026,09:00:01,Card payment,Example Streaming,📺,General,0.00,GBP,0.00,GBP,,,,EXAMPLE STREAMING CARD CHECK,,0.00,
 tx_0000FAKE000000000000009,08/10/2026,05:12:30,Direct Debit,Example Energy,💡,Bills,-61.25,GBP,-61.25,GBP,,,,EXAMPLE ENERGY LTD,,-61.25,
-tx_0000FAKE000000000000010,09/10/2026,18:00:00,Pot transfer,Rainy Day,,Savings,50.00,GBP,50.00,GBP,,,,pot_0000FAKEPOT00000000001,,,50.00
+tx_0000FAKE000000000000010,09/10/2026,18:00:00,Pot transfer,Rainy Day,,Transfers,50.00,GBP,50.00,GBP,,,,,,,50.00
 tx_0000FAKE000000000000011,10/10/2026,16:20:37,Card payment,Bäckerei Groß 🥨,🥨,Groceries,-4.15,GBP,-4.15,GBP,,"3 Fake Lane, Testville, TE1 3RD",,BACKEREI GROSS TESTVILLE GBR,,-4.15,
-tx_0000FAKE000000000000012,11/10/2026,21:30:00,Monzo-to-Monzo,A. Friend,,Transfers,12.00,GBP,12.00,GBP,,,,Pizza money,,,12.00
-tx_0000FAKE000000000000013,12/10/2026,09:00:00,Pot transfer,Holiday Fund,,Savings,-75.00,GBP,-75.00,GBP,,,,pot_0000FAKEPOT00000000002,,-75.00,
-tx_0000FAKE000000000000014,13/10/2026,09:00:00,Pot transfer,Emergency Fund,,Savings,-25.00,GBP,-25.00,GBP,,,,pot_0000FAKEPOT00000000001,,-25.00,
+tx_0000FAKE000000000000012,11/10/2026,21:30:00,Monzo-to-Monzo,A. Friend,,Transfers,12.00,GBP,12.00,GBP,,,,,,,12.00
+tx_0000FAKE000000000000013,12/10/2026,09:00:00,Pot transfer,Holiday Fund,,Transfers,-75.00,GBP,-75.00,GBP,,,,,,-75.00,
+tx_0000FAKE000000000000014,13/10/2026,09:00:00,Pot transfer,Rainy Day,,Transfers,-25.00,GBP,-25.00,GBP,,,,,,-25.00,

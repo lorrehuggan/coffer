@@ -127,6 +127,10 @@ impl Preset {
             return Err(PresetError::EmptyName);
         }
 
+        let sub_account_category = raw
+            .sub_account_transfer
+            .as_ref()
+            .and_then(|transfer| transfer.category.clone());
         let mapping = CsvMapping {
             currency: raw.currency,
             encoding: raw.encoding.map_or(TextEncoding::Auto, |e| e.0),
@@ -182,7 +186,8 @@ impl Preset {
         // 'preset_map'` once committed).
         let importer = CsvImporter::new(raw.name, mapping)?
             .with_preset(&raw.id)
-            .with_category_map(raw.category_map);
+            .with_category_map(raw.category_map)
+            .with_sub_account_category(sub_account_category);
         Ok(Preset {
             id: raw.id,
             region: raw.region,
@@ -231,6 +236,12 @@ impl Preset {
     /// pot), if the export has them (`[sub_account_transfer]`).
     pub fn sub_account_transfer(&self) -> Option<&SubAccountTransfer> {
         self.mapping().sub_account_transfer.as_ref()
+    }
+
+    /// The category every sub-account transfer gets, whatever its source
+    /// category (`[sub_account_transfer] category`).
+    pub fn sub_account_category(&self) -> Option<&CategoryKey> {
+        self.importer.sub_account_category()
     }
 
     /// The category key for a row's source category, matched exactly

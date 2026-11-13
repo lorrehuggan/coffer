@@ -143,8 +143,9 @@ fn monzo_imports_with_preset_categories_rules_and_transfers() {
     assert_eq!(summary.transfer_pairs, 1);
 }
 
-const RAINY_DAY: &str = "pot_0000FAKEPOT00000000001";
-const HOLIDAY: &str = "pot_0000FAKEPOT00000000002";
+// Monzo's export has no pot ID, so the preset keys pots by name.
+const RAINY_DAY: &str = "Rainy Day";
+const HOLIDAY: &str = "Holiday Fund";
 
 /// `(account, amount, origin, transfer group)` of every row with Monzo ID
 /// `n`, parent row first.
@@ -187,9 +188,7 @@ fn monzo_pot_transfers_are_mirrored_onto_their_pots() {
     monzo.institution = Some("Monzo".into());
     let current = account::create(&mut db, &monzo).unwrap();
 
-    // The preview says which pots the commit creates. Rainy Day was renamed
-    // Emergency Fund at the bank (line 14, the latest), and a new pot takes
-    // the latest name.
+    // The preview says which pots the commit creates.
     let preview = import::preview(&db, current, "monzo.csv", statement()).unwrap();
     let plan = preview.sub_accounts();
     assert_eq!(plan.mirrored_rows, 4, "lines 2, 10, 13 and 14");
@@ -199,12 +198,12 @@ fn monzo_pot_transfers_are_mirrored_onto_their_pots() {
             NewPot {
                 kind: SubAccountKind::Pot,
                 key: RAINY_DAY.into(),
-                name: "Emergency Fund".into(),
+                name: RAINY_DAY.into(),
             },
             NewPot {
                 kind: SubAccountKind::Pot,
                 key: HOLIDAY.into(),
-                name: "Holiday Fund".into(),
+                name: HOLIDAY.into(),
             },
         ]
     );
@@ -230,7 +229,7 @@ fn monzo_pot_transfers_are_mirrored_onto_their_pots() {
         assert_eq!(pot.currency, Currency::GBP);
         assert_eq!(pot.institution.as_deref(), Some("Monzo"));
     }
-    assert_eq!(rainy.name, "Emergency Fund");
+    assert_eq!(rainy.name, RAINY_DAY);
 
     // Each pot transfer is on both sides, opposite, in one confirmed pair.
     for (n, pot, minor) in [
@@ -258,7 +257,8 @@ fn monzo_pot_transfers_are_mirrored_onto_their_pots() {
     // Into Rainy Day 200.00 and 25.00, back out 50.00; into Holiday 75.00.
     assert_eq!(balance(&db, rainy.id), 17_500);
     assert_eq!(balance(&db, holiday.id), 7_500);
-    // Mirrored rows share the pot transfer's category; the preset counts
+    // Pot transfers get the `[sub_account_transfer]` category, though Monzo
+    // files them under Transfers. Mirrored rows share it; the preset counts
     // only the file's rows.
     assert_eq!(category_of(&db, 2), pair("preset_map", "transfer.savings"));
     assert_eq!(summary.categorized_by_preset, 12);

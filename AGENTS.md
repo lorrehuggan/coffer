@@ -16,8 +16,8 @@ charts, and exposes the data to AI clients through an MCP server.
 
 ## Current state
 
-M0 and the design track (D1–D6) are done and signed off; M1 is done except M1.9's
-check against a real Monzo export. The Cargo
+M0 and the design track (D1–D6) are done and signed off; every M1 item is done,
+M1.9 checked against a real Monzo export. The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
 (`crates/core/migrations/V1__initial_schema.sql`, M1.4) and the
@@ -27,7 +27,7 @@ and categories (`category`: `CategoryKey`, M1.8; `CategoryKind`, `DEFAULT_CATEGO
 and `CategoryTree` via `Database::categories`, seeded by `V2__default_categories.sql`,
 M1.14) and rules (`rule`: validated `RuleDefinition`, `Pattern`, `RuleAction`; the
 store and the `RuleSet` engine; M1.15, every action kind since M1.24) and transfer-pair detection
-(`transfer`, M1.16) and sub-accounts (`sub_account`: pots found by the bank's ID,
+(`transfer`, M1.16) and sub-accounts (`sub_account`: pots found by key,
 auto-created, rows mirrored and paired as confirmed transfers; M1.17, migration
 `V4__sub_account_key.sql`) and the import commit (`import`: preview → backup → commit →
 undo with dedupe and reconciliation, then preset categories, the pot mirror, merchant

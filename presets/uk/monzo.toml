@@ -60,8 +60,8 @@ original_amount = { column = "Local amount", currency_column = "Local currency" 
 
 # "Name" is Monzo's cleaned-up merchant or payee ("Café Lumière"), or the pot's
 # name for a pot transfer. "Description" is the raw text from the card network
-# or the payment reference ("CAFE LUMIERE PARIS FRA", or "pot_…" for a pot),
-# kept as written for rules and dedupe.
+# or the payment reference ("CAFE LUMIERE PARIS FRA"), kept as written for
+# rules and dedupe. It's empty on pot transfers and Monzo-to-Monzo payments.
 merchant = { column = "Name" }
 description = { column = "Description" }
 
@@ -87,30 +87,39 @@ note = { column = "Notes and #tags" }
 ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money In"]
 
 # Pots. Monzo lists money moving into and out of a pot as rows of this account,
-# with "Pot transfer" as the `Type`, the pot's ID ("pot_…") as the
-# `Description` and the pot's name as the `Name`. Each such row is mirrored
-# onto the pot, a sub-account of the account imported into, and the two are
-# recorded as a confirmed transfer. The pot is found by its ID, never by name:
-# the user can rename a pot in the app, and later rows then carry the new name.
-# The import creates a pot the first time it sees its ID. A pot transfer with
-# no ID is flagged rather than imported without its pot side.
+# with "Pot transfer" as the `Type` and the pot's name as the `Name`. Each such
+# row is mirrored onto the pot, a sub-account of the account imported into,
+# and the two are recorded as a confirmed transfer.
+#
+# The export has no pot ID (`Description` is empty on these rows; checked
+# against a real export, 2026-11-13), so the pot's name is its key. Renaming a
+# pot in the app therefore makes a new pot in Coffer on the next import, and
+# two pots with the same name are one. The import creates a pot the first time
+# it sees its name. A pot transfer with no name is flagged rather than
+# imported without its pot side.
+#
+# Monzo files pot transfers under "Transfers", with payments to and from
+# people, so `category` gives them their own category ahead of `category_map`.
 [sub_account_transfer]
 kind = "pot"
 when = { column = "Type", is = "Pot transfer" }
-key = { column = "Description" }
+key = { column = "Name" }
 name = { column = "Name" }
+category = "transfer.savings"
 
 # Monzo's built-in categories → Coffer's category keys, matched exactly (case
 # included). Not mapped, so left for rules or the user:
 # - General: Monzo's catch-all, which says nothing.
 # - Expenses: money to be reimbursed, which Coffer tracks as a link to the
 #   repayment rather than a category.
-# - Transfers: Monzo's category for payments to and from people too (a friend
-#   paying back their half), which are spending or income, not a transfer
-#   between the user's own accounts. Transfer-pair detection finds those.
+# - Transfers: Monzo's category for pot transfers and for payments to and
+#   from people (a friend paying back their half), which are spending or
+#   income, not a transfer between the user's own accounts. Pot transfers get
+#   `transfer.savings` from `[sub_account_transfer]` (above); transfer-pair
+#   detection finds transfers to the user's other accounts.
 # - Categories the user created in the app.
-# "Savings" is what Monzo gives pot transfers: money moving between the user's
-# own accounts, not spending. (The pot side is `[sub_account_transfer]`, below.)
+# "Savings" is money set aside: moving between the user's own accounts, not
+# spending.
 # Family and Finances map to Coffer's group of the same name, since Monzo's
 # category spans several of its subcategories.
 [category_map]

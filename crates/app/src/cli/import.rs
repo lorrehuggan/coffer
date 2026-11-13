@@ -501,7 +501,7 @@ fn write_preview(
             plural(pots.new_pots.len() + pots.existing_pots.len(), "pot")
         )?;
         // A new pot's name is what the account will be called, so it is
-        // shown; its key (the bank's ID) is not.
+        // shown; its key (the bank's ID, or the name again) is not.
         for pot in &pots.new_pots {
             writeln!(out, "  creates pot \"{}\"", pot.name)?;
         }

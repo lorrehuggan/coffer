@@ -131,8 +131,9 @@ pub struct SubAccountTransfer {
     /// Its value on such a row (`Pot transfer`): not empty, and without
     /// spaces at either end.
     pub match_value: String,
-    /// The sub-account's stable ID at the bank (Monzo's `Description`,
-    /// `pot_…`), which finds the pot again on every import.
+    /// What identifies the sub-account at the bank, which finds the pot
+    /// again on every import: a stable ID where the export has one, else
+    /// its name (Monzo's `Name`; its export has no pot ID).
     pub key: Column,
     /// The sub-account's name (Monzo's `Name`), for a pot the import
     /// creates. Optional.

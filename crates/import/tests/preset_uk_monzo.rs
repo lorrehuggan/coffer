@@ -219,32 +219,30 @@ fn a_card_payment_abroad_keeps_the_local_amount() {
     assert_eq!(lunch.description_raw, "CAFE LUMIERE PARIS FRA");
 }
 
-/// Pot transfers keep the pot's name as the merchant and its ID as the
-/// description, like any row, and carry the pot (`[sub_account_transfer]`)
-/// for the commit to mirror: into and out of one pot, into a second pot,
-/// and into the first again after the user renamed it (same ID).
+/// Pot transfers keep the pot's name as the merchant and an empty
+/// description (Monzo's export has no pot ID), and carry the pot
+/// (`[sub_account_transfer]`), keyed by its name, for the commit to mirror:
+/// into and out of one pot, into a second pot, and into the first again.
 #[test]
 fn pot_transfers_name_their_pot() {
     let statement = statement();
-    let rainy = "pot_0000FAKEPOT00000000001";
-    let holiday = "pot_0000FAKEPOT00000000002";
-    for (n, minor, name, key) in [
-        (2, -20_000, "Rainy Day", rainy),
-        (10, 5_000, "Rainy Day", rainy),
-        (13, -7_500, "Holiday Fund", holiday),
-        (14, -2_500, "Emergency Fund", rainy),
+    for (n, minor, name) in [
+        (2, -20_000, "Rainy Day"),
+        (10, 5_000, "Rainy Day"),
+        (13, -7_500, "Holiday Fund"),
+        (14, -2_500, "Rainy Day"),
     ] {
         let pot = line(&statement, n);
         assert_eq!(pot.amount, gbp(minor));
         assert_eq!(pot.source_type.as_deref(), Some("Pot transfer"));
-        assert_eq!(pot.source_category.as_deref(), Some("Savings"));
+        assert_eq!(pot.source_category.as_deref(), Some("Transfers"));
         assert_eq!(pot.merchant.as_deref(), Some(name));
-        assert_eq!(pot.description_raw, key);
+        assert_eq!(pot.description_raw, "");
         assert_eq!(
             pot.sub_account,
             Some(SubAccountRef {
                 kind: SubAccountKind::Pot,
-                key: key.to_owned(),
+                key: name.to_owned(),
                 name: Some(name.to_owned()),
             }),
             "tx {n}"
@@ -258,11 +256,33 @@ fn pot_transfers_name_their_pot() {
     }
 }
 
-/// A pot transfer without the pot's ID is flagged, not imported without its
-/// pot side.
+/// A pot renamed in the app is keyed by its new name, so it is a different
+/// pot from the one its earlier rows went to.
 #[test]
-fn a_pot_transfer_without_its_pot_id_is_flagged() {
-    let text = fixture_text().replace(",pot_0000FAKEPOT00000000002,", ",,");
+fn a_renamed_pot_has_a_new_key() {
+    let text = fixture_text().replace(
+        "Pot transfer,Rainy Day,,Transfers,-25.00",
+        "Pot transfer,Emergency Fund,,Transfers,-25.00",
+    );
+    let file = SourceFile::from_bytes("monzo.csv", text);
+    let statement = monzo().importer().import(&file).unwrap();
+    let key = |n| {
+        line(&statement, n)
+            .sub_account
+            .as_ref()
+            .unwrap()
+            .key
+            .clone()
+    };
+    assert_eq!(key(2), "Rainy Day");
+    assert_eq!(key(14), "Emergency Fund");
+}
+
+/// A pot transfer without the pot's name, its key, is flagged, not imported
+/// without its pot side.
+#[test]
+fn a_pot_transfer_without_its_pot_name_is_flagged() {
+    let text = fixture_text().replace("Pot transfer,Holiday Fund,", "Pot transfer,,");
     let file = SourceFile::from_bytes("monzo.csv", text);
     let statement = monzo().importer().import(&file).unwrap();
     assert_eq!(
@@ -329,7 +349,7 @@ fn a_payment_from_a_person() {
     assert_eq!(payback.amount, gbp(1_200));
     assert_eq!(payback.source_type.as_deref(), Some("Monzo-to-Monzo"));
     assert_eq!(payback.source_category.as_deref(), Some("Transfers"));
-    assert_eq!(payback.description_raw, "Pizza money");
+    assert_eq!(payback.description_raw, "", "Monzo leaves it empty");
 }
 
 /// The `Currency` column is read, so a row Monzo writes in another currency
@@ -358,16 +378,26 @@ fn categories_map_to_coffer_keys() {
             .cloned()
     };
     assert_eq!(mapped(1), Some(key("income")));
-    assert_eq!(mapped(2), Some(key("transfer.savings")), "pot transfers");
     assert_eq!(mapped(3), Some(key("food.eating_out")));
     assert_eq!(mapped(9), Some(key("bills")));
     assert_eq!(mapped(11), Some(key("food.groceries")));
     assert_eq!(mapped(8), None, "General says nothing");
     assert_eq!(mapped(12), None, "Transfers includes payments from people");
 
+    assert_eq!(mapped(2), None, "pot transfers are under Transfers too");
+
     // The importer puts the same categories on the lines themselves, for
-    // the commit to store as `preset_map`.
+    // the commit to store as `preset_map`, except that pot transfers get
+    // the `[sub_account_transfer]` category.
+    let savings = key("transfer.savings");
+    assert_eq!(preset.sub_account_category(), Some(&savings));
     for n in 1..=14 {
-        assert_eq!(line(&statement, n).category, mapped(n), "line {n}");
+        let line = line(&statement, n);
+        let expected = match line.sub_account {
+            Some(_) => Some(savings.clone()),
+            None => mapped(n),
+        };
+        assert_eq!(line.category, expected, "line {n}");
     }
+    assert_eq!(line(&statement, 2).category, Some(savings), "pot transfers");
 }

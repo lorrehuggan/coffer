@@ -128,6 +128,7 @@ pub(super) struct RawOriginalAmount {
 /// when = { column = "Type", is = "Pot transfer" }
 /// key = { column = "Description" }
 /// name = { column = "Name" }
+/// category = "transfer.savings"
 /// ```
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -136,6 +137,7 @@ pub(super) struct RawSubAccountTransfer {
     pub when: RawWhen,
     pub key: RawColumn,
     pub name: Option<RawColumn>,
+    pub category: Option<CategoryKey>,
 }
 
 /// Only `pot` so far.

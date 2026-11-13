@@ -124,12 +124,18 @@ Pots), so each one is also recorded on the pot as a confirmed transfer:
 [sub_account_transfer]
 kind = "pot"                                      # the only kind so far
 when = { column = "Type", is = "Pot transfer" }   # exact value, case included; the row's value is trimmed
-key = { column = "Description" }                  # the pot's stable ID at the bank
+key = { column = "Description" }                  # what identifies the pot: its stable ID at the bank
 name = { column = "Name" }                        # optional: what a new pot is called
+category = "transfer.savings"                     # optional: every pot transfer's category
 ```
 
-Pots are found by `key`, never by name; a new key creates a pot under the account
-imported into, named from `name` (else the key). A matching row with an empty key is
-flagged. The columns count as read, so don't list them in `ignore`. Unknown keys are
+Pots are found by `key`, matched exactly; a new key creates a pot under the account
+imported into, named from `name` (else the key). Use the bank's stable ID for the pot
+when the export has one: then a renamed pot stays one pot. Monzo's export has none, so
+its preset keys by name, and a pot renamed in the app becomes a new pot in Coffer
+(`docs/ARCHITECTURE.md` → "Decision record: sub-accounts", point 8). A matching row
+with an empty key is flagged. `category` (a default category key) goes on every
+matching row ahead of `[category_map]`, for banks that file pot transfers under a
+category shared with other rows. The columns count as read, so don't list them in `ignore`. Unknown keys are
 refused, and positions count from 1. Starling Spaces and Revolut Vaults will be new
 `kind`s.
