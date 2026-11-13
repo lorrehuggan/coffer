@@ -93,3 +93,7 @@ row_id!(
     /// A `change_batch` row.
     ChangeBatchId
 );
+row_id!(
+    /// A `duplicate_candidate` row: a possible duplicate pair.
+    DuplicateCandidateId
+);

@@ -46,6 +46,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::account;
 use crate::db::Database;
+use crate::duplicate;
 use crate::exclusion::ExclusionReason;
 use crate::id::{BatchId, ChangeBatchId, RuleId, TagId, TransactionId};
 use crate::merchant;
@@ -1197,9 +1198,9 @@ pub fn undo_in(conn: &Connection, batch: ChangeBatchId) -> Result<UndoSummary, E
 /// What a batch's kind undoes beyond its items, in the same DB transaction.
 fn after_undo(conn: &Connection, info: &BatchInfo) -> Result<(), Error> {
     match info.kind {
-        // M1.26: a merged duplicate candidate goes back to `pending` here.
+        // The candidates it merged go back to `pending` (M1.26).
         ChangeKind::DuplicateMerge => {
-            let _ = conn;
+            duplicate::after_undo(conn, info.id)?;
             Ok(())
         }
         ChangeKind::RuleApply | ChangeKind::BulkEdit => Ok(()),

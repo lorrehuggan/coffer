@@ -53,6 +53,7 @@ use crate::account::{self, Account, date_key};
 use crate::category::CategoryKey;
 use crate::change;
 use crate::db::Database;
+use crate::duplicate;
 use crate::id::{AccountId, TransactionId, TransferGroupId};
 use crate::merchant;
 use crate::money::{Currency, Money};
@@ -363,11 +364,11 @@ pub fn delete(db: &mut Database, id: TransactionId) -> Result<Deleted, Error> {
 /// Clears everything that refers to transaction `id` before it is deleted,
 /// and returns the transfer group it dissolved.
 ///
-/// The one place a manual row's references go: split lines and tag links
-/// today; tables that point at a transaction later (refund links, duplicate
-/// candidates, schedule matches) are cleared here as they arrive. Until one
-/// is, a row it references can't be deleted: the foreign key fails the
-/// delete, and nothing changes.
+/// The one place a manual row's references go: split lines, tag links,
+/// change items and duplicate candidates today; tables that point at a
+/// transaction later (refund links, schedule matches) are cleared here as
+/// they arrive. Until one is, a row it references can't be deleted: the
+/// foreign key fails the delete, and nothing changes.
 fn release_references(
     tx: &Transaction<'_>,
     id: TransactionId,
@@ -383,6 +384,7 @@ fn release_references(
     split::clear(tx, id)?;
     tag::clear(tx, id)?;
     change::clear(tx, id)?;
+    duplicate::clear(tx, id)?;
     Ok(group)
 }
 

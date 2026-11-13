@@ -11,6 +11,7 @@ pub mod balance;
 pub mod category;
 pub mod change;
 pub mod db;
+pub mod duplicate;
 pub mod exclusion;
 pub mod id;
 pub mod import;
