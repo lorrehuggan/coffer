@@ -298,7 +298,13 @@ Saved reports:
 ```sh
 coffer inbox reports               # saved reports, newest first (no bodies)
 coffer inbox report 7              # one report, as plain text
+coffer inbox delete-report 7 8     # lists what would go; add --yes to delete
+coffer inbox delete-report --client claude-code --before 2026-01-01 --yes
 ```
+
+Each client can keep at most 500 saved reports. Once it reaches that, it can't save more
+until you delete some; `coffer inbox reports` flags a client that's at the cap. Only you
+can delete reports: no MCP tool can.
 
 Text an AI wrote is shown labelled as unverified, without hidden characters; a report's
 markdown and links are printed as they are, never rendered or opened.
