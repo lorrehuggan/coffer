@@ -22,7 +22,51 @@
 //! anything is swapped, backs the current database up (reason
 //! [`Reason::Restore`]), swaps the checked copy in with a rename, and opens
 //! it with [`Database::open`], which migrates an older schema. A refused
-//! restore leaves the current database as it was.
+//! restore leaves the current database as it was. The AI access log isn't
+//! rolled back: rows newer than the backup's are carried over from the
+//! database it replaced ([`access_log::carry_forward`]).
+//!
+//! **Running MCP servers during a restore.** From the moment the backup has
+//! passed its checks until the restored database is open (and migrated),
+//! [`restore`] holds the restore lock: the operating system's exclusive
+//! lock (`File::try_lock`) on `<database>-restoring`, next to the database
+//! ([`restore_lock_path`]). An MCP server keeps no connection open between
+//! calls: before and after it opens the database for a call it checks
+//! [`restoring`], and refuses the call while the lock is held. So the swap
+//! never races a reader, and the next call after the restore opens the
+//! restored file. A call already running when the lock is taken finishes
+//! first: the restore waits up to [`RELEASE_WAIT`] for its connection to
+//! close. A second restore can't take the lock, so it is refused
+//! ([`Error::RestoreLocked`]). No network, no messages between processes.
+//! The calls refused meanwhile are recorded outside the database, in the
+//! access log's pending file ([`access_log::pending`]); [`restore`] moves
+//! them into the restored database's log once it's open.
+//!
+//! **What the lock guarantees.** It is the lock that says a restore is
+//! running, not the file: the file is created by the first restore and
+//! then stays, empty between restores. While a restore holds the lock,
+//! every [`restoring`] check returns `true`. A check made before the lock
+//! is taken (the file missing, or there but not yet locked) returns
+//! `false`, and that's sound: [`restore`] changes nothing (the database,
+//! its `-wal`/`-shm`, the backups) until it holds the lock, and then waits
+//! for connections opened earlier to close, so such a check is the same as
+//! one made before the restore started. The file is never deleted, so a
+//! process can't lock a file that has already left the directory while
+//! another locks a new one under the same name.
+//!
+//! **A restore that stops part-way** (crash, kill, power loss) can't leave a
+//! lock behind: the operating system releases it with the process. MCP
+//! calls go ahead at once, through [`Database::open_existing`]'s checks;
+//! the database is complete at every step (see [`restore`]). The restore
+//! writes a marker (its start time and the backup) into the file while it
+//! holds the lock and empties the file when it ends, so a marker in a file
+//! nobody holds means it stopped: [`check`] reports it ([`Interrupted`]),
+//! and [`restore`] goes ahead over it.
+//!
+//! The lock relies on the file system's locks (`flock` on Unix,
+//! `LockFileEx` on Windows). Local file systems have them; on a network
+//! file system they may be missing or apply only within one machine. Where
+//! locking fails, [`restoring`] returns the error and [`restore`] refuses.
 //!
 //! Nothing here reads or logs transaction contents; errors name files,
 //! versions and SQLite's own messages only.
@@ -31,16 +75,17 @@
 mod tests;
 
 use std::collections::HashSet;
-use std::fs::{self, File, OpenOptions};
-use std::io;
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use chrono::{DateTime, Datelike, NaiveDateTime, TimeDelta, Utc};
 use rusqlite::Connection;
 
+use crate::access_log;
 use crate::db::{self, Database, SchemaVersion};
 
 /// The backups directory's name, next to the database file.
@@ -142,6 +187,15 @@ pub enum Error {
         database.display()
     )]
     OrphanSidecar { sidecar: PathBuf, database: PathBuf },
+
+    /// Another process holds the restore lock: a restore is running. A
+    /// lock file nobody holds (one a crash left) doesn't cause this.
+    #[error(
+        "another restore is running (it holds the lock on {}); wait for it to finish, \
+         then restore again",
+        lock.display()
+    )]
+    RestoreLocked { lock: PathBuf },
 }
 
 fn io_error(action: &'static str, path: &Path) -> impl FnOnce(io::Error) -> Error {
@@ -428,6 +482,11 @@ pub struct RestoreCheck {
     pub supported_version: SchemaVersion,
     /// The database a restore would replace.
     pub current: Current,
+    /// An earlier restore that stopped before it finished, if the lock file
+    /// records one. The current database is then either the one that
+    /// restore replaced or its backup (complete either way); a restore goes
+    /// ahead over it and backs it up first.
+    pub interrupted: Option<Interrupted>,
 }
 
 /// The database a restore replaces.
@@ -450,6 +509,10 @@ pub struct Restored {
     pub migrated_to: Option<SchemaVersion>,
     /// The backup of the database it replaced, when there was one.
     pub pre_restore: Option<Backup>,
+    /// How many access-log rows newer than the backup's were carried over
+    /// from the database it replaced ([`access_log::carry_forward`]);
+    /// `None` when that failed (they're still in [`Restored::pre_restore`]).
+    pub log_rows_carried: Option<usize>,
 }
 
 /// Checks `backup` as [`restore`] would, without restoring it, and reports
@@ -477,6 +540,7 @@ pub fn check(db_path: &Path, backup: &Path) -> Result<RestoreCheck, Error> {
         schema_version,
         supported_version: Database::supported_schema_version(),
         current,
+        interrupted: interrupted(db_path)?,
     })
 }
 
@@ -505,12 +569,37 @@ pub fn check(db_path: &Path, backup: &Path) -> Result<RestoreCheck, Error> {
 /// in place at its old version (migrations are one transaction) and the
 /// pre-restore backup holds what it replaced.
 ///
-/// No other Coffer process may have the database open during a restore:
-/// one that does keeps reading the replaced file. Step 3 notices an open
-/// connection in WAL mode, but it can't rule one out.
-// TODO(M2, lead): running MCP servers refuse calls while a restore swaps
-// the files, and reopen the database afterwards (ARCHITECTURE.md →
-// "Decision record: Settings, AI access and backups", point 6).
+/// If the process stops part-way (crash, kill, power loss), the database
+/// is still complete. Up to step 4 it is the current one, untouched (a
+/// `-wal` left by step 2 is SQLite's to recover). The copy is synced before
+/// step 4's rename, which is atomic, so after it the database is the
+/// backup. A migration in [`Database::open`] is one transaction, so the
+/// backup is then at its old version or migrated. A hidden
+/// `.coffer-restore-…` copy may be left next to the database, or a
+/// `.coffer-partial-…` in the backups directory; nothing reads them, and
+/// they can be deleted.
+///
+/// No other Coffer process may hold the database open during a restore:
+/// one that does keeps reading the replaced file. MCP servers open it per
+/// call and check the restore lock, so they don't; step 2 notices any
+/// other open connection in WAL mode (after waiting [`RELEASE_WAIT`]), but
+/// it can't rule one out.
+///
+/// Once it's open (and migrated), the access-log rows the replaced database
+/// has that are newer than the backup's newest are copied in from the
+/// pre-restore backup, and rows past the log's 12-month retention deleted
+/// ([`access_log::carry_forward`]). Then the calls MCP servers refused while
+/// the lock was held, waiting in the access log's pending file, are moved
+/// in ([`access_log::pending`]). Neither can fail the restore: a failed
+/// carry is [`Restored::log_rows_carried`] `None`.
+///
+/// From step 2 until the restored database is open, the restore lock
+/// ([`restore_lock_path`]) is held: MCP servers refuse calls while it is,
+/// and a call already running gets [`RELEASE_WAIT`] to finish. Another
+/// restore holding it is [`Error::RestoreLocked`]. A lock file that a
+/// stopped restore left (nobody holds it) is taken over: whichever step
+/// that restore stopped at, the database is complete, and it is backed up
+/// before it is replaced. [`check`] reports it as [`Interrupted`].
 pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
     let exists = is_non_empty_file(db_path)?;
     if !db_path.exists() {
@@ -526,11 +615,14 @@ pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
     }
 
     let (staged, from_version) = stage(db_path, backup)?;
+    // Held until the restored database is open; emptied and released on
+    // every return.
+    let _lock = RestoreLock::acquire(db_path, backup)?;
 
     // Refuse an open database before backing it up, and again after (the
     // backup's own connection has come and gone).
     let pre_restore = if exists {
-        let backup = release(db_path)
+        let backup = release_waiting(db_path)
             .and_then(|()| create_from_path(db_path, Reason::Restore))
             .map_err(|source| match source {
                 Error::InUse { .. } => source,
@@ -544,7 +636,7 @@ pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
         None
     };
     if db_path.exists() {
-        release(db_path)?;
+        release_waiting(db_path)?;
     }
     // A leftover `-shm` without a `-wal` holds nothing; SQLite rebuilds it.
     remove_if_exists(&db::sidecar(db_path, "-shm"))?;
@@ -555,16 +647,44 @@ pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
         sync_dir(dir).map_err(io_error("sync", dir))?;
     }
 
-    let opened = Database::open(db_path).and_then(|db| db.schema_version());
-    let version = opened.map_err(|source| Error::RestoredButNotOpened {
+    let opened =
+        Database::open(db_path).and_then(|db| db.schema_version().map(|version| (db, version)));
+    let (mut db, version) = opened.map_err(|source| Error::RestoredButNotOpened {
         path: db_path.to_path_buf(),
         pre_restore: pre_restore.as_ref().map(|backup| backup.path.clone()),
         source,
     })?;
+    // The access-log rows written since the backup was taken stay in the
+    // log: the backup's copy stops at the backup. A failure is reported, not
+    // an error: the restore itself is done, and the rows are in the
+    // pre-restore backup.
+    let log_rows_carried = match &pre_restore {
+        None => Some(0),
+        Some(replaced) => match access_log::carry_forward(&mut db, &replaced.path) {
+            Ok(carried) => Some(carried),
+            Err(error) => {
+                tracing::warn!("couldn't carry the access log forward after a restore");
+                tracing::debug!(%error, "access log carry error");
+                None
+            }
+        },
+    };
+    // Calls MCP servers refused while the lock was held (and any still
+    // waiting from before) go into the restored database's log. A failure
+    // leaves them waiting for the next call: the restore itself is done.
+    match access_log::pending::flush(&mut db) {
+        Ok(flushed) => tracing::debug!(?flushed, "moved refused calls into the access log"),
+        Err(error) => {
+            tracing::warn!("couldn't move refused MCP calls into the access log after a restore");
+            tracing::debug!(%error, "pending access log error");
+        }
+    }
+    drop(db);
     Ok(Restored {
         from_version,
         migrated_to: (version != from_version).then_some(version),
         pre_restore,
+        log_rows_carried,
     })
 }
 
@@ -658,6 +778,205 @@ fn check_copy(copy: &Path, backup: &Path) -> Result<SchemaVersion, Error> {
         });
     }
     Ok(version)
+}
+
+/// How long [`restore`] waits for connections to the database to close
+/// once it holds the restore lock: a running MCP call finishes and closes
+/// its connection, and new calls are refused.
+pub const RELEASE_WAIT: Duration = Duration::from_secs(5);
+
+/// How long [`restore`] retries taking the restore lock before reporting
+/// [`Error::RestoreLocked`]. An MCP server's check holds a shared lock for
+/// an instant; a restore that is really running holds it for seconds.
+const LOCK_WAIT: Duration = Duration::from_secs(1);
+
+/// The restore lock for the database at `db_path`: `<database>-restoring`,
+/// next to it. The file stays once a restore has created it; what counts
+/// is whether a process holds the operating system's lock on it (see the
+/// module docs).
+pub fn restore_lock_path(db_path: &Path) -> PathBuf {
+    db::sidecar(db_path, "-restoring")
+}
+
+/// Whether a restore is replacing the database at `db_path` now: a
+/// running process holds the restore lock ([`restore_lock_path`]). A lock
+/// file that nobody holds (one a crashed restore left, or the empty file a
+/// finished one leaves) is `false`. MCP servers check this before and after
+/// opening the database for a call, and refuse the call while it's `true`.
+///
+/// The check takes a shared lock for an instant, so it never waits. An
+/// error means the lock file exists but can't be opened or locked (its
+/// permissions, or a file system without locks): whether a restore is
+/// running is unknown.
+pub fn restoring(db_path: &Path) -> io::Result<bool> {
+    let file = match File::open(restore_lock_path(db_path)) {
+        Ok(file) => file,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(err),
+    };
+    match file.try_lock_shared() {
+        // Released when `file` closes.
+        Ok(()) => Ok(false),
+        Err(TryLockError::WouldBlock) => Ok(true),
+        Err(TryLockError::Error(err)) => Err(err),
+    }
+}
+
+/// A restore that took the restore lock and never finished: the process
+/// stopped (crashed, killed, lost power) before it released the lock.
+/// [`check`] reports it; [`restore`] goes ahead over it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Interrupted {
+    /// When that restore started, if the lock file says.
+    pub started: Option<DateTime<Utc>>,
+    /// The backup it was restoring, if the lock file says.
+    pub backup: Option<PathBuf>,
+}
+
+impl Interrupted {
+    /// Reads the marker a restore writes into its lock file: `None` when
+    /// it's empty (no restore, or one that finished).
+    fn parse(marker: &str) -> Option<Interrupted> {
+        if marker.trim().is_empty() {
+            return None;
+        }
+        let mut lines = marker.lines();
+        let started = lines
+            .next()
+            .and_then(|line| DateTime::parse_from_rfc3339(line.trim()).ok())
+            .map(|time| time.with_timezone(&Utc));
+        let backup = lines
+            .next()
+            .filter(|line| !line.is_empty())
+            .map(PathBuf::from);
+        Some(Interrupted { started, backup })
+    }
+}
+
+/// The interrupted restore the lock file records, if nobody holds the lock
+/// now (a running restore isn't interrupted; [`restore`] refuses to run
+/// beside it).
+fn interrupted(db_path: &Path) -> Result<Option<Interrupted>, Error> {
+    let path = restore_lock_path(db_path);
+    let mut file = match File::open(&path) {
+        Ok(file) => file,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(io_error("read", &path)(err)),
+    };
+    match file.try_lock_shared() {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => return Ok(None),
+        Err(TryLockError::Error(err)) => return Err(io_error("lock", &path)(err)),
+    }
+    let mut marker = String::new();
+    // A marker is two short lines; anything longer isn't Coffer's.
+    (&mut file)
+        .take(4096)
+        .read_to_string(&mut marker)
+        .map_err(io_error("read", &path))?;
+    Ok(Interrupted::parse(&marker))
+}
+
+/// The held restore lock. Dropping it empties the file and closes it, which
+/// releases the lock; the file stays.
+struct RestoreLock {
+    file: File,
+    path: PathBuf,
+    /// Cleared only by tests, to leave the lock file as a crash would.
+    clear_on_drop: bool,
+}
+
+impl RestoreLock {
+    /// Takes the restore lock for the database at `db_path`, creating the
+    /// file (`0600`) if needed, and writes a marker naming `backup`. A lock
+    /// another process holds is retried for [`LOCK_WAIT`], then refused with
+    /// [`Error::RestoreLocked`]. A file nobody holds is taken over, whatever
+    /// it says.
+    fn acquire(db_path: &Path, backup: &Path) -> Result<RestoreLock, Error> {
+        let path = restore_lock_path(db_path);
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options.open(&path).map_err(io_error("create", &path))?;
+
+        let started = Instant::now();
+        loop {
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(TryLockError::WouldBlock) if started.elapsed() < LOCK_WAIT => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(TryLockError::WouldBlock) => return Err(Error::RestoreLocked { lock: path }),
+                Err(TryLockError::Error(err)) => return Err(io_error("lock", &path)(err)),
+            }
+        }
+
+        let mut previous = String::new();
+        (&mut file)
+            .take(4096)
+            .read_to_string(&mut previous)
+            .map_err(io_error("read", &path))?;
+        if Interrupted::parse(&previous).is_some() {
+            tracing::warn!(
+                path = %path.display(),
+                "a previous restore didn't finish; restoring over its lock"
+            );
+        }
+        let marker = format!(
+            "{}\n{}\n",
+            now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            backup.display()
+        );
+        file.set_len(0)
+            .and_then(|()| file.seek(SeekFrom::Start(0)))
+            .and_then(|_| file.write_all(marker.as_bytes()))
+            .and_then(|()| file.sync_data())
+            .map_err(io_error("write", &path))?;
+        Ok(RestoreLock {
+            file,
+            path,
+            clear_on_drop: true,
+        })
+    }
+
+    /// Releases the lock the way the operating system does when the process
+    /// dies: the file is closed with its marker still in it.
+    #[cfg(test)]
+    fn crash(mut self) {
+        self.clear_on_drop = false;
+    }
+}
+
+impl Drop for RestoreLock {
+    fn drop(&mut self) {
+        if !self.clear_on_drop {
+            return;
+        }
+        // Emptied while still held; closing `file` then releases the lock.
+        if let Err(error) = self.file.set_len(0).and_then(|()| self.file.sync_data()) {
+            tracing::warn!(
+                %error,
+                path = %self.path.display(),
+                "couldn't clear the restore lock; the next restore will report it as interrupted"
+            );
+        }
+    }
+}
+
+/// [`release`], retried for up to [`RELEASE_WAIT`] while the database is
+/// in use: a call that was running when the restore lock appeared closes
+/// its connection when it finishes.
+fn release_waiting(db_path: &Path) -> Result<(), Error> {
+    let started = Instant::now();
+    loop {
+        match release(db_path) {
+            Err(Error::InUse { .. }) if started.elapsed() < RELEASE_WAIT => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            result => return result,
+        }
+    }
 }
 
 /// Checkpoints the database at `db_path` and closes it again, so its
@@ -811,7 +1130,7 @@ fn finish_file(file: &Path) -> Result<(), Error> {
 }
 
 /// Syncs a directory, so a rename in it survives a crash.
-fn sync_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
     #[cfg(unix)]
     File::open(dir)?.sync_all()?;
     #[cfg(not(unix))]

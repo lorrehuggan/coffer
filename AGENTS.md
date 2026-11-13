@@ -17,7 +17,8 @@ charts, and exposes the data to AI clients through an MCP server.
 ## Current state
 
 M0 and the design track (D1–D6) are done and signed off; every M1 item is done,
-M1.9 checked against a real Monzo export. The Cargo
+M1.9 checked against a real Monzo export. Every M2 item is done, tested on synthetic
+data and checked with Claude Code against a real Monzo export (2026-11-13). The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
 (`crates/core/migrations/V1__initial_schema.sql`, M1.4) and the
@@ -57,13 +58,37 @@ importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 (`ofx`: `OfxImporter`, own SGML/XML reader; M1.10); synthetic fixtures are in
 `fixtures/csv/` (test-only mappings in `fixtures/csv/mappings/`), `fixtures/presets/` and
 `fixtures/ofx/`, with end-to-end importer-path tests in `crates/import/tests/` and
-`crates/app/tests/` (M1.19); `crates/mcp` is a stub. The GUI is in `crates/app` (package `coffer-app`, lib
+`crates/app/tests/` (M1.19).
+
+M2 added to `crates/core`: settings and AI clients (`setting`: the kill switch and the
+pseudonym key; `mcp_client`: enable, level, revoke, ignore, `requested`; `access_log`:
+append, list, 12-month retention; `access_log::pending`: calls refused while the
+database can't be opened, moved into the log later; `V11__mcp.sql`,
+`V14__access_log_pending.sql`), the untrusted-text envelope
+(`envelope`: `sanitize`, `strip_invisible`, `reads_like_instructions`, merchant
+pseudonyms; M2.13), reporting (`reporting`: the `Ledger` over `ledger_line`, `Period`,
+per-currency `Totals`, `Limit`; `summary`, `spending`, `budget_status`, `net_worth`,
+`balance`, `rows`, `catalog`; M2.2) and budgets (`budget`), recurring detection
+(`recurring`, M2.6) and schedules (`schedule`: confirm, match at import, skips, missed and
+late; M2.10; `V12__schedule.sql`), the inbox (`inbox`: typed payloads, filing with dedupe
+and caps, `approve`/`approve_all`/`reject`, `impact`, and `own`, Coffer's own rule
+suggestions; M2.3, M2.14; `V13__inbox.sql`), and the restore lock (`backup::restoring`).
+`crates/mcp` is the server: `server` (gate → call → log per call, the database opened per
+call, `tools/list_changed`), `access` (the gate, argument redaction, result hash),
+`registry` (`ToolSpec`, `Call`), `store` (the only writer), `tools/` (catalog, aggregate,
+rows, recurring, inbox: 18 tools), `prompts` (`monthly_review`); its tests use the
+harness in `crates/mcp/tests/support/`, with `matrix.rs` (every tool × level) and
+`m2_exit.rs`. Setup for clients: `docs/mcp-setup.md`. The GUI is in `crates/app` (package `coffer-app`, lib
 `coffer_app`, binary `coffer`); the GUI doesn't open the database yet. `coffer` opens the
 Transactions screen on fixture data (`crates/app/src/transactions.rs`), and
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
 `import`, `accounts` (`list`, `add`), `undo-import`, `backup` (`--list`) and
-`restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29); the other
-commands don't exist yet.
+`restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2
+`mcp --client <name>`, `ai-access` (`list`, `enable`, `level`, `revoke`, `ignore`, `off`,
+`on`, `log`), `budgets` (`list`, `set`, `remove`), `schedules` (`detect`, `list`, `show`,
+`confirm`, …), `inbox` (`list`, `show`, `approve`, `reject`, and saved reports:
+`reports`, `report`, `delete-report`, the user's way under the 500-report cap) and
+`categorize <transaction-id>... <category-key>`.
 `cargo run --example snapshot -- <dir>` renders both headlessly to PNG for comparison with
 Paper. Shared files stay at the root: `assets/` (fonts, brand) and `design/` (tokens).
 Check the tree before assuming a module exists.

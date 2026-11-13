@@ -581,7 +581,7 @@ Import real statements into a local database from the command line.
   checks before swapping). `coffer_core::backup`: `<data dir>/backups`, the last 10
   automatic backups plus one per earlier month, manual ones kept; `import::commit` and
   `Database::open` back up first; `coffer backup [--list]`, `coffer restore <file>
-  [--yes]`. MCP servers refusing calls during a restore come with M2
+  [--yes]`; running MCP servers refuse calls while a restore swaps the files (M2)
   (`ARCHITECTURE.md` → "Decision record: local backups")
 - ✅ M1.29 `coffer export --format csv|json`: documented schema, filters by date, account,
   category and tag; split lines keep their parent ID. `coffer_core::export` (schema
@@ -599,40 +599,81 @@ exists from before every import.
 
 ---
 
-## M2 — MCP server ⬜
+## M2 — MCP server ✅
 
-Analyse real data from Claude Code or Codex before any GUI exists.
+Analyse real data from Claude Code or Codex before any GUI exists. Everything below is
+built and tested on synthetic data, and was checked on 2026-11-13 with Claude Code against
+a real Monzo export: totals, pseudonymous and standard access, suggestions approved from
+`coffer inbox`, the access log, and recurring detection. Decisions: `ARCHITECTURE.md` → "Decision record: M2: MCP
+server (2026-11-13)"; setup: [`mcp-setup.md`](mcp-setup.md).
 
-- ⬜ M2.1 `coffer mcp` stdio server (`rmcp`), read-only DB connection for queries
-- ⬜ M2.2 Read tools: `list_accounts`, `monthly_summary`, `spending_by_category`,
+- ✅ M2.1 `coffer mcp` stdio server (`rmcp`), read-only DB connection for queries.
+  `crates/mcp`: one wrapper per call (gate → call → log), the tool registry by level,
+  `V11__mcp.sql`; the database is opened per call (never created or migrated), so a
+  restore is never blocked and calls are refused while it swaps the files
+- ✅ M2.2 Read tools: `list_accounts`, `monthly_summary`, `spending_by_category`,
   `search_transactions`, `merchant_history`, `recurring_payments`, `budget_status`,
   `net_worth_history`, `uncategorized_transactions`, `list_categories`,
-  `list_rules`, `list_reports`
-- ⬜ M2.3 Inbox-only writes: `propose_categorizations`, `propose_rule`,
-  `propose_transfer_pair`, `save_report`
-- ⬜ M2.4 `monthly_review` prompt
-- ⬜ M2.5 PII guard: no account numbers or personal details in any tool output (tested)
-- ⬜ M2.6 Recurring-payment / subscription detection in core
-- ⬜ M2.7 CLI inbox until the GUI exists: `coffer inbox [approve|reject]`
-- ⬜ M2.8 Setup docs for Claude Code, Claude Desktop, and Codex
-- ⬜ M2.9 MCP tool tests against fixture databases
-- ⬜ M2.10 Schedules: confirm a detected recurring series (M2.6) as a schedule with an
+  `list_rules`, `list_reports`. Queries in `coffer_core::reporting` (a `Ledger` over
+  `ledger_line`, per-currency `Totals`, `Limit` 50/200 with `truncated`), budgets in
+  `coffer_core::budget` with `coffer budgets list|set|remove`; account names only from
+  `pseudonymous` up, text search only at `standard` (user decisions, 2026-11-13)
+- ✅ M2.3 Inbox-only writes: `propose_categorizations`, `propose_rule`,
+  `propose_transfer_pair`, `save_report`. `coffer_core::inbox`: typed, validated payloads,
+  one pending copy per payload, 200 pending suggestions and 500 reports per client
+  (the user frees room with `coffer inbox delete-report`), `V13__inbox.sql` (decision columns and triggers); approve and reject with an impact
+  preview
+- ✅ M2.4 `monthly_review` prompt: its steps name only the tools at the client's level and
+  end with `save_report` (`crates/mcp/src/prompts.rs`)
+- ✅ M2.5 PII guard: no account numbers or personal details in any tool output (tested).
+  `assert_no_pii` on every response, merchant names checked at `pseudonymous`, a row
+  whose bank text is only a person's name hidden below `standard` (names at `standard`
+  accepted, user decision 2026-11-13), account details withheld from merchants and
+  descriptions at every level
+- ✅ M2.6 Recurring-payment / subscription detection in core. `coffer_core::recurring`:
+  deterministic chains per cadence (weekly to yearly), fixed and variable amounts, noise
+  rejection, "Not recurring" dismissals (`recurring_dismissal`, V12)
+- ✅ M2.7 CLI inbox until the GUI exists: `coffer inbox [approve|reject]`. Also `list`,
+  `show` (with the impact preview) and the saved reports (`reports`, `report`,
+  `delete-report` by ID or by client, all or nothing, `--yes` to delete); approving
+  several IDs is all or nothing; AI-written text is shown stripped and labelled unverified
+- ✅ M2.8 Setup docs for Claude Code, Claude Desktop, and Codex
+  ([`mcp-setup.md`](mcp-setup.md): configuration, levels, the kill switch, the log, a
+  profile with Coffer as the only data source)
+- ✅ M2.9 MCP tool tests against fixture databases. One test file per tool, plus
+  `crates/mcp/tests/matrix.rs` (every tool × level: registration, `refused_level`, no
+  PII, one log row per call, inbox-only writes; a new tool fails it until listed) and
+  `crates/mcp/tests/m2_exit.rs`
+- ✅ M2.10 Schedules: confirm a detected recurring series (M2.6) as a schedule with an
   expected date, amount and tolerance; imports fulfil occurrences; missed or late payments
-  are flagged
-- ⬜ M2.11 MCP access control: MCP is off until a client is enabled (CLI until M3.15). Each
+  are flagged. `coffer_core::schedule`, `V12__schedule.sql` (`start_date`, matches and
+  skips; user decision 2026-11-13); matched in the import commit, cleared by undo;
+  `coffer schedules detect|list|show|confirm|skip|unskip|match|unmatch|pause|resume|end|
+  delete|dismiss|undismiss`; lock dates apply to occurrence dates
+- ✅ M2.11 MCP access control: MCP is off until a client is enabled (CLI until M3.15). Each
   client has an access level: `aggregate` (totals only), `pseudonymous` (stable keyed-hash
   merchant tokens) or `standard`. Tools above a client's level are never registered. This
-  guards against over-sharing; it is not a security boundary against local processes
-- ⬜ M2.12 AI access log: every tool call records the client, tool, redacted arguments,
-  an optional `purpose`, row count, result hash and access level, never the returned data
-- ⬜ M2.13 Untrusted-text envelope: `merchant_display` by default; raw text only as a
+  guards against over-sharing; it is not a security boundary against local processes.
+  `coffer ai-access list|enable|level|revoke|ignore|off|on|log`; the kill switch and level
+  read on every call, `tools/list_changed` on a change; unknown names recorded as
+  `requested`
+- ✅ M2.12 AI access log: every tool call records the client, tool, redacted arguments,
+  an optional `purpose`, row count, result hash and access level, never the returned data.
+  Arguments redacted by each tool's schema, SHA-256 of canonical JSON, 12 months' retention.
+  Calls refused while the database can't be opened (a restore, pending migrations) wait in
+  a pending file next to it and are moved in at their own times (`access_log::pending`,
+  `V14__access_log_pending.sql`)
+- ✅ M2.13 Untrusted-text envelope: `merchant_display` by default; raw text only as a
   length-capped, labelled `description_untrusted`, with control, zero-width and bidi
   characters stripped and URLs made inert. Text matching injection patterns is withheld,
   and the app shows how much was withheld. Setup docs (M2.8) recommend a client profile
-  without web or fetch tools
-- ⬜ M2.14 MCP over the new model: reads use ledger lines (splits), tags and refund links;
+  without web or fetch tools. `coffer_core::envelope` (`sanitize`, `strip_invisible`,
+  `reads_like_instructions`, pseudonyms); descriptions hidden below `standard`
+- ✅ M2.14 MCP over the new model: reads use ledger lines (splits), tags and refund links;
   new suggestion kinds `merchant_alias` and `refund_link`. The app files `rule`
-  suggestions itself after repeated identical manual recategorisations (source `coffer`)
+  suggestions itself after repeated identical manual recategorisations (source `coffer`).
+  `coffer_core::inbox::own`, fired by `coffer categorize <id>... <category>` until the
+  GUI's inline edit (M3)
 
 **Exit criteria:** ask "where did my money go last month?" in Claude Code and get
 an answer backed by visible tool calls; approve AI-suggested categories from the inbox.
@@ -683,7 +724,7 @@ and duplicates) without the CLI.
 - ⬜ M4.4 Budgets: per-category monthly targets with progress
 - ⬜ M4.5 Net worth: balances over time across accounts
 - ⬜ M4.6 Multi-currency reporting in home currency; opt-in ECB rate fetch + manual rates
-- ⬜ M4.7 Reviews: browse saved MCP reports
+- ⬜ M4.7 Reviews: browse and delete saved MCP reports
 - ⬜ M4.8 Upcoming payments and a daily balance forecast per account from schedules,
   showing the lowest balance before the next income; `cash_flow_forecast` read tool
   (cached FX only)

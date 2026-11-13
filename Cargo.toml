@@ -50,6 +50,11 @@ aho-corasick = "1.1"
 rmcp = { version = "3.9", features = ["transport-io"] }
 tokio = { version = "1", features = ["rt", "macros", "io-std"] }
 schemars = "1"
+# Merchant pseudonyms (HMAC-SHA256, crates/core) and the access log's result
+# hash (crates/mcp). Both already in the tree via GPUI's oo7 at these
+# versions; MIT OR Apache-2.0.
+hmac = "0.12"
+sha2 = "0.10"
 
 
 # Test and example tooling (crates/app dev-dependencies). Each is already in

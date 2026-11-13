@@ -23,6 +23,13 @@
 
 #[path = "../../../import/tests/common/mod.rs"]
 mod common;
+pub mod notify;
+mod pseudonyms;
+#[allow(unused_imports)] // Not every test binary checks pseudonyms.
+pub use pseudonyms::*;
+pub mod inbox;
+pub mod recurring;
+pub mod reports;
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -35,11 +42,12 @@ use coffer_core::id::{AccountId, TransactionId};
 use coffer_core::import;
 use coffer_core::link::{self, ShareLabel, Sharing};
 use coffer_core::manual::{self, ManualTransaction};
+use coffer_core::mcp_client::{self, ClientName};
 use coffer_core::money::{Currency, Money};
+use coffer_core::note;
 use coffer_core::paths::{DATA_DIR_ENV, DATABASE_FILE};
 use coffer_core::statement::Statement;
 use coffer_core::tag::{self, TagName};
-use coffer_core::{mcp_client::ClientName, note};
 use coffer_import::AnyImporter;
 use coffer_import::preset::Presets;
 use coffer_mcp::Server;
@@ -67,6 +75,12 @@ pub const IBAN: &str = "GB94BARC10201530093459";
 /// The manual row's bank text: a transfer naming the payee's details.
 pub const PII_DESCRIPTION: &str =
     "TRANSFER TO ROBIN FIXTURE-HOLDER 77-41-29 58316402 IBAN GB94 BARC 1020 1530 0934 59";
+/// A row's whole bank text when it is a payment to a person, and nothing
+/// else: no account details for the account-details check to catch
+/// ([`Fixture::add_name_only_row`]). At `standard` it may reach a client
+/// (the user's decision, 2026-11-13: `standard` is full access); below it,
+/// never.
+pub const PAYEE_NAME: &str = "JORDAN NAMEONLY-PAYEE";
 /// The user's own note on an imported row.
 pub const USER_NOTE: &str = "Birthday present for Sam Notefixture";
 /// A private tag on an imported row.
@@ -244,6 +258,23 @@ impl Fixture {
         }
     }
 
+    /// Adds a manual row on the bank account whose bank text is only a
+    /// person's name ([`PAYEE_NAME`]), and returns it. Not part of
+    /// [`Fixture::new`], so the other tests' row counts stay as they are.
+    pub fn add_name_only_row(&self) -> TransactionId {
+        let mut db = Database::open(&self.path).unwrap();
+        manual::create(
+            &mut db,
+            &ManualTransaction::new(
+                self.seeded.bank,
+                NaiveDate::from_ymd_opt(2026, 11, 21).unwrap(),
+                Money::new(-3000, Currency::GBP),
+                PAYEE_NAME,
+            ),
+        )
+        .unwrap()
+    }
+
     /// The database file.
     pub fn path(&self) -> &Path {
         &self.path
@@ -254,17 +285,14 @@ impl Fixture {
         Database::open_existing(&self.path).unwrap()
     }
 
-    /// Sets `client`'s row in `mcp_client`: enabled at `level`.
+    /// Enables `client` at `level` through core's client API, as
+    /// `coffer ai-access enable` and `level` do (which also creates the
+    /// pseudonym key).
     pub fn set_client(&self, client: &str, level: AccessLevel) {
-        // Block B: use core's client API once it exists.
-        let conn = rusqlite::Connection::open(&self.path).unwrap();
-        conn.execute(
-            "INSERT INTO mcp_client (name, enabled, access_level, status) \
-             VALUES (?1, 1, ?2, 'known') \
-             ON CONFLICT (name) DO UPDATE SET access_level = excluded.access_level",
-            rusqlite::params![client, level.as_str()],
-        )
-        .unwrap();
+        let mut db = self.open();
+        let name = ClientName::new(client).unwrap();
+        mcp_client::enable(&mut db, &name).unwrap();
+        mcp_client::set_level(&mut db, &name, level).unwrap();
     }
 
     /// Starts a server for `client`, enabled at `level`, and connects to it.
@@ -362,6 +390,25 @@ impl TestClient {
     /// The tools this client sees.
     pub async fn tools(&self) -> Vec<Tool> {
         self.service.list_all_tools().await.unwrap()
+    }
+
+    /// The prompts this client sees.
+    pub async fn prompts(&self) -> Vec<rmcp::model::Prompt> {
+        self.service.list_all_prompts().await.unwrap()
+    }
+
+    /// Gets `name` with `args` (a JSON object).
+    pub async fn prompt(
+        &self,
+        name: &str,
+        args: Value,
+    ) -> Result<rmcp::model::GetPromptResult, ServiceError> {
+        let Value::Object(args) = args else {
+            panic!("prompt arguments must be a JSON object");
+        };
+        self.service
+            .get_prompt(rmcp::model::GetPromptRequestParams::new(name).with_arguments(args))
+            .await
     }
 
     /// The names of the tools this client sees.

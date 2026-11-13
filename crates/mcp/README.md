@@ -7,18 +7,37 @@ Coffer's MCP server: `coffer mcp --client <name>` runs it over stdio. Design and
 
 `server.rs` handles every `tools/call` in one wrapper, **gate → call → log**:
 
-1. `access::client_level` reads the client's level (on every call), and `access::gate`
-   allows the call or refuses it with an outcome (`refused_level`, later `refused_off`,
-   `refused_not_enabled`).
+1. `access::for_request` reads the kill switch and the client's row (on every call and
+   every `tools/list`; an unknown name is recorded as `requested`), and `access::gate`
+   allows the call or refuses it with an outcome (`refused_off`, `refused_not_enabled`,
+   `refused_level`). When the level differs from what the client last listed, the server
+   sends `notifications/tools/list_changed`.
 2. The handler runs with a `Call`: the read-only connection (`Call::reader`), the
    client's level, constructors for output types and, only for tools registered as
    writing, the inbox.
 3. Exactly one `mcp_access_log` row is written, whatever happened. If it can't be
    written, the call fails and no data goes out.
 
+The database is opened for each call (and each `tools/list` and poll) and closed after
+it: no connection is kept between calls. While `coffer restore` holds the file lock on
+`<database>-restoring` (`backup::restoring`), checked before and after opening, calls are
+refused with a message. A lock file nobody holds (a crashed restore's) doesn't block
+calls.
+
+A call refused because the database can't be opened (a restore: `refused_restoring`;
+migrations pending or the lock unreadable: `refused_unavailable`) can't be logged in it,
+so the wrapper records it with `access_log::pending::record` in `<database>-access-pending`
+next to the database. Every call and listing that does open it first moves whatever
+waits there into the log, through `Store::flush_pending`, at the
+calls' own times; IDs make a repeated flush harmless. A restore keeps the log too:
+`backup::restore` carries over the rows logged after the backup was taken
+(`access_log::carry_forward`). Tests: `tests/restore.rs`,
+`tests/unavailable.rs`; the file's own guarantees are tested in `coffer_core`.
+
 Queries run on `coffer_core::db::Reader`, which SQLite keeps read-only (`query_only`).
-The only writes are in `store.rs`: a suggestion, a report (through `Inbox`) and the
-access-log row (the wrapper's own).
+The only writes are in `store.rs`: a suggestion, a report (through `Inbox`), the
+access-log row (the wrapper's own, and the refused calls moved in from the pending file)
+and the server's own client name as `requested`.
 
 ## Adding a tool
 
@@ -85,4 +104,16 @@ Each tool's test file checks at least:
    outcome, `row_count` and `purpose`, and `args_redacted_json` holds no free text.
 
 Writing tools also check that they write only `suggestion` or `report`, with
-`source_client` set to the calling client.
+`source_client` set to the calling client. No tool changes or deletes an existing row:
+deleting saved reports is the user's (`coffer inbox delete-report`), and the matrix
+checks that no server code reaches it.
+
+Then add the tool to `MATRIX` in `tests/matrix.rs`, with its level, whether it writes,
+and valid arguments: `the_matrix_lists_every_registered_tool` fails until you do, and the
+matrix runs the checks above for every tool at every level.
+
+## Prompts
+
+`src/prompts.rs` has `monthly_review(month)`. A prompt's text is built from the tools
+registered at the client's level, so a step naming a tool above it is left out; mention
+tools as `` `name` `` so `tests/monthly_review.rs` can check that.

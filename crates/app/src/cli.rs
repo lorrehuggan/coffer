@@ -15,24 +15,50 @@
 //! - `coffer backup [--list]`, `coffer restore <file>`: local backups
 //!   ([`backup`]).
 //! - `coffer export --format csv|json`: the ledger as a file ([`export`]).
+//! - `coffer ai-access list|enable|level|revoke|ignore|off|on|log`: which AI
+//!   clients may use the MCP server, at which level ([`ai_access`]).
+//! - `coffer budgets [list|set|remove]`: monthly budgets per category
+//!   ([`budgets`]).
 //! - `coffer mcp --client <name>`: the MCP server over stdio ([`mcp`]). It
 //!   ignores the output writer: stdout carries MCP messages only.
+//! - `coffer schedules detect|list|show|confirm|…`: recurring payments and
+//!   schedules ([`schedules`]).
+//! - `coffer inbox [list|show|approve|reject|reports|report|delete-report]`:
+//!   review AI clients' suggestions and decide them, and read and delete
+//!   their saved reports ([`inbox`]).
+//! - `coffer categorize <ID>... <CATEGORY>`: set transactions' category as
+//!   the user, as one change batch ([`categorize`]).
 //!
 //! Output is what the user asked for and nothing else. Errors are returned
 //! (as `anyhow` errors: this is the binary's layer) for `main` to print on
 //! stderr. Nothing is logged; transaction text never reaches a log.
 
 pub mod accounts;
+pub mod ai_access;
 pub mod backup;
+pub mod budgets;
+pub mod categorize;
 pub mod export;
 pub mod import;
+pub mod inbox;
 pub mod mcp;
+pub mod schedules;
 pub mod undo;
 
 #[cfg(test)]
+mod ai_access_tests;
+#[cfg(test)]
 mod backup_tests;
 #[cfg(test)]
+mod budgets_tests;
+#[cfg(test)]
+mod categorize_tests;
+#[cfg(test)]
 mod export_tests;
+#[cfg(test)]
+mod inbox_tests;
+#[cfg(test)]
+mod schedules_tests;
 #[cfg(test)]
 mod tests;
 
@@ -45,10 +71,17 @@ use coffer_core::db::Database;
 use coffer_import::preset::Presets;
 
 pub use accounts::{AccountsArgs, AccountsCommand, AddAccountArgs};
+pub use ai_access::{AiAccessArgs, AiAccessCommand};
 pub use backup::{BackupArgs, RestoreArgs};
+pub use categorize::CategorizeArgs;
 pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
+pub use inbox::{
+    ApproveArgs, DeleteReportArgs, InboxArgs, InboxCommand, ListArgs, RejectArgs, ReportArgs,
+    ShowArgs,
+};
 pub use mcp::McpArgs;
+pub use schedules::{SchedulesArgs, SchedulesCommand};
 pub use undo::UndoImportArgs;
 
 /// Coffer: a local-first personal finance dashboard.
@@ -86,6 +119,21 @@ pub enum Command {
     /// Run the MCP server over stdin/stdout for an AI client (Claude Code,
     /// Codex, …). Needs an existing database.
     Mcp(McpArgs),
+    /// Which AI clients may use the MCP server and at which level, the
+    /// kill switch, and the AI access log.
+    AiAccess(AiAccessArgs),
+    /// List, set or remove budgets: what you mean to spend in a category
+    /// each month.
+    Budgets(budgets::BudgetsArgs),
+    /// Find recurring payments, confirm them as schedules, and manage
+    /// schedules.
+    Schedules(SchedulesArgs),
+    /// Review the suggestions AI clients filed, and approve or reject them.
+    /// Lists the pending ones when given no command.
+    Inbox(InboxArgs),
+    /// Set the category of transactions, as your own choice, recorded as
+    /// one change batch: `coffer categorize 12 13 food.groceries`.
+    Categorize(CategorizeArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -125,6 +173,20 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
             export::run(&db, &args, out)
         }
         Command::Mcp(args) => mcp::run(database, &args),
+        Command::AiAccess(args) => ai_access::run(database, args, out),
+        Command::Budgets(args) => budgets::run(database, args, out),
+        Command::Schedules(args) => {
+            let mut db = open_existing(database)?;
+            schedules::run(&mut db, &args, out)
+        }
+        Command::Inbox(args) => {
+            let mut db = open_existing(database)?;
+            inbox::run(&mut db, args, out)
+        }
+        Command::Categorize(args) => {
+            let mut db = open_existing(database)?;
+            categorize::run(&mut db, &args, out)
+        }
     }
 }
 

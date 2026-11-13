@@ -7,6 +7,7 @@ mod support;
 
 use coffer_core::access_log::Outcome;
 use coffer_core::inbox::{NewSuggestion, SuggestionKind};
+use coffer_core::mcp_client::{self, ClientAccess, ClientName};
 use coffer_mcp::registry::{Call, NoArgs, Registry, Reply, ToolError, ToolSpec, Writes};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -54,8 +55,8 @@ const SUGGEST: ToolSpec = ToolSpec {
 
 fn suggestion() -> NewSuggestion {
     NewSuggestion {
-        kind: SuggestionKind::Categorization,
-        payload: json!({ "transaction_id": 1, "category": "food.groceries" }),
+        kind: SuggestionKind::MerchantAlias,
+        payload: json!({ "pattern": "TEST SHOP", "display_name": "Test shop" }),
         rationale: Some("test".to_owned()),
     }
 }
@@ -166,11 +167,14 @@ async fn bad_arguments_are_a_logged_error_without_their_text() {
     let log = fixture.access_log();
     assert_eq!(log.len(), 2);
     assert_eq!(log[0].outcome, Outcome::Error);
-    assert_eq!(log[0].args_redacted_json, r#"{"n":"string"}"#);
+    assert_eq!(
+        log[0].args_redacted_json,
+        r#"{"n":{"length":28,"type":"string"}}"#
+    );
     assert_eq!(log[0].purpose.as_deref(), Some("testing"));
     assert_eq!(log[1].outcome, Outcome::Ok);
     assert_eq!(log[1].row_count, 3);
-    assert_eq!(log[1].args_redacted_json, r#"{"n":"number"}"#);
+    assert_eq!(log[1].args_redacted_json, r#"{"n":3}"#);
     client.close().await;
 }
 
@@ -206,17 +210,31 @@ async fn only_a_writing_tool_reaches_the_inbox() {
 }
 
 #[tokio::test]
-async fn a_client_without_a_row_is_standard_for_now() {
-    // Block B: replace with "an unknown client is recorded as requested and
-    // sees no tools".
+async fn an_unknown_client_is_recorded_as_requested_and_refused() {
     let fixture = Fixture::new();
     let client = fixture.connect_with("new-client", registry()).await;
-    assert!(
-        client
-            .tool_names()
-            .await
-            .iter()
-            .any(|name| name == "standard_only")
+    assert!(client.tool_names().await.is_empty());
+
+    let reader = fixture.open().reader().unwrap();
+    let name = ClientName::new("new-client").unwrap();
+    assert_eq!(
+        mcp_client::access(&reader, &name).unwrap(),
+        ClientAccess::Requested
+    );
+
+    let result = client.call("list_categories", json!({})).await;
+    assert_eq!(result.is_error, Some(true));
+    let log = fixture.access_log();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].client, "new-client");
+    assert_eq!(log[0].tool, "list_categories");
+    assert_eq!(log[0].outcome, Outcome::RefusedNotEnabled);
+    assert_eq!(log[0].access_level, None);
+    assert_eq!(log[0].row_count, 0);
+    // Still requested: the server never enables a client.
+    assert_eq!(
+        mcp_client::access(&reader, &name).unwrap(),
+        ClientAccess::Requested
     );
     client.close().await;
 }

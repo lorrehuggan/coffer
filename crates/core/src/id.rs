@@ -101,3 +101,7 @@ row_id!(
     /// A `duplicate_candidate` row: a possible duplicate pair.
     DuplicateCandidateId
 );
+row_id!(
+    /// A `schedule` row: a recurring payment the user confirmed.
+    ScheduleId
+);

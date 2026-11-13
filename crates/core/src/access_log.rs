@@ -9,18 +9,39 @@
 //! write (`AGENTS.md` → Invariants): no tool can reach it, and the client's
 //! only input is the untrusted `purpose` string.
 //!
-//! Rows are only appended (and later deleted when they expire, Block B);
-//! the schema refuses edits.
+//! Rows are only appended, and deleted when they are older than
+//! [`RETENTION_MONTHS`] ([`expire`], run when the server starts: the log's
+//! own housekeeping, not a tool write). The schema refuses edits.
+//!
+//! **Calls refused because the database couldn't be opened** (a restore
+//! holds the restore lock, migrations are pending, the lock can't be
+//! checked) can't be appended: the log is in that database. The server
+//! records them in a pending file next to it instead ([`pending`]), and
+//! they are moved into the log, with their own times, the next time
+//! anything opens the database to write: any server's next call or listing,
+//! `coffer ai-access`, or the restore itself. Each keeps the ID it was given
+//! when recorded (`pending_id`, unique, V14), so one is never moved in twice.
+//! The log is read newest first by time, so they show where they happened.
+//!
+//! **Restores.** Restoring a backup replaces the database, log included,
+//! so the rows written after the backup was taken would only be left in the
+//! pre-restore backup. [`carry_forward`], run by `backup::restore` once the
+//! restored database is open and migrated, copies them from that backup
+//! into the restored log: the log records what AI clients did, which a
+//! restore doesn't undo.
 
 use std::fmt;
+use std::path::Path;
 use std::str::FromStr;
 
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
-use rusqlite::{ToSql, params};
+use rusqlite::{Connection, ToSql, params};
 
 use crate::db::{Database, Reader};
 use crate::mcp_client::{AccessLevel, ClientName};
 use crate::rule::{UnknownKey, key_enum};
+
+pub mod pending;
 
 /// The longest `purpose` stored, in characters. A longer one is cut:
 /// refusing it would leave the call unlogged.
@@ -37,8 +58,26 @@ key_enum! {
         RefusedNotEnabled => "refused_not_enabled",
         /// Refused: the tool is above the client's access level.
         RefusedLevel => "refused_level",
+        /// Refused: a restore was replacing the database (V14). Recorded in
+        /// the pending file, then moved into the log ([`pending`]).
+        RefusedRestoring => "refused_restoring",
+        /// Refused: the database couldn't be opened, e.g. migrations were
+        /// pending, or whether a restore was running couldn't be checked
+        /// (V14). Recorded in the pending file, then moved into the log.
+        RefusedUnavailable => "refused_unavailable",
         /// The tool failed and returned an error, no data.
         Error => "error",
+    }
+}
+
+impl Outcome {
+    /// Whether this is a refusal the server records in the pending file
+    /// because it couldn't open the database ([`pending`]).
+    pub fn is_unavailable(self) -> bool {
+        matches!(
+            self,
+            Outcome::RefusedRestoring | Outcome::RefusedUnavailable
+        )
     }
 }
 
@@ -93,6 +132,10 @@ pub struct LoggedCall {
     pub row_count: u64,
     pub result_hash: Option<String>,
     pub withheld_count: u64,
+    /// `None` for a row that records one call. A row that summarises the
+    /// refused calls the pending file had no room for holds how many there
+    /// were ([`pending::MAX_ENTRIES`]); it has no arguments or purpose.
+    pub summarised_calls: Option<u64>,
 }
 
 /// Why appending or reading the log failed.
@@ -103,6 +146,9 @@ pub enum Error {
 
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
+
+    #[error("couldn't open the database to carry its access log forward: {0}")]
+    Open(#[from] crate::db::Error),
 }
 
 /// Appends a call to the log and returns its row ID.
@@ -131,14 +177,103 @@ pub fn append(db: &mut Database, entry: &NewEntry) -> Result<i64, Error> {
     Ok(db.conn().last_insert_rowid())
 }
 
-/// The latest `limit` calls, newest first.
+/// How long a row is kept, in months. A default, not an invariant
+/// (decision record 2026-11-10, point 5).
+pub const RETENTION_MONTHS: u32 = 12;
+
+/// Deletes the rows older than [`RETENTION_MONTHS`] and returns how many
+/// went. The MCP server runs it when it starts.
+pub fn expire(db: &mut Database) -> Result<usize, Error> {
+    expire_on(db.conn())
+}
+
+fn expire_on(conn: &Connection) -> Result<usize, Error> {
+    Ok(conn.execute(
+        "DELETE FROM mcp_access_log \
+         WHERE at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?1)",
+        [format!("-{RETENTION_MONTHS} months")],
+    )?)
+}
+
+/// The columns every Coffer log has had since V11; V14 added the last two.
+const V11_COLUMNS: &str = "at, client, tool, access_level, outcome, purpose, \
+                           args_redacted_json, row_count, result_hash, withheld_count";
+
+/// Copies into `db`'s access log the rows of the database file at `from`
+/// that are newer than `db`'s newest row, keeping their times and IDs from
+/// the pending file, then deletes the rows older than [`RETENTION_MONTHS`]:
+/// one transaction. Returns how many rows were copied.
+///
+/// For `backup::restore`: `db` is the restored database, open and migrated;
+/// `from` is the pre-restore backup, a snapshot of the database it replaced,
+/// which is only read. That file may be at an older schema: before V11 it
+/// has no log (nothing is copied), before V14 its rows have no `pending_id`
+/// or `summarised_calls`. A row whose `pending_id` the restored log already
+/// holds isn't copied twice.
+pub fn carry_forward(db: &mut Database, from: &Path) -> Result<usize, Error> {
+    let source = crate::db::inspect(from)?;
+    let columns: Vec<String> = source
+        .prepare("SELECT name FROM pragma_table_info('mcp_access_log')")?
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    if columns.is_empty() {
+        return Ok(0);
+    }
+    let has = |column: &str| columns.iter().any(|name| name == column);
+    let extra = |column: &'static str| if has(column) { column } else { "NULL" };
+    let select = format!(
+        "SELECT {V11_COLUMNS}, {}, {} FROM mcp_access_log \
+         WHERE ?1 IS NULL OR at > ?1 ORDER BY at, id",
+        extra("pending_id"),
+        extra("summarised_calls"),
+    );
+
+    let tx = db.conn_mut().transaction()?;
+    let newest: Option<String> =
+        tx.query_row("SELECT max(at) FROM mcp_access_log", [], |row| row.get(0))?;
+    let mut carried = 0;
+    {
+        let mut read = source.prepare(&select)?;
+        let mut rows = read.query([&newest])?;
+        let mut insert = tx.prepare(&format!(
+            "INSERT INTO mcp_access_log ({V11_COLUMNS}, pending_id, summarised_calls) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+             ON CONFLICT (pending_id) DO NOTHING"
+        ))?;
+        while let Some(row) = rows.next()? {
+            let values: Vec<rusqlite::types::Value> = (0..12)
+                .map(|index| row.get(index))
+                .collect::<Result<_, _>>()?;
+            carried += insert.execute(rusqlite::params_from_iter(values))?;
+        }
+    }
+    expire_on(&tx)?;
+    tx.commit()?;
+    Ok(carried)
+}
+
+/// The latest `limit` calls, newest first (by time, then by row ID).
 pub fn recent(reader: &Reader, limit: u32) -> Result<Vec<LoggedCall>, Error> {
+    recent_for(reader, None, limit)
+}
+
+/// The latest `limit` calls, newest first (by time, then by row ID: a call
+/// moved in from the pending file gets a newer ID than calls logged after
+/// it), only `client`'s when given. The
+/// name is matched as stored, so it finds calls from a name that has no
+/// `mcp_client` row.
+pub fn recent_for(
+    reader: &Reader,
+    client: Option<&str>,
+    limit: u32,
+) -> Result<Vec<LoggedCall>, Error> {
     let mut statement = reader.conn().prepare(
         "SELECT id, at, client, tool, access_level, outcome, purpose, args_redacted_json, \
-         row_count, result_hash, withheld_count \
-         FROM mcp_access_log ORDER BY id DESC LIMIT ?1",
+         row_count, result_hash, withheld_count, summarised_calls \
+         FROM mcp_access_log WHERE ?1 IS NULL OR client = ?1 \
+         ORDER BY at DESC, id DESC LIMIT ?2",
     )?;
-    let rows = statement.query_map([limit], |row| {
+    let rows = statement.query_map(params![client, limit], |row| {
         Ok(LoggedCall {
             id: row.get(0)?,
             at: row.get(1)?,
@@ -151,6 +286,7 @@ pub fn recent(reader: &Reader, limit: u32) -> Result<Vec<LoggedCall>, Error> {
             row_count: row.get::<_, i64>(8)?.unsigned_abs(),
             result_hash: row.get(9)?,
             withheld_count: row.get::<_, i64>(10)?.unsigned_abs(),
+            summarised_calls: row.get::<_, Option<i64>>(11)?.map(i64::unsigned_abs),
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -226,6 +362,51 @@ mod tests {
         ] {
             assert!(append(&mut db, &refused).is_err(), "{refused:?}");
         }
+    }
+
+    #[test]
+    fn filters_by_client() {
+        let dir = TempDir::new().unwrap();
+        let mut db = Database::open(&dir.path().join("coffer.db")).unwrap();
+        append(&mut db, &entry(Outcome::Ok)).unwrap();
+        append(
+            &mut db,
+            &NewEntry {
+                client: ClientName::new("codex").unwrap(),
+                ..entry(Outcome::RefusedNotEnabled)
+            },
+        )
+        .unwrap();
+        let reader = db.reader().unwrap();
+        let codex = recent_for(&reader, Some("codex"), 10).unwrap();
+        assert_eq!(codex.len(), 1);
+        assert_eq!(codex[0].outcome, Outcome::RefusedNotEnabled);
+        assert_eq!(recent_for(&reader, None, 1).unwrap().len(), 1);
+        assert!(recent_for(&reader, Some("nobody"), 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn rows_older_than_twelve_months_expire() {
+        let dir = TempDir::new().unwrap();
+        let mut db = Database::open(&dir.path().join("coffer.db")).unwrap();
+        let insert_at = |db: &Database, modifier: &str| {
+            db.conn()
+                .execute(
+                    "INSERT INTO mcp_access_log (at, client, tool, outcome) VALUES \
+                     (strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?1), 'codex', 'list_categories', 'ok')",
+                    [modifier],
+                )
+                .unwrap();
+        };
+        insert_at(&db, "-13 months");
+        insert_at(&db, "-370 days");
+        insert_at(&db, "-11 months");
+        insert_at(&db, "-360 days");
+        insert_at(&db, "-1 seconds");
+        assert_eq!(expire(&mut db).unwrap(), 2);
+        let kept = recent(&db.reader().unwrap(), 10).unwrap();
+        assert_eq!(kept.len(), 3);
+        assert_eq!(expire(&mut db).unwrap(), 0);
     }
 
     #[test]

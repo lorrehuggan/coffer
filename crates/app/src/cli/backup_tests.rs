@@ -241,6 +241,100 @@ fn restore_with_yes_restores_by_file_name() {
     assert_eq!(scratch.account_names(), ["Monzo", "Euro"]);
 }
 
+/// AI access-log rows written after the backup are kept, and the output
+/// says how many.
+#[test]
+fn restore_keeps_the_ai_access_log() {
+    use coffer_core::access_log::{self, NewEntry, Outcome};
+    use coffer_core::mcp_client::ClientName;
+
+    let scratch = Scratch::with_account();
+    scratch.ok(&["backup"]);
+    let backup = scratch.backups().remove(0);
+    for _ in 0..2 {
+        access_log::append(
+            &mut Database::open(&scratch.db).unwrap(),
+            &NewEntry {
+                client: ClientName::new("codex").unwrap(),
+                tool: "list_categories".to_owned(),
+                access_level: None,
+                outcome: Outcome::RefusedNotEnabled,
+                purpose: None,
+                args_redacted_json: "{}".to_owned(),
+                row_count: 0,
+                result_hash: None,
+                withheld_count: 0,
+            },
+        )
+        .unwrap();
+    }
+
+    let out = scratch.ok(&["restore", backup.path.to_str().unwrap(), "--yes"]);
+
+    assert!(
+        out.ends_with("Kept 2 AI access-log entries newer than the backup.\n"),
+        "{out}"
+    );
+    let db = Database::open(&scratch.db).unwrap();
+    assert_eq!(
+        access_log::recent(&db.reader().unwrap(), 10).unwrap().len(),
+        2
+    );
+}
+
+#[test]
+fn restore_warns_about_a_restore_that_stopped_and_goes_ahead() {
+    let scratch = Scratch::with_account();
+    scratch.ok(&["backup"]);
+    let backup = scratch.backups().remove(0);
+    scratch.add_account("Euro");
+    // What a restore killed part-way leaves: its marker, in a lock file
+    // nobody holds.
+    let lock = backup::restore_lock_path(&scratch.db);
+    std::fs::write(
+        &lock,
+        format!("2026-11-12T10:00:00.000Z\n{}\n", backup.path.display()),
+    )
+    .unwrap();
+    let warning = format!(
+        "Warning: an earlier restore from {} started 2026-11-12 10:00:00 UTC stopped before \
+         it finished.",
+        backup.path.display()
+    );
+
+    let out = scratch.ok(&["restore", backup.path.to_str().unwrap()]);
+    assert!(out.contains(&warning), "{out}");
+
+    let out = scratch.ok(&["restore", backup.path.to_str().unwrap(), "--yes"]);
+    assert!(out.contains(&warning), "{out}");
+    assert_eq!(scratch.account_names(), ["Monzo"]);
+    // Cleared by the restore that finished.
+    let out = scratch.ok(&["restore", backup.path.to_str().unwrap()]);
+    assert!(!out.contains("Warning"), "{out}");
+}
+
+#[test]
+fn restore_refuses_while_another_restore_holds_the_lock() {
+    let scratch = Scratch::with_account();
+    scratch.ok(&["backup"]);
+    let backup = scratch.backups().remove(0);
+    let lock = backup::restore_lock_path(&scratch.db);
+    let held = std::fs::File::create(&lock).unwrap();
+    held.lock().unwrap();
+
+    let error = scratch.err(&["restore", backup.path.to_str().unwrap(), "--yes"]);
+
+    assert!(
+        error.contains(&format!(
+            "another restore is running (it holds the lock on {}); wait for it to finish",
+            lock.display()
+        )),
+        "{error}"
+    );
+    drop(held);
+    scratch.ok(&["restore", backup.path.to_str().unwrap(), "--yes"]);
+}
+
 #[test]
 fn restore_refuses_a_file_that_isnt_a_backup() {
     let scratch = Scratch::with_account();

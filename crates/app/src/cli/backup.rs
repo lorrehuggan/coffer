@@ -118,6 +118,20 @@ pub fn restore(database: &Path, args: &RestoreArgs, out: &mut dyn Write) -> anyh
         )?,
         None => writeln!(out, "Restored {}.", file.display())?,
     }
+    match (restored.log_rows_carried, &restored.pre_restore) {
+        (Some(0), _) => {}
+        (Some(rows), _) => writeln!(
+            out,
+            "Kept {rows} AI access-log {} newer than the backup.",
+            if rows == 1 { "entry" } else { "entries" }
+        )?,
+        (None, Some(pre_restore)) => writeln!(
+            out,
+            "Couldn't keep the AI access-log entries newer than the backup; they're in {}.",
+            pre_restore.path.display()
+        )?,
+        (None, None) => {}
+    }
     Ok(())
 }
 
@@ -201,6 +215,25 @@ fn write_check(
                  -wal and -shm files beside it) aside to restore over it."
             )?;
         }
+    }
+
+    if let Some(interrupted) = &checked.interrupted {
+        let started = interrupted
+            .started
+            .map(|time| format!(" started {}", time.format("%Y-%m-%d %H:%M:%S UTC")))
+            .unwrap_or_default();
+        let from = interrupted
+            .backup
+            .as_ref()
+            .map(|backup| format!(" from {}", backup.display()))
+            .unwrap_or_default();
+        writeln!(out)?;
+        writeln!(
+            out,
+            "Warning: an earlier restore{from}{started} stopped before it finished. The \
+             current database is complete: either the one it was replacing or that backup. \
+             Restoring now backs it up first, as always."
+        )?;
     }
     Ok(())
 }

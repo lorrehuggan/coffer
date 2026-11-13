@@ -52,6 +52,13 @@ fn a_bad_client_name_is_refused() {
 fn serves_tools_over_stdio() {
     let dir = tempfile::tempdir().unwrap();
     drop(Database::open(&dir.path().join(DATABASE_FILE)).unwrap());
+    // MCP access is off until the user enables the client.
+    let enabled = coffer()
+        .args(["ai-access", "enable", "claude-code"])
+        .env(DATA_DIR_ENV, dir.path())
+        .output()
+        .unwrap();
+    assert!(enabled.status.success(), "{enabled:?}");
 
     let mut child = coffer()
         .args(["mcp", "--client", "claude-code"])

@@ -61,6 +61,7 @@ use crate::id::{AccountId, TransactionId, TransferGroupId};
 use crate::link;
 use crate::merchant;
 use crate::money::{Currency, Money};
+use crate::schedule;
 use crate::split;
 use crate::statement::normalize_description;
 use crate::tag;
@@ -383,8 +384,8 @@ pub fn delete(db: &mut Database, id: TransactionId) -> Result<Deleted, Error> {
 ///
 /// The one place a manual row's references go: split lines, tag links,
 /// change items, links (refunds, reimbursements, settlements, on either
-/// side) and duplicate candidates; tables that point at a transaction later
-/// (schedule matches) are cleared here as they arrive. Until one is, a row it
+/// side), duplicate candidates and schedule matches; tables that point at a
+/// transaction later are cleared here as they arrive. Until one is, a row it
 /// references can't be deleted: the foreign key fails the delete, and
 /// nothing changes.
 fn release_references(
@@ -404,6 +405,7 @@ fn release_references(
     change::clear(tx, id)?;
     link::clear(tx, id)?;
     duplicate::clear(tx, id)?;
+    schedule::clear(tx, id)?;
     Ok(group)
 }
 

@@ -1,7 +1,7 @@
 //! The MCP server's only writer (`AGENTS.md` → Invariants: MCP writes go to
 //! the inbox only).
 //!
-//! [`Store`] owns the server's one read-write connection and exposes three
+//! [`Store`] owns the server's one read-write connection and exposes four
 //! inserts and nothing else:
 //!
 //! - a suggestion and a report, through [`Inbox`], which only a tool
@@ -9,30 +9,42 @@
 //!   gets. The source is always the server's client name, never an
 //!   argument;
 //! - an access-log row, which only the server's call wrapper writes
-//!   ([`crate::server`]).
+//!   ([`crate::server`]), and the rows of calls it refused while it
+//!   couldn't open the database, moved in from the pending file
+//!   ([`access_log::pending::flush`]);
+//! - the server's own client as `requested`, when it has no `mcp_client`
+//!   row yet ([`crate::access::for_request`]). It never enables a client or
+//!   changes a level.
 //!
 //! Every query runs on the separate read-only [`Reader`](coffer_core::db::Reader).
 
 use std::sync::{Mutex, MutexGuard};
 
-use coffer_core::access_log::{self, NewEntry};
+use coffer_core::access_log::{self, NewEntry, pending};
 use coffer_core::db::Database;
-use coffer_core::inbox::{self, NewReport, NewSuggestion};
-use coffer_core::mcp_client::ClientName;
+use coffer_core::inbox::{self, Filed, NewReport, NewSuggestion};
+use coffer_core::mcp_client::{self, ClientName};
 
 use crate::registry::ToolError;
 
-/// The server's read-write connection, behind exactly three inserts.
+/// The server's read-write connection, behind exactly four inserts (and
+/// the pending access-log rows).
 pub struct Store {
     db: Mutex<Database>,
     client: ClientName,
 }
 
-/// Why the access log couldn't be written.
+/// Why the access log or the client's request couldn't be written.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error(transparent)]
     Log(#[from] access_log::Error),
+
+    #[error(transparent)]
+    Client(#[from] mcp_client::Error),
+
+    #[error(transparent)]
+    Pending(#[from] pending::Error),
 
     #[error("the database connection is unusable after a panic")]
     Poisoned,
@@ -55,15 +67,33 @@ impl Store {
         Ok(access_log::append(&mut *self.lock()?, entry)?)
     }
 
+    /// Moves the calls refused while the database couldn't be opened
+    /// (any client's, from any server) into the access log. For the
+    /// server's wrapper only.
+    pub(crate) fn flush_pending(&self) -> Result<pending::Flushed, StoreError> {
+        Ok(pending::flush(&mut *self.lock()?)?)
+    }
+
     /// The inbox, filed as this server's client.
     pub(crate) fn inbox(&self) -> Inbox<'_> {
         Inbox { store: self }
     }
 
-    // Block B: recording a requested client (`mcp_client`, status
-    // `requested`) and `last_seen_at` are the server's own records, like
-    // the log. If B writes them, they go here as crate-private methods,
-    // never on `Inbox`.
+    /// The client this server runs for.
+    pub(crate) fn client(&self) -> &ClientName {
+        &self.client
+    }
+
+    /// Records this server's client as `requested` if it has no row yet,
+    /// and returns whether a row was created. The name is always the
+    /// server's own, never an argument. For the access policy only
+    /// ([`crate::access::for_request`]).
+    pub(crate) fn record_requested(&self) -> Result<bool, StoreError> {
+        Ok(mcp_client::record_requested(
+            &mut *self.lock()?,
+            &self.client,
+        )?)
+    }
 }
 
 /// The inbox writes a tool may make: a pending suggestion or a saved
@@ -73,13 +103,22 @@ pub struct Inbox<'a> {
 }
 
 impl Inbox<'_> {
-    /// Files a pending suggestion and returns its ID.
+    /// Files a pending suggestion and returns its ID: the existing one when
+    /// an identical suggestion is already pending.
     pub fn suggest(&self, suggestion: &NewSuggestion) -> Result<i64, ToolError> {
+        Ok(self.file(suggestion)?.id.get())
+    }
+
+    /// Files a pending suggestion, saying whether an identical one was
+    /// already pending. A payload core refuses is
+    /// [`ToolError::InvalidArguments`], with core's message (IDs, keys and
+    /// limits, never the client's text), and nothing is written.
+    pub fn file(&self, suggestion: &NewSuggestion) -> Result<Filed, ToolError> {
         let mut db = self
             .store
             .lock()
             .map_err(|_| ToolError::Internal("the database connection is unusable"))?;
-        inbox::insert_suggestion(&mut db, &self.store.client, suggestion).map_err(ToolError::core)
+        inbox::file_suggestion(&mut db, &self.store.client, suggestion).map_err(refusal)
     }
 
     /// Saves a report and returns its ID.
@@ -88,6 +127,20 @@ impl Inbox<'_> {
             .store
             .lock()
             .map_err(|_| ToolError::Internal("the database connection is unusable"))?;
-        inbox::insert_report(&mut db, &self.store.client, report).map_err(ToolError::core)
+        inbox::insert_report(&mut db, &self.store.client, report).map_err(refusal)
+    }
+}
+
+/// What the client is told when core refuses an inbox write: why, for
+/// what the client sent; the generic error for anything else.
+fn refusal(error: inbox::Error) -> ToolError {
+    match error {
+        inbox::Error::Invalid(_)
+        | inbox::Error::RationaleTooLong
+        | inbox::Error::TooManyPending
+        | inbox::Error::TooManyReports { .. }
+        | inbox::Error::BlankReportField { .. }
+        | inbox::Error::ReportTooLong { .. } => ToolError::InvalidArguments(error.to_string()),
+        error => ToolError::core(error),
     }
 }
