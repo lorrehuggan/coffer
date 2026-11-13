@@ -23,6 +23,9 @@
 
 #[path = "../../../import/tests/common/mod.rs"]
 mod common;
+mod pseudonyms;
+#[allow(unused_imports)] // Not every test binary checks pseudonyms.
+pub use pseudonyms::*;
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
