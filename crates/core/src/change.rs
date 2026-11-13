@@ -609,7 +609,27 @@ fn unwritable(
             category,
         )
     };
+    // Money in with a suggested or confirmed link: its linked part takes
+    // the purchase's category and share, so it takes neither a split nor a
+    // share of its own (M1.25, V9).
+    let linked_inflow = || -> rusqlite::Result<bool> {
+        conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM transaction_link \
+             WHERE inflow_id = ?1 AND status <> 'rejected')",
+            [id],
+            |row| row.get(0),
+        )
+    };
     let reason = match value {
+        Value::Share(value)
+            if (value.my_share_minor.is_some() || value.share_label.is_some())
+                && linked_inflow()? =>
+        {
+            Some("the transaction is linked money in")
+        }
+        Value::Split(lines) if !lines.is_empty() && linked_inflow()? => {
+            Some("the transaction is linked money in")
+        }
         Value::Category(value) => match value.category_id {
             Some(category) if !category_exists(category)? => Some("its category is gone"),
             Some(_) if split::is_split(conn, id)? => Some("the transaction is split"),

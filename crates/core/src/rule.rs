@@ -46,8 +46,8 @@
 //! Rules win field by field (point 1): in priority order, the first
 //! matching rule that sets a field sets it, and a later rule can still set
 //! another field. The result is an [`Outcome`]: category and split share
-//! one field (a split categorises line by line), and tags add up across
-//! rules.
+//! one field (a split categorises line by line), and the tags a rule adds
+//! are one field too.
 //!
 //! # Applying
 //!
@@ -110,7 +110,7 @@
 //! [`preview_apply`] plans rule `rule` against every transaction it
 //! matches, of any account and origin, evaluating the whole current rule set
 //! so the rule changes only the fields it wins (decision record "rules",
-//! point 1) and adds every tag it names. Split rows are skipped entirely
+//! point 1), tags included. Split rows are skipped entirely
 //! (decision record "splits, tags and notes…", point 3; listed in
 //! [`ApplyPreview::split_rows`]). An exclusion on a row dated on or before
 //! its account's `reconciled_through` meets the lock

@@ -296,7 +296,7 @@ fn input(merchant: &str) -> MatchInput<'_> {
 }
 
 #[test]
-fn rules_win_field_by_field_and_tags_add_up() {
+fn rules_win_field_by_field_tags_included() {
     let rules = rule_set(vec![
         rule_on("acme", vec![set_category("shopping"), set_note("first")]),
         rule_on(
@@ -331,8 +331,8 @@ fn rules_win_field_by_field_and_tags_add_up() {
         .iter()
         .map(|set| (set.value.as_str(), set.rule.get()))
         .collect();
-    // `work` repeats `Work` ignoring case: kept once, credited to rule 2.
-    assert_eq!(tags, [("Work", 2), ("travel", 2), ("gift", 3)]);
+    // Tags are one field: the first rule that adds tags sets them.
+    assert_eq!(tags, [("Work", 2), ("travel", 2)]);
 }
 
 #[test]
@@ -371,9 +371,11 @@ fn evaluating_one_rule_gives_the_fields_it_wins() {
     let second = rules.evaluate_rule(RuleId::new(2), &input("ACME")).unwrap();
     assert_eq!(second.category, None);
     assert_eq!(second.note.unwrap().rule, RuleId::new(2));
-    // Every tag it names, even one a rule above adds.
-    let tags: Vec<&str> = second.tags.iter().map(|set| set.value.as_str()).collect();
-    assert_eq!(tags, ["Work", "x"]);
+    // A rule above sets the tags, so this one adds none.
+    assert!(second.tags.is_empty());
+    let first = rules.evaluate_rule(RuleId::new(1), &input("ACME")).unwrap();
+    let tags: Vec<&str> = first.tags.iter().map(|set| set.value.as_str()).collect();
+    assert_eq!(tags, ["work"]);
     assert_eq!(rules.evaluate_rule(RuleId::new(2), &input("TESCO")), None);
     assert_eq!(rules.evaluate_rule(RuleId::new(9), &input("ACME")), None);
     assert!(
@@ -539,9 +541,10 @@ fn rules_combine_field_by_field_at_import() {
     let rows = f.import(&[(3, -1_000, "ACME")]);
     assert_eq!(f.category(rows[0]), (s("shopping"), s("rule"), Some(first)));
     assert_eq!(f.merchant(rows[0]), (s("Acme"), s("rule")));
-    assert_eq!(f.tags(rows[0]), ["gift", "Work"]);
+    // Tags are one field: the first rule's tags, and only its.
+    assert_eq!(f.tags(rows[0]), ["Work"]);
     let _ = second;
-    assert_eq!(tag::list(&f.db).unwrap().len(), 2);
+    assert_eq!(tag::list(&f.db).unwrap().len(), 1);
 }
 
 #[test]

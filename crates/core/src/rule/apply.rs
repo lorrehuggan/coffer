@@ -156,6 +156,11 @@ pub enum SplitSkip {
     /// The amount is zero or too small to give every line at least one
     /// minor unit.
     TooSmall,
+    /// The row is money in with a suggested or confirmed refund,
+    /// reimbursement or settlement link: its linked part takes the
+    /// purchase's category and share, so it is neither split nor shared
+    /// (M1.25). A share the rules give it is skipped too.
+    Linked,
 }
 
 /// A row a split rule won but didn't split. The row keeps its category.
@@ -182,6 +187,8 @@ struct Candidate {
     split: bool,
     /// Whether it is in a suggested or confirmed transfer group.
     in_transfer: bool,
+    /// Whether it is the money in of a suggested or confirmed link.
+    linked: bool,
 }
 
 impl Candidate {
@@ -208,7 +215,9 @@ fn load_candidates(
         "SELECT t.id, t.account_id, t.amount_minor, t.merchant, t.description_raw, \
          t.source_category, t.source_type, \
          EXISTS (SELECT 1 FROM transaction_split s WHERE s.transaction_id = t.id), \
-         coalesce(g.status IN ('suggested', 'confirmed'), 0) \
+         coalesce(g.status IN ('suggested', 'confirmed'), 0), \
+         EXISTS (SELECT 1 FROM transaction_link l \
+                 WHERE l.inflow_id = t.id AND l.status <> 'rejected') \
          FROM \"transaction\" t LEFT JOIN transfer_group g ON g.id = t.transfer_group_id \
          WHERE {filter} ORDER BY t.id"
     ))?;
@@ -224,6 +233,7 @@ fn load_candidates(
                 source_type: row.get(6)?,
                 split: row.get(7)?,
                 in_transfer: row.get(8)?,
+                linked: row.get(9)?,
             })
         })?
         .collect()
@@ -408,6 +418,7 @@ impl<'c> Planner<'c> {
                 _ if row.in_transfer => {
                     skipped = Some((*rule, SplitSkip::InTransfer));
                 }
+                _ if row.linked => skipped = Some((*rule, SplitSkip::Linked)),
                 None => skipped = Some((*rule, SplitSkip::TooSmall)),
                 Some(amounts) => {
                     let share = outcome.share.as_ref().map(|set| set.value);
@@ -440,6 +451,7 @@ impl<'c> Planner<'c> {
 
         if let Some(SetBy { value: share, rule }) = &outcome.share
             && !split
+            && !row.linked
         {
             let now = read_share(conn, id)?;
             let target = ShareValue {

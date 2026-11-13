@@ -62,12 +62,11 @@ pub struct SetBy<T> {
 ///   [`split`](Outcome::split), never both. A rule can't hold both
 ///   (`RuleError::CategoryWithSplit`), and across rules the first that sets
 ///   either takes the field: a split categorises the row line by line;
-/// - [`merchant`](Outcome::merchant), [`note`](Outcome::note),
-///   [`exclude`](Outcome::exclude) and [`share`](Outcome::share), one rule
-///   each;
-/// - [`tags`](Outcome::tags), which add up: every matching rule adds its
-///   tags, since adding a tag never takes another away. A name two rules
-///   add (ignoring case) is kept once, credited to the first.
+/// - [`merchant`](Outcome::merchant), [`tags`](Outcome::tags),
+///   [`note`](Outcome::note), [`exclude`](Outcome::exclude) and
+///   [`share`](Outcome::share), one rule each: the first matching rule with
+///   an `add_tag` action adds its tags, and a later one adds none (decision
+///   record "rules", point 1).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Outcome {
@@ -102,23 +101,14 @@ impl Outcome {
         self.category.is_some() || self.split.is_some()
     }
 
-    /// Only the fields `rule` won here, with every tag `rule` adds (one a
-    /// rule above also adds included: adding it twice changes nothing).
+    /// Only the fields `rule` won here.
     fn only(self, rule: &CompiledRule) -> Outcome {
         let id = rule.id;
         Outcome {
             category: self.category.filter(|set| set.rule == id),
             split: self.split.filter(|set| set.rule == id),
             merchant: self.merchant.filter(|set| set.rule == id),
-            tags: rule
-                .actions
-                .tags
-                .iter()
-                .map(|tag| SetBy {
-                    value: tag.clone(),
-                    rule: id,
-                })
-                .collect(),
+            tags: self.tags.into_iter().filter(|set| set.rule == id).collect(),
             note: self.note.filter(|set| set.rule == id),
             exclude: self.exclude.filter(|set| set.rule == id),
             share: self.share.filter(|set| set.rule == id),
@@ -186,8 +176,8 @@ impl RuleSet {
     }
 
     /// What rule `rule` sets on a transaction with these fields, among all
-    /// the rules: the fields it wins ([`evaluate`](RuleSet::evaluate)), and
-    /// every tag it adds. `None` when the set has no such rule or the rule
+    /// the rules: the fields it wins ([`evaluate`](RuleSet::evaluate)),
+    /// tags included. `None` when the set has no such rule or the rule
     /// doesn't match; an empty outcome when it matches but rules above it
     /// set every field it would.
     pub fn evaluate_rule(&self, rule: RuleId, input: &MatchInput<'_>) -> Option<Outcome> {
@@ -324,7 +314,7 @@ impl CompiledRule {
         let actions = &self.actions;
         ((actions.category.is_some() || actions.split.is_some()) && !outcome.categorised())
             || (actions.merchant.is_some() && outcome.merchant.is_none())
-            || !actions.tags.is_empty()
+            || (!actions.tags.is_empty() && outcome.tags.is_empty())
             || (actions.note.is_some() && outcome.note.is_none())
             || (actions.exclude.is_some() && outcome.exclude.is_none())
             || (actions.share.is_some() && outcome.share.is_none())
@@ -344,10 +334,8 @@ impl CompiledRule {
         if outcome.merchant.is_none() {
             outcome.merchant = actions.merchant.clone().map(by(self.id));
         }
-        for tag in &actions.tags {
-            if !outcome.tags.iter().any(|set| set.value.same_name(tag)) {
-                outcome.tags.push(by(self.id)(tag.clone()));
-            }
+        if outcome.tags.is_empty() {
+            outcome.tags = actions.tags.iter().cloned().map(by(self.id)).collect();
         }
         if outcome.note.is_none() {
             outcome.note = actions.note.clone().map(by(self.id));
