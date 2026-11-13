@@ -24,6 +24,7 @@ const TABLES: &[&str] = &[
     "category",
     "change_batch",
     "change_item",
+    "duplicate_candidate",
     "fx_rate",
     "import_batch",
     "import_flag",

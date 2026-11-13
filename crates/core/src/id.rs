@@ -97,3 +97,7 @@ row_id!(
     /// A `transaction_link` row: a refund, reimbursement or settlement.
     LinkId
 );
+row_id!(
+    /// A `duplicate_candidate` row: a possible duplicate pair.
+    DuplicateCandidateId
+);

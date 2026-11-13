@@ -14,9 +14,13 @@ mod embedded {
 /// refinery's default history table.
 const HISTORY_TABLE: &str = "refinery_schema_history";
 
-/// The migrations built into this binary, in version order.
+/// The migrations built into this binary, in version order. refinery
+/// embeds them in file-name order, where `V10__…` comes before `V1__…`;
+/// it sorts by version itself only when it runs them.
 pub(super) fn embedded() -> Vec<Migration> {
-    embedded::migrations::runner().get_migrations().clone()
+    let mut migrations = embedded::migrations::runner().get_migrations().clone();
+    migrations.sort();
+    migrations
 }
 
 /// The highest version in `migrations`, or 0 when there are none.
