@@ -15,6 +15,8 @@
 //! - `coffer backup [--list]`, `coffer restore <file>`: local backups
 //!   ([`backup`]).
 //! - `coffer export --format csv|json`: the ledger as a file ([`export`]).
+//! - `coffer inbox [list|show|approve|reject]`: review AI clients'
+//!   suggestions and decide them ([`inbox`]).
 //! - `coffer mcp --client <name>`: the MCP server over stdio ([`mcp`]). It
 //!   ignores the output writer: stdout carries MCP messages only.
 //!
@@ -26,6 +28,7 @@ pub mod accounts;
 pub mod backup;
 pub mod export;
 pub mod import;
+pub mod inbox;
 pub mod mcp;
 pub mod undo;
 
@@ -33,6 +36,8 @@ pub mod undo;
 mod backup_tests;
 #[cfg(test)]
 mod export_tests;
+#[cfg(test)]
+mod inbox_tests;
 #[cfg(test)]
 mod tests;
 
@@ -48,6 +53,7 @@ pub use accounts::{AccountsArgs, AccountsCommand, AddAccountArgs};
 pub use backup::{BackupArgs, RestoreArgs};
 pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
+pub use inbox::{ApproveArgs, InboxArgs, InboxCommand, ListArgs, RejectArgs, ShowArgs};
 pub use mcp::McpArgs;
 pub use undo::UndoImportArgs;
 
@@ -83,6 +89,9 @@ pub enum Command {
     /// Export transactions (split lines as rows) as CSV or JSON. Notes and
     /// private tags only when asked for.
     Export(ExportArgs),
+    /// Review the suggestions AI clients filed, and approve or reject them.
+    /// Lists the pending ones when given no command.
+    Inbox(InboxArgs),
     /// Run the MCP server over stdin/stdout for an AI client (Claude Code,
     /// Codex, …). Needs an existing database.
     Mcp(McpArgs),
@@ -123,6 +132,10 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
         Command::Export(args) => {
             let db = open_existing(database)?;
             export::run(&db, &args, out)
+        }
+        Command::Inbox(args) => {
+            let mut db = open_existing(database)?;
+            inbox::run(&mut db, args, out)
         }
         Command::Mcp(args) => mcp::run(database, &args),
     }
