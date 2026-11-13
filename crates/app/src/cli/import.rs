@@ -158,6 +158,22 @@ pub fn run(
                 "Categorised: {} by the preset, {} by rules. Transfer pairs suggested: {}.",
                 summary.categorized_by_preset, summary.categorized_by_rules, summary.transfer_pairs
             )?;
+            if summary.splits_skipped > 0 {
+                writeln!(
+                    out,
+                    "Rule splits not made: {} (in a transfer, too small or linked); \
+                     they keep their category.",
+                    summary.splits_skipped
+                )?;
+            }
+            if summary.duplicates > 0 || summary.link_suggestions > 0 {
+                writeln!(
+                    out,
+                    "To review: {}, {}.",
+                    plural(summary.duplicates, "possible duplicate"),
+                    plural(summary.link_suggestions, "suggested money-back link")
+                )?;
+            }
             if summary.mirrored > 0 {
                 writeln!(
                     out,

@@ -76,7 +76,7 @@ fn write_counts(out: &mut dyn Write, preview: &UndoPreview) -> std::io::Result<(
     if preview.edited > 0 {
         writeln!(
             out,
-            "{} your edits (category, note, share, exclusion). The edits go with them; \
+            "{} your edits (category, note, share, exclusion, links, merges). The edits go with them; \
              importing the file again brings the rows back without them.",
             match preview.edited {
                 1 => "1 of these transactions has".to_owned(),
@@ -90,6 +90,24 @@ fn write_counts(out: &mut dyn Write, preview: &UndoPreview) -> std::io::Result<(
             "{} {} dissolved: the other side stays as an ordinary transaction.",
             plural(preview.transfers, "transfer pair"),
             if preview.transfers == 1 { "is" } else { "are" }
+        )?;
+    }
+    if preview.merged_into > 0 {
+        writeln!(
+            out,
+            "{} merged into these as duplicates and {} excluded; undo the merge to include {} \
+             again.",
+            plural(preview.merged_into, "other transaction"),
+            if preview.merged_into == 1 {
+                "stays"
+            } else {
+                "stay"
+            },
+            if preview.merged_into == 1 {
+                "it"
+            } else {
+                "them"
+            }
         )?;
     }
     if !preview.later_batches.is_empty() {

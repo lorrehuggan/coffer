@@ -2297,7 +2297,9 @@ fn ledger_line_nets_confirmed_links_only() {
     let link = fixture
         .link("refund", refund, Some(purchase), None, 1000, "suggested")
         .unwrap();
-    let rows = |transaction: i64| -> Vec<(i64, Option<i64>, Option<i64>, Option<i64>)> {
+    /// `(amount_minor, category_id, link_id, target_id)`.
+    type LedgerRow = (i64, Option<i64>, Option<i64>, Option<i64>);
+    let rows = |transaction: i64| -> Vec<LedgerRow> {
         let mut statement = fixture
             .conn()
             .prepare(

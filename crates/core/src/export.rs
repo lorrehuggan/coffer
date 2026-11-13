@@ -3,14 +3,18 @@
 //! An export is one row per line of the ledger (the `ledger_line` view): a
 //! transaction that isn't split is one row, and a split transaction is one
 //! row per split line, each carrying its parent's `transaction_id` with its
-//! own `split_id` and `line_no`. Transaction fields (date, account,
+//! own `split_id` and `line_no`. Money in with confirmed links (a refund,
+//! reimbursement or settlement, M1.25) is its own row for the unlinked rest
+//! plus one row per link part, each with `link_id`: a refund's part has the
+//! purchase's category (and one row per purchase line when the purchase is
+//! split). A transaction's rows always sum to its amount. Transaction fields (date, account,
 //! description, …) repeat on each line of a split; the amount, my amount
 //! and category are the line's.
 //!
 //! The export doesn't filter by status: excluded rows and transfers are
 //! included, with `excluded_reason` and `transfer_status` to filter by, as
 //! in `ledger_line`. Rows are ordered by date, then transaction ID, then
-//! line number.
+//! line number, then link.
 //!
 //! # Filters ([`Filter`])
 //!
@@ -105,6 +109,12 @@
 //! | `source_category` | text or empty | The bank's category, as exported | when the file had one |
 //! | `source_type` | text or empty | The bank's transaction type, as exported | when the file had one |
 //! | `created_at` | UTC timestamp | When the transaction entered the database | always |
+//! | `link_id` | integer or empty | The confirmed link this row is a part of | link parts |
+//! | `link_kind` | `refund`, `reimbursement`, `settlement` or empty | That link's kind | link parts |
+//! | `linked_transaction_id` | integer or empty | The purchase a refund or reimbursement part nets against | refund and reimbursement parts |
+//! | `in_reports` | boolean | Whether the row counts in spending, income and reports: not excluded, not a confirmed transfer (for a link part, nor is its purchase) | always |
+//! | `personal_amount` | decimal text | What the row counts as the user's own spending or income: `my_amount`, or 0 when not in reports or reimbursable | always |
+//! | `personal_amount_minor` | integer | `personal_amount` in minor units | always |
 //! | `user_note` | text or empty | The user's note on the transaction | with notes |
 //! | `line_note` | text or empty | The user's note on the split line | with notes |
 //! | `excluded_note` | text or empty | The user's note on the exclusion | with notes |
@@ -133,7 +143,7 @@ use rusqlite::{Connection, Row, params_from_iter};
 use crate::account::{self, date_key};
 use crate::category::{CategoryKey, CategoryTree};
 use crate::db::Database;
-use crate::id::{AccountId, BatchId, SplitId, TransactionId, TransferGroupId};
+use crate::id::{AccountId, BatchId, LinkId, SplitId, TransactionId, TransferGroupId};
 use crate::money::{Currency, Money};
 use crate::tag::{self, TagName};
 
@@ -212,6 +222,13 @@ pub struct ExportRow {
     pub source_category: Option<String>,
     pub source_type: Option<String>,
     pub created_at: String,
+    /// The confirmed link this row is a part of (M1.25).
+    pub link_id: Option<LinkId>,
+    pub link_kind: Option<String>,
+    /// The purchase a refund or reimbursement part nets against.
+    pub linked_transaction_id: Option<TransactionId>,
+    pub in_reports: bool,
+    pub personal_amount: Money,
     /// `None` unless notes are included.
     pub notes: Option<Notes>,
     /// `None` unless private tags are included.
@@ -279,9 +296,11 @@ pub fn rows(db: &Database, options: &Options) -> Result<Vec<ExportRow>, Error> {
         "SELECT l.transaction_id, l.split_id, l.line_no, l.account_id, l.batch_id, l.date, \
                 l.amount_minor, l.currency, l.my_amount_minor, l.reimbursable, l.merchant, \
                 l.merchant_display, l.excluded_reason, l.transfer_group_id, l.transfer_status, \
-                l.origin, \
+                l.origin, l.link_id, l.link_kind, l.target_id, l.in_reports, l.personal_minor, \
                 t.time, t.amount_minor AS transaction_amount_minor, t.original_amount_minor, \
-                t.original_currency, t.description_raw, t.category_source, t.excluded_at, \
+                t.original_currency, t.description_raw, \
+                CASE WHEN l.link_id IS NULL THEN t.category_source END AS category_source, \
+                t.excluded_at, \
                 t.external_id, t.source_category, t.source_type, t.created_at, \
                 a.name AS account_name, c.key AS category_key, c.label AS category_label",
     );
@@ -326,7 +345,7 @@ pub fn rows(db: &Database, options: &Options) -> Result<Vec<ExportRow>, Error> {
          WHERE tt.transaction_id = l.transaction_id AND tt.tag_id IN ({}))",
         &filter.tags,
     );
-    sql.push_str(" ORDER BY l.date, l.transaction_id, l.line_no");
+    sql.push_str(" ORDER BY l.date, l.transaction_id, l.line_no, l.link_id, l.target_split_id");
 
     let mut statement = conn.prepare(&sql)?;
     let mut query = statement.query(params_from_iter(values))?;
@@ -579,6 +598,12 @@ enum Column {
     SourceCategory,
     SourceType,
     CreatedAt,
+    LinkId,
+    LinkKind,
+    LinkedTransactionId,
+    InReports,
+    PersonalAmount,
+    PersonalAmountMinor,
     UserNote,
     LineNote,
     ExcludedNote,
@@ -587,7 +612,7 @@ enum Column {
 }
 
 impl Column {
-    const ALWAYS: [Column; 35] = [
+    const ALWAYS: [Column; 41] = [
         Column::TransactionId,
         Column::SplitId,
         Column::LineNo,
@@ -623,6 +648,12 @@ impl Column {
         Column::SourceCategory,
         Column::SourceType,
         Column::CreatedAt,
+        Column::LinkId,
+        Column::LinkKind,
+        Column::LinkedTransactionId,
+        Column::InReports,
+        Column::PersonalAmount,
+        Column::PersonalAmountMinor,
     ];
 
     const NOTES: [Column; 4] = [
@@ -680,6 +711,12 @@ impl Column {
             Column::SourceCategory => "source_category",
             Column::SourceType => "source_type",
             Column::CreatedAt => "created_at",
+            Column::LinkId => "link_id",
+            Column::LinkKind => "link_kind",
+            Column::LinkedTransactionId => "linked_transaction_id",
+            Column::InReports => "in_reports",
+            Column::PersonalAmount => "personal_amount",
+            Column::PersonalAmountMinor => "personal_amount_minor",
             Column::UserNote => "user_note",
             Column::LineNote => "line_note",
             Column::ExcludedNote => "excluded_note",
@@ -734,6 +771,14 @@ impl Column {
             Column::SourceCategory => Cell::text(row.source_category.as_deref()),
             Column::SourceType => Cell::text(row.source_type.as_deref()),
             Column::CreatedAt => Cell::Text(row.created_at.clone()),
+            Column::LinkId => Cell::int(row.link_id.map(LinkId::get)),
+            Column::LinkKind => Cell::text(row.link_kind.as_deref()),
+            Column::LinkedTransactionId => {
+                Cell::int(row.linked_transaction_id.map(TransactionId::get))
+            }
+            Column::InReports => Cell::Bool(row.in_reports),
+            Column::PersonalAmount => Cell::Text(row.personal_amount.to_decimal_string()),
+            Column::PersonalAmountMinor => Cell::Int(row.personal_amount.minor()),
             Column::UserNote => Cell::text(notes.and_then(|n| n.user_note.as_deref())),
             Column::LineNote => Cell::text(notes.and_then(|n| n.line_note.as_deref())),
             Column::ExcludedNote => Cell::text(notes.and_then(|n| n.excluded_note.as_deref())),
@@ -873,6 +918,11 @@ fn read_row(row: &Row<'_>, options: &Options, tags: &TagNames) -> Result<ExportR
         source_category: row.get("source_category")?,
         source_type: row.get("source_type")?,
         created_at: row.get("created_at")?,
+        link_id: row.get("link_id")?,
+        link_kind: row.get("link_kind")?,
+        linked_transaction_id: row.get("target_id")?,
+        in_reports: row.get("in_reports")?,
+        personal_amount: money("personal_minor")?,
         notes,
         private_tags: options.include_private_tags.then(|| names(true)),
     })

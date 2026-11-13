@@ -152,9 +152,9 @@ fn with_everything() -> Options {
 #[test]
 fn columns_depend_only_on_the_opt_ins() {
     let default = columns(&Options::default());
-    assert_eq!(default.len(), 35);
+    assert_eq!(default.len(), 41);
     assert_eq!(default[..3], ["transaction_id", "split_id", "line_no"]);
-    assert_eq!(default.last(), Some(&"created_at"));
+    assert_eq!(default.last(), Some(&"personal_amount_minor"));
     for left_out in [
         "share_label",
         "user_note",
@@ -171,16 +171,16 @@ fn columns_depend_only_on_the_opt_ins() {
         ..Options::default()
     });
     assert_eq!(
-        notes[35..],
+        notes[41..],
         ["user_note", "line_note", "excluded_note", "bank_note"]
     );
     let private = columns(&Options {
         include_private_tags: true,
         ..Options::default()
     });
-    assert_eq!(private[35..], ["private_tags"]);
+    assert_eq!(private[41..], ["private_tags"]);
     assert_eq!(
-        columns(&with_everything())[35..],
+        columns(&with_everything())[41..],
         [
             "user_note",
             "line_note",

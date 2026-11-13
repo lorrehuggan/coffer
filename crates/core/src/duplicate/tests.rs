@@ -92,6 +92,9 @@ impl Fixture {
         else {
             panic!("expected a batch");
         };
+        // The commit detects duplicates itself (`CommitSummary::duplicates`);
+        // these tests run detection by hand, so they start from none.
+        clear_batch(self.db.conn(), summary.batch).unwrap();
         let rows = ids(
             self.db.conn(),
             "SELECT id FROM \"transaction\" WHERE batch_id = ?1 AND origin = 'imported' \
@@ -336,6 +339,24 @@ fn the_schema_keeps_pairs_canonical_on_one_account_and_merged_with_a_batch() {
 }
 
 // Detection -------------------------------------------------------------------
+
+#[test]
+fn the_import_commit_detects_duplicates_of_its_rows() {
+    let mut f = Fixture::new();
+    f.import(SourceFormat::Csv, &[line(5, -1250, "TESCO STORES 1234")]);
+    let mut statement = Statement::new(SourceFormat::Ofx, Currency::GBP);
+    let mut row = StatementLine::new(day(6), gbp(-1250), "Tesco Stores London");
+    row.external_id = Some("F1".to_owned());
+    statement.push(SourceLocation::Line(2), Ok(row));
+    let preview = import::preview(&f.db, f.account, "s.ofx", statement).unwrap();
+    let Committed::Batch(summary) =
+        import::commit(&mut f.db, &preview, preview.needs_confirmation()).unwrap()
+    else {
+        panic!("expected a batch");
+    };
+    assert_eq!(summary.duplicates, 1);
+    assert_eq!(f.pairs().len(), 1);
+}
 
 #[test]
 fn overlapping_exports_with_different_text_pair() {
