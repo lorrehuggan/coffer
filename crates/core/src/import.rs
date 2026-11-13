@@ -53,8 +53,11 @@ use crate::account::{self, Account, date_key};
 use crate::backup;
 use crate::balance::{Assertion, DailyMovements};
 use crate::category::CategoryKey;
+use crate::change;
 use crate::db::Database;
+use crate::duplicate::{self, DuplicateWindow};
 use crate::id::{AccountId, BalanceId, BatchId, TransactionId};
+use crate::link;
 use crate::merchant;
 use crate::money::{Currency, Money};
 use crate::rule;
@@ -126,6 +129,12 @@ pub enum Error {
 
     #[error("merchant names: {0}")]
     Merchants(#[from] merchant::Error),
+
+    #[error("possible duplicates: {0}")]
+    Duplicates(#[from] duplicate::Error),
+
+    #[error("refund and reimbursement suggestions: {0}")]
+    Links(#[from] link::Error),
 
     /// The backup taken before the commit failed, so nothing was imported
     /// (M1.28).
@@ -440,6 +449,15 @@ pub struct CommitSummary {
     /// Transfer pairs suggested for the new rows, each a `suggested`
     /// `transfer_group`.
     pub transfer_pairs: usize,
+    /// Rows a rule's split template won but couldn't split (in a transfer,
+    /// too small, linked money in); they keep their category.
+    pub splits_skipped: usize,
+    /// Possible duplicates found for the new rows, each a `pending`
+    /// `duplicate_candidate` for review (M1.26).
+    pub duplicates: usize,
+    /// Refund and reimbursement links suggested for the new rows, each a
+    /// `suggested` `transaction_link` (M1.25).
+    pub link_suggestions: usize,
 }
 
 /// Plans importing `statement` into `account`. Reads only.
@@ -495,10 +513,17 @@ pub fn preview(
 ///    (rules match the cleaned bank text), but a rule's `set_merchant`
 ///    (M1.24) overrides them, so they come first;
 /// 4. the rules run on the batch ([`rule::apply_to_batch`]), mirrored rows
-///    included; a matching `set_category` rule overrides the preset's
-///    category;
+///    included, every action field by field: a matching `set_category` rule
+///    overrides the preset's category, and merchant names, tags, notes,
+///    exclusions, splits and shares are set (M1.24). New rows aren't in a
+///    locked period (they'd be flagged), so a rule's exclusion never meets
+///    a lock here;
 /// 5. transfer pairs are suggested for the batch's rows
-///    ([`transfer::detect_for_batch`], [`TransferWindow::DEFAULT`]).
+///    ([`transfer::detect_for_batch`], [`TransferWindow::DEFAULT`]);
+/// 6. possible duplicates of the batch's rows are recorded for review
+///    ([`duplicate::detect_for_batch`], [`DuplicateWindow::DEFAULT`]), and
+///    refund and reimbursement links suggested for its money in
+///    ([`link::suggest_for_batch`]).
 ///
 /// A failure in any step rolls the whole import back.
 ///
@@ -562,6 +587,9 @@ pub fn commit(
         mirrored: 0,
         pots_created: 0,
         transfer_pairs: 0,
+        splits_skipped: 0,
+        duplicates: 0,
+        link_suggestions: 0,
     };
     // The new rows that are sub-account transfers, for the mirror below.
     let mut pot_rows: Vec<(TransactionId, SubAccountRef)> = Vec::new();
@@ -676,7 +704,7 @@ pub fn commit(
     // Rules override the preset's categories, so they run after the rows
     // are stored with them. The counts are of the imported rows: a mirrored
     // row is the same transfer seen from the pot.
-    rule::apply_to_batch(&tx, batch)?;
+    summary.splits_skipped = rule::apply_to_batch(&tx, batch)?.splits_skipped;
     let categorized = |source: &str| -> Result<usize, Error> {
         let n: i64 = tx.query_row(
             "SELECT COUNT(*) FROM \"transaction\" \
@@ -689,6 +717,11 @@ pub fn commit(
     summary.categorized_by_preset = categorized("preset_map")?;
     summary.categorized_by_rules = categorized("rule")?;
     summary.transfer_pairs = transfer::detect_for_batch(&tx, batch, TransferWindow::DEFAULT)?.len();
+    // Review queues, after pairing: possible duplicates (overlapping
+    // exports, a manual row entered ahead of the bank's), and refunds and
+    // reimbursements for new money in, which skip rows in a transfer.
+    summary.duplicates = duplicate::detect_for_batch(&tx, batch, DuplicateWindow::DEFAULT)?.len();
+    summary.link_suggestions = link::suggest_for_batch(&tx, batch)?;
 
     tx.commit()?;
     tracing::info!(
@@ -702,6 +735,9 @@ pub fn commit(
         mirrored = summary.mirrored,
         pots_created = summary.pots_created,
         transfer_pairs = summary.transfer_pairs,
+        splits_skipped = summary.splits_skipped,
+        duplicates = summary.duplicates,
+        link_suggestions = summary.link_suggestions,
         "committed an import"
     );
     Ok(Committed::Batch(summary))
@@ -1148,6 +1184,11 @@ pub struct UndoPreview {
     /// again. A pot transfer and its mirrored row are both the batch's, so
     /// they go together and aren't counted here.
     pub transfers: usize,
+    /// Rows of other imports (or manual rows) merged into one of this
+    /// batch's rows as its duplicate (M1.26). They stay excluded as
+    /// `duplicate` when this batch goes; undoing their merge's change batch
+    /// includes them again.
+    pub merged_into: usize,
     /// Later imports into the same account still committed. Rows they
     /// skipped as already imported came from this batch and go with it;
     /// importing those files again brings them back.
@@ -1187,11 +1228,16 @@ pub fn undo(db: &mut Database, batch: BatchId) -> Result<UndoPreview, Error> {
         tx.execute("DELETE FROM transfer_group WHERE id = ?1", [group])?;
     }
     // Rows that reference a transaction go first (no `ON DELETE`): split
-    // lines and tag links. Links, duplicate candidates, change items and
-    // schedule matches are cleared here when they arrive; until then a
-    // reference makes the delete fail, and the whole undo with it.
+    // lines, tag links, change items, refund/reimbursement/settlement links
+    // (either side, so money in from another batch is unlinked again) and
+    // duplicate candidates. Schedule matches are cleared here when they
+    // arrive; until then a reference makes the delete fail, and the whole
+    // undo with it.
     split::clear_batch(&tx, batch)?;
     tag::clear_batch(&tx, batch)?;
+    change::clear_batch(&tx, batch)?;
+    link::clear_batch(&tx, batch)?;
+    duplicate::clear_batch(&tx, batch)?;
     tx.execute("DELETE FROM \"transaction\" WHERE batch_id = ?1", [batch])?;
     tx.execute("DELETE FROM balance_snapshot WHERE batch_id = ?1", [batch])?;
     tx.execute("DELETE FROM import_flag WHERE batch_id = ?1", [batch])?;
@@ -1264,7 +1310,12 @@ fn plan_undo(conn: &Connection, batch: BatchId) -> Result<UndoPreview, Error> {
              OR my_share_minor IS NOT NULL OR share_label IS NOT NULL OR reimbursable = 1 \
              OR excluded_reason IS NOT NULL OR merchant_display_source = 'user' \
              OR EXISTS (SELECT 1 FROM transaction_split s WHERE s.transaction_id = \"transaction\".id) \
-             OR EXISTS (SELECT 1 FROM transaction_tag g WHERE g.transaction_id = \"transaction\".id))",
+             OR EXISTS (SELECT 1 FROM transaction_tag g WHERE g.transaction_id = \"transaction\".id) \
+             OR EXISTS (SELECT 1 FROM transaction_link l WHERE l.status = 'confirmed' \
+                        AND (l.inflow_id = \"transaction\".id OR l.target_id = \"transaction\".id)) \
+             OR EXISTS (SELECT 1 FROM duplicate_candidate d WHERE d.status <> 'pending' \
+                        AND (d.transaction_a = \"transaction\".id \
+                             OR d.transaction_b = \"transaction\".id)))",
         )?,
         transfers: count(
             "SELECT COUNT(DISTINCT t.transfer_group_id) FROM \"transaction\" t \
@@ -1272,6 +1323,14 @@ fn plan_undo(conn: &Connection, batch: BatchId) -> Result<UndoPreview, Error> {
              AND EXISTS (SELECT 1 FROM \"transaction\" o \
                          WHERE o.transfer_group_id = t.transfer_group_id \
                          AND o.batch_id IS NOT ?1)",
+        )?,
+        merged_into: count(
+            "SELECT COUNT(*) FROM duplicate_candidate d \
+             JOIN \"transaction\" k ON k.id = CASE d.kept WHEN 'a' THEN d.transaction_a \
+                                                          ELSE d.transaction_b END \
+             JOIN \"transaction\" x ON x.id = CASE d.kept WHEN 'a' THEN d.transaction_b \
+                                                          ELSE d.transaction_a END \
+             WHERE d.status = 'merged' AND k.batch_id = ?1 AND x.batch_id IS NOT ?1",
         )?,
         later_batches,
         batch: info,

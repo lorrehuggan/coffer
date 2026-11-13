@@ -85,6 +85,11 @@ pub enum StoreError {
         problem: InvalidRule,
     },
 
+    /// Writing what a rule sets failed (`change::Recorder`): a value the
+    /// row can't take.
+    #[error("applying a rule: {0}")]
+    Change(#[from] crate::change::Error),
+
     /// The database refused the operation.
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),

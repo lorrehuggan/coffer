@@ -1062,6 +1062,7 @@ name = "coffer-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "coffer-core",
  "coffer-import",
@@ -1103,6 +1104,7 @@ dependencies = [
  "encoding_rs",
  "rusqlite",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "toml 1.2.1+spec-1.1.0",

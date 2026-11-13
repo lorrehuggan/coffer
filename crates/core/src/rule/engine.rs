@@ -1,16 +1,21 @@
 //! The rules engine: matching transactions against the stored rules, in
-//! priority order, and applying what they set to an import batch.
+//! priority order, field by field ([`Outcome`]). Applying what they set is
+//! the `apply` module's.
 
 use std::cell::OnceCell;
-use std::collections::HashMap;
 
 use regex::Regex;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 
+use super::apply::BatchApplied;
 use super::store::{self, StoreError, StoredRule};
-use super::{AmountBounds, MatchField, MatchKind, RuleAction};
+use super::{
+    ActionText, AmountBounds, ExcludeReason, MatchField, MatchKind, RuleAction, Share,
+    SplitTemplate,
+};
 use crate::category::CategoryKey;
-use crate::id::{AccountId, BatchId, RuleId, TransactionId};
+use crate::id::{AccountId, BatchId, RuleId};
+use crate::tag::TagName;
 
 /// The fields of a transaction that rules match on.
 ///
@@ -47,22 +52,67 @@ pub struct SetBy<T> {
 }
 
 /// What the rules set on one transaction, field by field. A field no
-/// matching rule sets is `None`.
+/// matching rule sets is `None` (for tags: empty).
 ///
-/// Only the category for now; the other action kinds (merchant, tags,
-/// note, exclusion, split, share) are ROADMAP M1.24 and become fields here.
+/// Rules win field by field (decision record "rules", point 1): in
+/// priority order, the first matching rule that sets a field sets it, and a
+/// later matching rule can still set a different field. The fields are:
+///
+/// - **categorisation**: [`category`](Outcome::category) or
+///   [`split`](Outcome::split), never both. A rule can't hold both
+///   (`RuleError::CategoryWithSplit`), and across rules the first that sets
+///   either takes the field: a split categorises the row line by line;
+/// - [`merchant`](Outcome::merchant), [`tags`](Outcome::tags),
+///   [`note`](Outcome::note), [`exclude`](Outcome::exclude) and
+///   [`share`](Outcome::share), one rule each: the first matching rule with
+///   an `add_tag` action adds its tags, and a later one adds none (decision
+///   record "rules", point 1).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Outcome {
     /// The category (`set_category`).
     pub category: Option<SetBy<CategoryKey>>,
+    /// The split (`split_template`). `None` whenever `category` is set.
+    pub split: Option<SetBy<SplitTemplate>>,
+    /// The display merchant (`set_merchant`), as the rule has it (it is
+    /// trimmed when applied).
+    pub merchant: Option<SetBy<ActionText>>,
+    /// The tags to add (`add_tag`), in priority order, then in the order
+    /// each rule lists them; no name twice, ignoring case.
+    pub tags: Vec<SetBy<TagName>>,
+    /// The user note (`set_note`), as the rule has it (it is trimmed when
+    /// applied).
+    pub note: Option<SetBy<ActionText>>,
+    /// The exclusion reason (`exclude`).
+    pub exclude: Option<SetBy<ExcludeReason>>,
+    /// The user's share (`my_share`), in basis points. With a split it
+    /// applies to each line.
+    pub share: Option<SetBy<Share>>,
 }
 
 impl Outcome {
-    /// Whether every field the engine applies is set, so no later rule can
-    /// change anything.
-    fn is_complete(&self) -> bool {
-        self.category.is_some()
+    /// Whether the rules set nothing.
+    pub fn is_empty(&self) -> bool {
+        *self == Outcome::default()
+    }
+
+    /// Whether the categorisation field is taken.
+    fn categorised(&self) -> bool {
+        self.category.is_some() || self.split.is_some()
+    }
+
+    /// Only the fields `rule` won here.
+    fn only(self, rule: &CompiledRule) -> Outcome {
+        let id = rule.id;
+        Outcome {
+            category: self.category.filter(|set| set.rule == id),
+            split: self.split.filter(|set| set.rule == id),
+            merchant: self.merchant.filter(|set| set.rule == id),
+            tags: self.tags.into_iter().filter(|set| set.rule == id).collect(),
+            note: self.note.filter(|set| set.rule == id),
+            exclude: self.exclude.filter(|set| set.rule == id),
+            share: self.share.filter(|set| set.rule == id),
+        }
     }
 }
 
@@ -71,7 +121,7 @@ impl Outcome {
 ///
 /// Rules win field by field (decision record "rules", point 1): in
 /// priority order, the first matching rule that sets a field sets it, and
-/// a later matching rule can still set a different field.
+/// a later matching rule can still set a different field ([`Outcome`]).
 #[derive(Clone, Debug, Default)]
 pub struct RuleSet {
     rules: Vec<CompiledRule>,
@@ -106,125 +156,97 @@ impl RuleSet {
         self.rules.is_empty()
     }
 
-    /// What the rules set on a transaction with these fields.
+    /// Whether the set has rule `rule`.
+    pub fn contains(&self, rule: RuleId) -> bool {
+        self.rules.iter().any(|compiled| compiled.id == rule)
+    }
+
+    /// What the rules set on a transaction with these fields. Depends only
+    /// on the fields and the rules (in priority, then ID order), so it is
+    /// deterministic.
     pub fn evaluate(&self, input: &MatchInput<'_>) -> Outcome {
         let row = Prepared::new(input);
         let mut outcome = Outcome::default();
         for rule in &self.rules {
-            if outcome.is_complete() {
-                break;
-            }
-            if let Some(key) = &rule.category
-                && outcome.category.is_none()
-                && rule.matches(&row)
-            {
-                outcome.category = Some(SetBy {
-                    value: key.clone(),
-                    rule: rule.id,
-                });
+            if rule.could_add_to(&outcome) && rule.matches(&row) {
+                rule.add_to(&mut outcome);
             }
         }
         outcome
     }
 
-    /// Applies the rules to every transaction of an import batch and
-    /// returns how many rows they set a category on.
-    ///
-    /// A row whose category the rules set gets `category_id`,
-    /// `category_source = 'rule'` and `rule_id`. Rows with a category from
-    /// the user or an approved suggestion (`user`, `ai_approved`) are
-    /// never changed on import (decision record "rules", point 3); rows
-    /// with no category or the preset's (`preset_map`) are, because rules
-    /// override the preset category map. Rows no rule matches are left as
-    /// they are. A rule naming a category that doesn't exist is an error.
-    ///
-    /// Opens no transaction of its own: the import commit runs it inside
-    /// its own.
-    pub fn apply_to_batch(&self, conn: &Connection, batch: BatchId) -> Result<usize, StoreError> {
-        if self.is_empty() {
-            return Ok(0);
+    /// What rule `rule` sets on a transaction with these fields, among all
+    /// the rules: the fields it wins ([`evaluate`](RuleSet::evaluate)),
+    /// tags included. `None` when the set has no such rule or the rule
+    /// doesn't match; an empty outcome when it matches but rules above it
+    /// set every field it would.
+    pub fn evaluate_rule(&self, rule: RuleId, input: &MatchInput<'_>) -> Option<Outcome> {
+        let compiled = self.rules.iter().find(|compiled| compiled.id == rule)?;
+        if !compiled.matches(&Prepared::new(input)) {
+            return None;
         }
-        let mut statement = conn.prepare(
-            "SELECT id, account_id, amount_minor, merchant, description_raw, source_category, \
-             source_type FROM \"transaction\" \
-             WHERE batch_id = ?1 AND (category_source IS NULL OR category_source = 'preset_map') \
-             ORDER BY id",
-        )?;
-        let rows = statement
-            .query_map([batch], |row| {
-                Ok(BatchRow {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    amount_minor: row.get(2)?,
-                    merchant: row.get(3)?,
-                    description: row.get(4)?,
-                    source_category: row.get(5)?,
-                    source_type: row.get(6)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        Some(self.evaluate(input).only(compiled))
+    }
 
-        let mut update = conn.prepare(
-            "UPDATE \"transaction\" SET category_id = ?1, category_source = 'rule', rule_id = ?2 \
-             WHERE id = ?3",
-        )?;
-        let mut category_ids: HashMap<CategoryKey, i64> = HashMap::new();
-        let mut set = 0;
-        for row in &rows {
-            let outcome = self.evaluate(&row.input());
-            let Some(SetBy { value: key, rule }) = outcome.category else {
-                continue;
-            };
-            let category_id = match category_ids.get(&key) {
-                Some(id) => *id,
-                None => {
-                    let id = conn
-                        .query_row("SELECT id FROM category WHERE key = ?1", [&key], |row| {
-                            row.get(0)
-                        })
-                        .optional()?
-                        .ok_or_else(|| StoreError::RuleCategoryMissing {
-                            rule,
-                            key: key.clone(),
-                        })?;
-                    category_ids.insert(key, id);
-                    id
-                }
-            };
-            update.execute(rusqlite::params![category_id, rule, row.id])?;
-            set += 1;
-        }
-        Ok(set)
+    /// Applies the rules to every transaction of an import batch; see
+    /// [`apply_to_batch`].
+    pub fn apply_to_batch(
+        &self,
+        conn: &Connection,
+        batch: BatchId,
+    ) -> Result<BatchApplied, StoreError> {
+        super::apply::apply_to_batch(self, conn, batch)
     }
 }
 
-/// Applies the stored rules to every transaction of an import batch; see
-/// [`RuleSet::apply_to_batch`]. Loads the rules from `conn` first.
-pub fn apply_to_batch(conn: &Connection, batch: BatchId) -> Result<usize, StoreError> {
+/// Applies the stored rules to every transaction of an import batch,
+/// mirrored rows included: every action kind, field by field ([`Outcome`]).
+/// Loads the rules from `conn` first. What each action writes is in
+/// the [`rule`](crate::rule) module docs ("Applying").
+///
+/// Nothing the user set is changed on import (decision record "rules",
+/// point 3): a category from the user or an approved suggestion (`user`,
+/// `ai_approved`), a name the user set, an existing note, exclusion or
+/// share. Rules do override the preset's category map (`preset_map`) and
+/// the derived merchant name. A split that can't be made (the row is in a
+/// suggested or confirmed transfer, or too small to give every line a minor
+/// unit) is skipped for that row, which keeps what it had, and the import
+/// goes on. A rule naming a category that doesn't exist is an error when it
+/// matches a row.
+///
+/// Opens no transaction of its own: the import commit runs it inside its
+/// own, after merchant names and before transfer detection.
+pub fn apply_to_batch(conn: &Connection, batch: BatchId) -> Result<BatchApplied, StoreError> {
     RuleSet::load(conn)?.apply_to_batch(conn, batch)
 }
 
-/// A transaction of a batch, as [`RuleSet::apply_to_batch`] reads it.
-struct BatchRow {
-    id: TransactionId,
-    account_id: AccountId,
-    amount_minor: i64,
-    merchant: Option<String>,
-    description: String,
-    source_category: Option<String>,
-    source_type: Option<String>,
+/// What a rule does, by field.
+#[derive(Clone, Debug, Default)]
+struct Actions {
+    category: Option<CategoryKey>,
+    split: Option<SplitTemplate>,
+    merchant: Option<ActionText>,
+    tags: Vec<TagName>,
+    note: Option<ActionText>,
+    exclude: Option<ExcludeReason>,
+    share: Option<Share>,
 }
 
-impl BatchRow {
-    fn input(&self) -> MatchInput<'_> {
-        MatchInput {
-            account_id: self.account_id,
-            amount_minor: self.amount_minor,
-            merchant: self.merchant.as_deref(),
-            description: &self.description,
-            source_category: self.source_category.as_deref(),
-            source_type: self.source_type.as_deref(),
+impl Actions {
+    fn new(actions: &[RuleAction]) -> Actions {
+        let mut by_field = Actions::default();
+        for action in actions {
+            match action {
+                RuleAction::SetCategory(key) => by_field.category = Some(key.clone()),
+                RuleAction::SplitTemplate(template) => by_field.split = Some(template.clone()),
+                RuleAction::SetMerchant(name) => by_field.merchant = Some(name.clone()),
+                RuleAction::AddTag(tags) => by_field.tags = tags.tags().to_vec(),
+                RuleAction::SetNote(note) => by_field.note = Some(note.clone()),
+                RuleAction::Exclude(reason) => by_field.exclude = Some(*reason),
+                RuleAction::MyShare(share) => by_field.share = Some(*share),
+            }
         }
+        by_field
     }
 }
 
@@ -236,7 +258,7 @@ struct CompiledRule {
     matcher: Matcher,
     amount: AmountBounds,
     account_id: Option<i64>,
-    category: Option<CategoryKey>,
+    actions: Actions,
 }
 
 /// A pattern ready to test. Plain patterns are kept [folded](fold).
@@ -275,17 +297,54 @@ impl CompiledRule {
                     .clone(),
             ),
         };
-        let category = definition.actions().iter().find_map(|action| match action {
-            RuleAction::SetCategory(key) => Some(key.clone()),
-            _ => None,
-        });
         CompiledRule {
             id: rule.id(),
             field: definition.field(),
             matcher,
             amount: definition.amount(),
             account_id: definition.account_id(),
-            category,
+            actions: Actions::new(definition.actions()),
+        }
+    }
+
+    /// Whether the rule would set anything on a row that already has
+    /// `outcome`, if it matched: a field still free that it sets, or tags.
+    /// Checked before matching, which costs more.
+    fn could_add_to(&self, outcome: &Outcome) -> bool {
+        let actions = &self.actions;
+        ((actions.category.is_some() || actions.split.is_some()) && !outcome.categorised())
+            || (actions.merchant.is_some() && outcome.merchant.is_none())
+            || (!actions.tags.is_empty() && outcome.tags.is_empty())
+            || (actions.note.is_some() && outcome.note.is_none())
+            || (actions.exclude.is_some() && outcome.exclude.is_none())
+            || (actions.share.is_some() && outcome.share.is_none())
+    }
+
+    /// Sets the fields of `outcome` this rule sets that no rule above set,
+    /// and adds its tags.
+    fn add_to(&self, outcome: &mut Outcome) {
+        fn by<T>(rule: RuleId) -> impl Fn(T) -> SetBy<T> {
+            move |value| SetBy { value, rule }
+        }
+        let actions = &self.actions;
+        if !outcome.categorised() {
+            outcome.category = actions.category.clone().map(by(self.id));
+            outcome.split = actions.split.clone().map(by(self.id));
+        }
+        if outcome.merchant.is_none() {
+            outcome.merchant = actions.merchant.clone().map(by(self.id));
+        }
+        if outcome.tags.is_empty() {
+            outcome.tags = actions.tags.iter().cloned().map(by(self.id)).collect();
+        }
+        if outcome.note.is_none() {
+            outcome.note = actions.note.clone().map(by(self.id));
+        }
+        if outcome.exclude.is_none() {
+            outcome.exclude = actions.exclude.map(by(self.id));
+        }
+        if outcome.share.is_none() {
+            outcome.share = actions.share.map(by(self.id));
         }
     }
 

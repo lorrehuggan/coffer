@@ -22,3 +22,5 @@ tempfile.workspace = true
 # Reads the committed rows back in the end-to-end import test
 # (tests/commit_uk_monzo.rs): core has no public transaction query yet.
 rusqlite.workspace = true
+# Reads a JSON export back in the M1 exit-criteria test (tests/m1_exit.rs).
+serde_json.workspace = true

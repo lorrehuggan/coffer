@@ -33,7 +33,10 @@
 //!   account or amount changes is no longer that pair: the group is
 //!   dissolved, like [`crate::import::undo`] does, and [`Updated`] says so.
 //! - **Deleting** a row dissolves its transfer group the same way, and
-//!   removes its split lines and tag links.
+//!   removes its split lines, tag links and links ([`crate::link`]).
+//! - **Linked rows** ([`crate::link`]): an edit that changes the amount or
+//!   currency of a row on either side of a confirmed link is refused
+//!   ([`Error::Linked`]); suggested links for the old amount are dropped.
 //! - **Split rows** ([`crate::split`]): an edit that changes the amount or
 //!   currency of a split row, or gives it a category, is refused
 //!   ([`Error::Split`]); the split is removed or replaced first. Moving one
@@ -51,8 +54,11 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::account::{self, Account, date_key};
 use crate::category::CategoryKey;
+use crate::change;
 use crate::db::Database;
+use crate::duplicate;
 use crate::id::{AccountId, TransactionId, TransferGroupId};
+use crate::link;
 use crate::merchant;
 use crate::money::{Currency, Money};
 use crate::split;
@@ -185,6 +191,11 @@ pub enum Error {
     )]
     Split(TransactionId),
 
+    /// The row is on a side of a confirmed refund, reimbursement or
+    /// settlement, whose amount is capped by this row's.
+    #[error("transaction {0} is linked: unlink it before changing its amount or currency")]
+    Linked(TransactionId),
+
     #[error("merchant names: {0}")]
     Merchant(#[from] merchant::Error),
 
@@ -305,6 +316,14 @@ pub fn update(
     if (changes_amount || new_category.is_some()) && split::is_split(&tx, id)? {
         return Err(Error::Split(id));
     }
+    // The schema refuses this too (`transaction_link_amount`). A suggestion
+    // made for the old amount goes.
+    if changes_amount {
+        if link::is_linked(&tx, id)? {
+            return Err(Error::Linked(id));
+        }
+        link::clear_suggestions(&tx, id)?;
+    }
     let dissolved_transfer = match stored.transfer_group {
         Some(group) if moves_money => {
             dissolve_transfer_group(&tx, group)?;
@@ -362,11 +381,12 @@ pub fn delete(db: &mut Database, id: TransactionId) -> Result<Deleted, Error> {
 /// Clears everything that refers to transaction `id` before it is deleted,
 /// and returns the transfer group it dissolved.
 ///
-/// The one place a manual row's references go: split lines and tag links
-/// today; tables that point at a transaction later (refund links, duplicate
-/// candidates, schedule matches) are cleared here as they arrive. Until one
-/// is, a row it references can't be deleted: the foreign key fails the
-/// delete, and nothing changes.
+/// The one place a manual row's references go: split lines, tag links,
+/// change items, links (refunds, reimbursements, settlements, on either
+/// side) and duplicate candidates; tables that point at a transaction later
+/// (schedule matches) are cleared here as they arrive. Until one is, a row it
+/// references can't be deleted: the foreign key fails the delete, and
+/// nothing changes.
 fn release_references(
     tx: &Transaction<'_>,
     id: TransactionId,
@@ -381,6 +401,9 @@ fn release_references(
     }
     split::clear(tx, id)?;
     tag::clear(tx, id)?;
+    change::clear(tx, id)?;
+    link::clear(tx, id)?;
+    duplicate::clear(tx, id)?;
     Ok(group)
 }
 
