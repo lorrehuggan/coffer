@@ -599,11 +599,12 @@ exists from before every import.
 
 ---
 
-## M2 — MCP server 🚧
+## M2 — MCP server ✅
 
 Analyse real data from Claude Code or Codex before any GUI exists. Everything below is
-built and tested on synthetic data; M2 stays in progress until it has been checked with a
-real client against real data. Decisions: `ARCHITECTURE.md` → "Decision record: M2: MCP
+built and tested on synthetic data, and was checked on 2026-11-13 with Claude Code against
+a real Monzo export: totals, pseudonymous and standard access, suggestions approved from
+`coffer inbox`, the access log, and recurring detection. Decisions: `ARCHITECTURE.md` → "Decision record: M2: MCP
 server (2026-11-13)"; setup: [`mcp-setup.md`](mcp-setup.md).
 
 - ✅ M2.1 `coffer mcp` stdio server (`rmcp`), read-only DB connection for queries.

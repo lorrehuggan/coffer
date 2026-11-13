@@ -17,8 +17,8 @@ charts, and exposes the data to AI clients through an MCP server.
 ## Current state
 
 M0 and the design track (D1–D6) are done and signed off; every M1 item is done,
-M1.9 checked against a real Monzo export. Every M2 item is built and tested on synthetic
-data; M2 stays in progress until it is checked with a real MCP client on real data. The Cargo
+M1.9 checked against a real Monzo export. Every M2 item is done, tested on synthetic
+data and checked with Claude Code against a real Monzo export (2026-11-13). The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
 (`crates/core/migrations/V1__initial_schema.sql`, M1.4) and the
