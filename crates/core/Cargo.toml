@@ -20,6 +20,10 @@ regex.workspace = true
 aho-corasick.workspace = true
 # Strict encode/decode of `rule_action.value_json` (`rule::RuleAction`).
 serde_json.workspace = true
+# Merchant pseudonyms at `pseudonymous` MCP access: HMAC-SHA256 keyed by the
+# per-database `mcp.pseudonym_key` (`envelope`). Pure computation, no I/O.
+hmac.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

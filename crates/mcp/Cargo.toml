@@ -18,6 +18,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+# The access log's `result_hash`: SHA-256 of the canonical result JSON.
+sha2.workspace = true
 
 [dev-dependencies]
 # The in-process MCP client the tests call tools through (tests/support).

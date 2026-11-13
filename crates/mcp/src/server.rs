@@ -9,6 +9,9 @@
 //! 3. appends exactly one access-log row, whatever happened. If the row
 //!    can't be written, the call fails and no data goes out.
 //!
+//! When it starts, the server deletes access-log rows older than
+//! [`access_log::RETENTION_MONTHS`]: the log's own housekeeping.
+//!
 //! A name the registry doesn't know is a protocol error and isn't logged:
 //! the log's `tool` column only holds real tool names.
 //!
@@ -18,9 +21,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use coffer_core::access_log::{NewEntry, Outcome};
+use coffer_core::access_log::{self, NewEntry, Outcome};
 use coffer_core::db::{self, Database, Reader};
 use coffer_core::mcp_client::{AccessLevel, ClientName};
+use coffer_core::setting;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
     JsonObject, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
@@ -63,10 +67,17 @@ impl Server {
 
     /// A server with another set of tools, for tests of the wrapper.
     pub fn with_registry(
-        db: Database,
+        mut db: Database,
         client: ClientName,
         registry: Registry,
     ) -> Result<Self, db::Error> {
+        // Retention is housekeeping: a failure is logged, and the server
+        // starts anyway (the rows are kept until the next start).
+        match access_log::expire(&mut db) {
+            Ok(0) => {}
+            Ok(expired) => tracing::debug!(expired, "expired old access-log rows"),
+            Err(error) => tracing::warn!(%error, "couldn't expire old access-log rows"),
+        }
         let reader = db.reader()?;
         Ok(Server {
             inner: Arc::new(Inner {
@@ -110,7 +121,7 @@ impl Server {
             access_level: None,
             outcome: Outcome::Ok,
             purpose: access::purpose(&args),
-            args_redacted_json: access::redact_args(&args),
+            args_redacted_json: access::redact_args(&args, &tool.tool().input_schema),
             row_count: 0,
             result_hash: None,
             withheld_count: 0,
@@ -162,7 +173,26 @@ fn run(
     entry: &mut NewEntry,
 ) -> CallToolResult {
     let inbox = (tool.spec().writes == Writes::Inbox).then(|| store.inbox());
-    let call = Call::new(reader, level, inbox);
+    // Read on every call, like the level: the key appears when the user
+    // first enables a client, and the server never creates it.
+    let pseudonym_key = match setting::pseudonym_key(reader) {
+        Ok(key) => key,
+        Err(error) => {
+            entry.outcome = Outcome::Error;
+            tracing::debug!(%error, "couldn't read the pseudonym key");
+            return CallToolResult::error(vec![ContentBlock::text(
+                "Coffer couldn't read its settings for this call.",
+            )]);
+        }
+    };
+    if level == AccessLevel::Pseudonymous && pseudonym_key.is_none() {
+        entry.outcome = Outcome::Error;
+        return CallToolResult::error(vec![ContentBlock::text(
+            "Coffer has no pseudonym key yet, so it can't hide merchant names. Ask the user to \
+             run `coffer ai-access enable <client>` again, which creates it.",
+        )]);
+    }
+    let call = Call::new(reader, level, inbox, pseudonym_key);
     match tool.run(&call, args) {
         Ok(handled) => {
             entry.row_count = handled.rows;

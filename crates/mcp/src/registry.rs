@@ -26,6 +26,7 @@ use std::sync::Arc;
 use coffer_core::db::Reader;
 use coffer_core::envelope;
 use coffer_core::money::Money;
+use coffer_core::setting::PseudonymKey;
 use rmcp::model::{JsonObject, Tool, ToolAnnotations};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -119,15 +120,25 @@ pub struct Call<'a> {
     reader: &'a Reader,
     level: AccessLevel,
     inbox: Option<Inbox<'a>>,
+    /// The per-database key for merchant tokens. The server refuses a
+    /// `pseudonymous` call without one, so it is there whenever
+    /// [`Call::merchant`] needs it.
+    pseudonym_key: Option<PseudonymKey>,
     withheld: Cell<u64>,
 }
 
 impl<'a> Call<'a> {
-    pub(crate) fn new(reader: &'a Reader, level: AccessLevel, inbox: Option<Inbox<'a>>) -> Self {
+    pub(crate) fn new(
+        reader: &'a Reader,
+        level: AccessLevel,
+        inbox: Option<Inbox<'a>>,
+        pseudonym_key: Option<PseudonymKey>,
+    ) -> Self {
         Call {
             reader,
             level,
             inbox,
+            pseudonym_key,
             withheld: Cell::new(0),
         }
     }
@@ -155,8 +166,8 @@ impl<'a> Call<'a> {
     /// How a merchant is shown to this client: its display name, or at
     /// `pseudonymous` a stable token.
     pub fn merchant(&self, display: &str) -> MerchantLabel {
-        // Block B: at `pseudonymous`, a keyed-hash token (`M-7f3a`) from the
-        // per-database key in `setting`; the mapping never leaves Coffer.
+        // Block B: wired up by the envelope work (envelope::pseudonym).
+        let _ = &self.pseudonym_key;
         MerchantLabel::new(display.to_owned())
     }
 
