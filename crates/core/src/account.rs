@@ -100,8 +100,9 @@ pub struct Account {
     /// `account.opening_balance_minor` on `opening_date`. Checked like any
     /// other balance, as the end of that day.
     pub opening_balance: Option<(NaiveDate, Money)>,
-    /// History up to and including this date is locked: imports and undos
-    /// leave it alone until the user unlocks (M1.27).
+    /// History up to and including this date is locked: imports, undos,
+    /// manual rows, balance-changing exclusions and entered balances leave
+    /// it alone until the user unlocks ([`crate::reconciliation`]).
     pub reconciled_through: Option<NaiveDate>,
     pub closed_on: Option<NaiveDate>,
 }
@@ -158,6 +159,11 @@ pub enum Error {
     #[error("the account already has an entered balance on {0}; edit that one instead")]
     BalanceExists(NaiveDate),
 
+    /// A balance on or before the lock date would add a check inside the
+    /// locked period (or a new starting point before it).
+    #[error("{date} is on or before {through}, which is locked; unlock the account first")]
+    Locked { date: NaiveDate, through: NaiveDate },
+
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 }
@@ -198,7 +204,9 @@ pub fn list(db: &Database) -> Result<Vec<Account>, Error> {
 
 /// Records a balance the user entered: the anchor for an account whose
 /// exports have no balances, or one more check for one whose exports do.
-/// One entered balance per account and day.
+/// One entered balance per account and day, after the account's lock date
+/// (`reconciled_through`): one inside the locked period would change the
+/// checks the lock rests on ([`crate::reconciliation`]).
 pub fn add_balance(
     db: &mut Database,
     account: AccountId,
@@ -213,6 +221,14 @@ pub fn add_balance(
         return Err(Error::CurrencyMismatch {
             expected: stored.currency,
             found: balance.balance.currency(),
+        });
+    }
+    if let Some(through) = stored.reconciled_through
+        && balance.date <= through
+    {
+        return Err(Error::Locked {
+            date: balance.date,
+            through,
         });
     }
     let date = date_key(balance.date);
@@ -409,6 +425,21 @@ mod tests {
         let mut statement = balance(day(2), 9_000, Currency::GBP);
         statement.source = EnteredSource::Statement;
         add_balance(&mut db, account, &statement).unwrap();
+
+        // Inside the lock (on or before its date) is refused; after it is fine.
+        db.conn()
+            .execute(
+                "UPDATE account SET reconciled_through = ?1 WHERE id = ?2",
+                params![date_key(day(2)), account],
+            )
+            .unwrap();
+        for d in [1, 2] {
+            assert!(matches!(
+                add_balance(&mut db, account, &balance(day(d), 5, Currency::GBP)),
+                Err(Error::Locked { date, through }) if date == day(d) && through == day(2)
+            ));
+        }
+        add_balance(&mut db, account, &balance(day(3), 9_000, Currency::GBP)).unwrap();
 
         let house = create(
             &mut db,

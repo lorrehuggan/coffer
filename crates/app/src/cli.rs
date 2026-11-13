@@ -14,6 +14,7 @@
 //! - `coffer undo-import <batch>`: remove an import again ([`undo`]).
 //! - `coffer backup [--list]`, `coffer restore <file>`: local backups
 //!   ([`backup`]).
+//! - `coffer export --format csv|json`: the ledger as a file ([`export`]).
 //!
 //! Output is what the user asked for and nothing else. Errors are returned
 //! (as `anyhow` errors: this is the binary's layer) for `main` to print on
@@ -21,11 +22,14 @@
 
 pub mod accounts;
 pub mod backup;
+pub mod export;
 pub mod import;
 pub mod undo;
 
 #[cfg(test)]
 mod backup_tests;
+#[cfg(test)]
+mod export_tests;
 #[cfg(test)]
 mod tests;
 
@@ -39,6 +43,7 @@ use coffer_import::preset::Presets;
 
 pub use accounts::{AccountsArgs, AccountsCommand, AddAccountArgs};
 pub use backup::{BackupArgs, RestoreArgs};
+pub use export::{ExportArgs, ExportFormat};
 pub use import::ImportArgs;
 pub use undo::UndoImportArgs;
 
@@ -71,6 +76,9 @@ pub enum Command {
     Backup(BackupArgs),
     /// Restore a backup over the database, after backing up the current one.
     Restore(RestoreArgs),
+    /// Export transactions (split lines as rows) as CSV or JSON. Notes and
+    /// private tags only when asked for.
+    Export(ExportArgs),
 }
 
 /// Runs `command` against the database at `database` (the data dir's
@@ -105,6 +113,10 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
         }
         Command::Backup(args) => backup::run(database, &args, out),
         Command::Restore(args) => backup::restore(database, &args, out),
+        Command::Export(args) => {
+            let db = open_existing(database)?;
+            export::run(&db, &args, out)
+        }
     }
 }
 
