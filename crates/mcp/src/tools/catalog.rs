@@ -9,6 +9,7 @@
 
 use coffer_core::account::AccountKind;
 use coffer_core::category::{Category, CategoryKind};
+use coffer_core::envelope::strip_invisible;
 use coffer_core::money::Money;
 use coffer_core::reporting::Limit;
 use coffer_core::reporting::balance::Anchor;
@@ -533,10 +534,13 @@ fn list_reports(call: &Call<'_>, args: ReportArgs) -> Result<Reply<ReportList>, 
         .into_iter()
         .map(|report| ReportEntry {
             id: report.id,
-            // Wave 2: envelope::strip_invisible
-            period: report.period,
-            title: report.title,
-            body_markdown: report.body_markdown,
+            // Stored AI text, untrusted when read back: control, zero-width
+            // and bidi characters stripped (decision record "safe report
+            // rendering and withheld text", point 4). The stored text is
+            // unchanged.
+            period: strip_invisible(&report.period),
+            title: strip_invisible(&report.title),
+            body_markdown: strip_invisible(&report.body_markdown),
             source_client: report.source_client,
             created_at: report.created_at,
             ai_authored: true,

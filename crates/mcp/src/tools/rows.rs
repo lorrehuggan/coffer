@@ -53,8 +53,9 @@ pub const SEARCH_TRANSACTIONS: ToolSpec = ToolSpec {
                   confirmed refund is its own row with the purchase's category, so it nets \
                   against it. `amount` is the whole line, `my_amount` the user's share \
                   (what counts as their spending). Excluded rows and transfers between the \
-                  user's own accounts are left out. Tag filters and descriptions need \
-                  standard access.",
+                  user's own accounts are left out. The text `query`, tag filters and \
+                  descriptions need standard access; below it, filter by dates, accounts, \
+                  categories and amounts.",
     level: AccessLevel::Pseudonymous,
     writes: Writes::Nothing,
 };
@@ -85,7 +86,8 @@ pub const MERCHANT_HISTORY: ToolSpec = ToolSpec {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct SearchArgs {
     /// Text the merchant or the bank's description contains, ignoring case.
-    /// It is only matched.
+    /// It is only matched. Standard access only: below it a text search
+    /// would reveal what lies behind a merchant token.
     #[serde(default)]
     pub query: Option<String>,
     /// The first day, `YYYY-MM-DD`, inclusive. Alone, every later day.
@@ -254,6 +256,16 @@ fn search_transactions(
     args: SearchArgs,
 ) -> Result<Reply<TransactionRows>, ToolError> {
     let standard = call.level() >= AccessLevel::Standard;
+    // Matching raw text below `standard` would let a client count its way
+    // to what a merchant token hides (decision record "M2: MCP server
+    // (2026-11-13)", point 3). Tags are names the user wrote.
+    if !standard && args.query.is_some() {
+        return Err(ToolError::InvalidArguments(
+            "searching by text needs standard access; filter by dates, accounts, categories \
+             or amounts instead"
+                .to_owned(),
+        ));
+    }
     if !standard && !args.tags.is_empty() {
         return Err(ToolError::InvalidArguments(
             "filtering by tag needs standard access".to_owned(),

@@ -349,7 +349,9 @@ pub const NET_WORTH_HISTORY: ToolSpec = ToolSpec {
                   the bank's. Pots are accounts of their own; asset and liability accounts \
                   hold their last valuation, and a liability always lowers the total. Closed \
                   accounts are left out after closing. An account marked `unanchored` has no \
-                  known balance, so its figure is its transactions summed from zero.",
+                  known balance, so its figure is its transactions summed from zero. Each \
+                  account has a `label` (its kind and a number, e.g. `pot 2`); its `name` is \
+                  given only at `pseudonymous` access and above.",
     level: AccessLevel::Aggregate,
     writes: Writes::Nothing,
 };
@@ -382,8 +384,13 @@ pub struct NetWorthAt {
 pub struct AccountBalance {
     /// The account's ID, as `list_accounts` gives it.
     pub account_id: i64,
-    /// The user's name for the account.
-    pub name: String,
+    /// The account's kind and its number among the accounts of that kind,
+    /// in the order the user added them: `current 1`, `pot 2`. The same in
+    /// every month of one call.
+    pub label: String,
+    /// The user's name for the account; `null` at `aggregate` access, since
+    /// a name can name a person.
+    pub name: Option<String>,
     /// `current`, `savings`, `credit_card`, `pot`, `cash`, `asset` or
     /// `liability`.
     pub kind: String,
@@ -398,15 +405,38 @@ pub struct AccountBalance {
     pub unanchored: bool,
 }
 
+/// Each account's `label`: its kind and its number among the accounts of
+/// that kind, by account ID (the order they were added). No name, so it is
+/// safe at `aggregate` (decision record "M2: MCP server (2026-11-13)").
+fn account_labels<'a>(
+    accounts: impl Iterator<Item = &'a AccountWorth>,
+) -> std::collections::HashMap<i64, String> {
+    let kinds: std::collections::BTreeMap<i64, &'static str> = accounts
+        .map(|worth| (worth.account.get(), worth.kind.as_str()))
+        .collect();
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    kinds
+        .into_iter()
+        .map(|(id, kind)| {
+            let n = counts.entry(kind).or_default();
+            *n += 1;
+            (id, format!("{kind} {n}"))
+        })
+        .collect()
+}
+
 fn net_worth_history(
     call: &Call<'_>,
     args: MonthRange,
 ) -> Result<Reply<NetWorthHistory>, ToolError> {
     let (from, to) = (month(&args.from)?, month(&args.to)?);
     let history = net_worth::net_worth_history(call.reader(), from, to).map_err(reporting_error)?;
+    let labels = account_labels(history.items.iter().flat_map(|month| &month.accounts));
+    let names = call.level() >= AccessLevel::Pseudonymous;
     let account = |worth: &AccountWorth| AccountBalance {
         account_id: worth.account.get(),
-        name: worth.name.clone(),
+        label: labels[&worth.account.get()].clone(),
+        name: names.then(|| worth.name.clone()),
         kind: worth.kind.as_str().to_owned(),
         balance: call.amount(worth.balance),
         counted: call.amount(worth.counted),

@@ -14,7 +14,7 @@ use support::*;
 
 const TOOL: &str = "net_worth_history";
 
-/// `(name, kind, balance, counted, unanchored)` of each account in a month.
+/// `(label, kind, balance, counted, unanchored)` of each account in a month.
 fn accounts(month: &Value) -> Vec<(String, String, i64, i64, bool)> {
     month["accounts"]
         .as_array()
@@ -23,7 +23,7 @@ fn accounts(month: &Value) -> Vec<(String, String, i64, i64, bool)> {
         .map(|a| {
             assert_eq!(amounts(&json!([a["balance"]]))[0].0, "GBP");
             (
-                a["name"].as_str().unwrap().to_owned(),
+                a["label"].as_str().unwrap().to_owned(),
                 a["kind"].as_str().unwrap().to_owned(),
                 a["balance"]["minor"].as_i64().unwrap(),
                 a["counted"]["minor"].as_i64().unwrap(),
@@ -34,14 +34,14 @@ fn accounts(month: &Value) -> Vec<(String, String, i64, i64, bool)> {
 }
 
 fn row(
-    name: &str,
+    label: &str,
     kind: &str,
     balance: i64,
     counted: i64,
     unanchored: bool,
 ) -> (String, String, i64, i64, bool) {
     (
-        name.to_owned(),
+        label.to_owned(),
         kind.to_owned(),
         balance,
         counted,
@@ -95,10 +95,10 @@ async fn sums_month_end_balances() {
     assert_eq!(
         accounts(&months[0]),
         [
-            row("Everyday", "current", 0, 0, true),
-            row("Rainy Day", "pot", 0, 0, true),
-            row("Holiday Fund", "pot", 0, 0, true),
-            row("Bills", "current", 118_010, 118_010, false),
+            row("current 1", "current", 0, 0, true),
+            row("pot 1", "pot", 0, 0, true),
+            row("pot 2", "pot", 0, 0, true),
+            row("current 2", "current", 118_010, 118_010, false),
         ]
     );
     assert_eq!(amounts(&months[0]["total"]), gbp(118_010));
@@ -108,11 +108,11 @@ async fn sums_month_end_balances() {
     assert_eq!(
         accounts(&months[1]),
         [
-            row("Everyday", "current", 181_058, 181_058, true),
-            row("Rainy Day", "pot", 17_500, 17_500, true),
-            row("Holiday Fund", "pot", 7_500, 7_500, true),
-            row("Bills", "current", 118_010, 118_010, false),
-            row("Mortgage", "liability", -200_000, -200_000, false),
+            row("current 1", "current", 181_058, 181_058, true),
+            row("pot 1", "pot", 17_500, 17_500, true),
+            row("pot 2", "pot", 7_500, 7_500, true),
+            row("current 2", "current", 118_010, 118_010, false),
+            row("liability 1", "liability", -200_000, -200_000, false),
         ]
     );
     assert_eq!(
@@ -124,9 +124,44 @@ async fn sums_month_end_balances() {
     // manual row counts in full (−45.00) in a balance.
     assert_eq!(
         accounts(&months[2])[3],
-        row("Bills", "current", 238_147, 238_147, false)
+        row("current 2", "current", 238_147, 238_147, false)
     );
     client.close().await;
+}
+
+/// The user's account names in the fixture database (plus the mortgage the
+/// test adds).
+const ACCOUNT_NAMES: &[&str] = &["Everyday", "Rainy Day", "Holiday Fund", "Bills", "Mortgage"];
+
+#[tokio::test]
+async fn account_names_only_from_pseudonymous_up() {
+    let fixture = Fixture::new();
+    let mortgage =
+        add_valuation_account(&fixture, "Mortgage", AccountKind::Liability, Currency::GBP);
+    add_valuation(&fixture, mortgage, "2026-10-01", -200_000);
+    for &level in LEVELS {
+        let client = fixture.connect("claude-code", level).await;
+        let result = client
+            .call_ok(TOOL, json!({ "from": "2026-10", "to": "2026-11" }))
+            .await;
+        let text = result.to_string();
+        let names: Vec<Value> = result["months"][0]["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|account| account["name"].clone())
+            .collect();
+        if level == AccessLevel::Aggregate {
+            assert!(names.iter().all(Value::is_null), "{names:?}");
+            for name in ACCOUNT_NAMES {
+                assert!(!text.contains(name), "{name} at {level}: {text}");
+            }
+        } else {
+            let expected: Vec<Value> = ACCOUNT_NAMES.iter().map(|name| json!(name)).collect();
+            assert_eq!(names, expected, "at {level}");
+        }
+        client.close().await;
+    }
 }
 
 #[tokio::test]

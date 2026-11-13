@@ -59,10 +59,13 @@ async fn output_has_no_personal_data() {
         .await;
     let all = client.call_ok(TOOL, json!({ "limit": 200 })).await;
     assert!(!rows_of(&all, fixture.seeded.manual).is_empty());
-    client.call_ok(TOOL, json!({ "query": "transfer" })).await;
+    client
+        .call_ok(TOOL, json!({ "from": "2026-10-01", "amount_max": 0 }))
+        .await;
     client.close().await;
 
     let client = fixture.connect("claude-code", AccessLevel::Standard).await;
+    client.call_ok(TOOL, json!({ "query": "transfer" })).await;
     // `call_ok` checks the whole response with `assert_no_pii`.
     let described = client
         .call_ok(TOOL, json!({ "limit": 200, "include_description": true }))
@@ -139,12 +142,60 @@ async fn tags_and_descriptions_are_for_standard_only() {
     client.close().await;
 }
 
+/// The user's decision 3 (2026-11-13): no text search below `standard`,
+/// where it could reveal what a merchant token hides; the other filters
+/// stay.
 #[tokio::test]
-async fn a_call_writes_one_access_log_row() {
+async fn text_search_is_refused_below_standard_and_the_filters_still_work() {
     let fixture = Fixture::new();
     let client = fixture
         .connect("claude-code", AccessLevel::Pseudonymous)
         .await;
+    for query in ["bean", ""] {
+        let refused = client
+            .call(TOOL, json!({ "query": query, "from": "2026-10-01" }))
+            .await;
+        assert_eq!(refused.is_error, Some(true), "{query:?}");
+        let text = serde_json::to_string(&refused.content).unwrap();
+        assert!(text.contains("needs standard access"), "{text}");
+        let last = fixture.access_log().pop().unwrap();
+        assert_eq!(last.outcome, Outcome::Error);
+        assert_eq!(last.row_count, 0);
+    }
+
+    let filtered = client
+        .call_ok(
+            TOOL,
+            json!({
+                "categories": ["food"],
+                "accounts": [fixture.seeded.monzo.get()],
+                "amount_min": -1000,
+                "amount_max": 0,
+                "from": "2026-10-01",
+                "to": "2026-10-31",
+                "limit": 200,
+            }),
+        )
+        .await;
+    assert!(!rows(&filtered).is_empty());
+    for row in rows(&filtered) {
+        let date = row["date"].as_str().unwrap();
+        assert!(("2026-10-01"..="2026-10-31").contains(&date), "{row}");
+        let minor = row["amount"]["minor"].as_i64().unwrap();
+        assert!((-1000..=0).contains(&minor), "{row}");
+        assert!(
+            is_merchant_token(row["merchant"].as_str().unwrap()),
+            "{row}"
+        );
+    }
+    assert_no_display_merchants(&fixture, &filtered);
+    client.close().await;
+}
+
+#[tokio::test]
+async fn a_call_writes_one_access_log_row() {
+    let fixture = Fixture::new();
+    let client = fixture.connect("claude-code", AccessLevel::Standard).await;
     assert!(fixture.access_log().is_empty());
 
     let result = client
@@ -164,7 +215,7 @@ async fn a_call_writes_one_access_log_row() {
     let call = &log[0];
     assert_eq!(call.client, "claude-code");
     assert_eq!(call.tool, TOOL);
-    assert_eq!(call.access_level, Some(AccessLevel::Pseudonymous));
+    assert_eq!(call.access_level, Some(AccessLevel::Standard));
     assert_eq!(call.outcome, Outcome::Ok);
     assert_eq!(call.purpose.as_deref(), Some("coffee spend"));
     assert_eq!(call.row_count, rows(&result).len() as u64);

@@ -176,3 +176,33 @@ async fn declares_purpose_limit_and_a_read_only_object_result() {
     assert_eq!(tool.annotations.unwrap().read_only_hint, Some(true));
     client.close().await;
 }
+
+#[tokio::test]
+async fn hidden_characters_are_stripped_from_report_text() {
+    let fixture = Fixture::new();
+    // Zero-width space, a bidi override and a control character.
+    let id = add_report(
+        &fixture,
+        "claude-code",
+        "Oct\u{200B}ober \u{202E}review",
+        "Spending\u{0007} fell.\u{2066}",
+        None,
+    );
+    let client = fixture.connect("claude-code", AccessLevel::Aggregate).await;
+
+    let result = client.call_ok(TOOL, json!({})).await;
+    let report = &result["reports"][0];
+    assert_eq!(report["id"], id);
+    assert_eq!(report["title"], "October review");
+    assert_eq!(report["body_markdown"], "Spending fell.");
+    assert_eq!(report["ai_authored"], true);
+    // The stored report is unchanged.
+    let stored: String = rusqlite::Connection::open(fixture.path())
+        .unwrap()
+        .query_row("SELECT title FROM report WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(stored, "Oct\u{200B}ober \u{202E}review");
+    client.close().await;
+}
