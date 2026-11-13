@@ -62,7 +62,9 @@ importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 
 M2 added to `crates/core`: settings and AI clients (`setting`: the kill switch and the
 pseudonym key; `mcp_client`: enable, level, revoke, ignore, `requested`; `access_log`:
-append, list, 12-month retention; `V11__mcp.sql`), the untrusted-text envelope
+append, list, 12-month retention; `access_log::pending`: calls refused while the
+database can't be opened, moved into the log later; `V11__mcp.sql`,
+`V14__access_log_pending.sql`), the untrusted-text envelope
 (`envelope`: `sanitize`, `strip_invisible`, `reads_like_instructions`, merchant
 pseudonyms; M2.13), reporting (`reporting`: the `Ledger` over `ledger_line`, `Period`,
 per-currency `Totals`, `Limit`; `summary`, `spending`, `budget_status`, `net_worth`,

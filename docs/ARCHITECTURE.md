@@ -1031,8 +1031,8 @@ Everything else follows an earlier decision record or invariant.
    restores, and is never deleted, so no process can lock a file that has left the
    directory while another locks a new one under the same name. The server checks with a
    momentary shared lock before and after opening and refuses while the lock is held, with
-   "Coffer is restoring a backup"; those refusals aren't logged, since the log is in the
-   database being replaced. A second restore can't take the lock and is refused (after
+   "Coffer is restoring a backup"; those refusals are logged afterwards, through the
+   pending file (F.8). A second restore can't take the lock and is refused (after
    retrying for a second, past the server's momentary checks). A check made before the
    restore holds the lock sees no restore, which is sound because `restore` changes
    nothing until it holds the lock and then waits for earlier connections; that's why
@@ -1068,6 +1068,39 @@ Everything else follows an earlier decision record or invariant.
    a split row, and prints the change batch and any rule suggestion it filed (default).
 7. The tool × level matrix (`crates/mcp/tests/matrix.rs`) lists every tool with its level
    and arguments; a new tool fails it until added.
+8. **Calls refused while the database can't be opened are logged too** (exit criterion:
+   every call is in the log). The log is in the database, so a call refused while a
+   restore holds the lock (`refused_restoring`), while the lock can't be checked or while
+   `open_existing` fails, e.g. with migrations pending (`refused_unavailable`), is
+   recorded in a pending file next to the database, `<database>-access-pending`
+   (`access_log::pending`), and moved into `mcp_access_log` with its own time the next
+   time the database is opened to write: any server's next call or listing (whichever
+   gets there, after its restore-lock check), `coffer ai-access`, and `restore` once the
+   restored database is open. Neither existing outcome fitted: `error` means a tool failed, and the
+   `refused_*` ones are the gate's (default).
+   - A line is the log row's entry and nothing more: client, tool, the call's time,
+     outcome, the cleaned purpose (cut to 500) and the redacted arguments, as JSON. No
+     result hash (nothing was read). The file is `0600`; each append is synced. Several
+     servers append and flush under std's exclusive file lock (`File::lock`) on the file,
+     so no new dependency (default).
+   - No duplicates: each line gets a UUIDv7 (the `uuid` crate already in core) stored as
+     `pending_id`, unique (V14); the flush inserts every line in one transaction with
+     `ON CONFLICT (pending_id) DO NOTHING`, commits, then empties the file. A crash
+     between the two re-inserts lines that are all ignored, so neither the step order nor
+     a marker in the database is needed. Keeping them only in memory was rejected: a
+     client that exits before the database is back would lose them (default).
+   - Bounded: at most 1,000 entries and 1 MiB. Calls past either are counted per client,
+     tool and outcome in `<database>-access-pending-dropped` (replaced whole by a rename),
+     and each count becomes one summary row (`summarised_calls`, timed at the first such
+     call, no arguments or purpose). The flush renames the counts aside before inserting,
+     so counts made after a crash land in a new file with new IDs and aren't lost
+     (default).
+   - A line cut short by a crash is ended before the next append and skipped on flush,
+     like a line the log's schema refuses; the flush counts them and warns. If the pending
+     file can't be written either, the call is still refused and the failure goes to the
+     server's own log (default).
+   - The log is listed newest first by time, then ID, so moved-in rows appear where they
+     happened (default).
 
 ## Architecture
 
@@ -1658,7 +1691,8 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   `change_batch`/`change_item` (V8, M1.24/M1.26), `transaction_link` (V9, M1.25; it also
   redefines `ledger_line`), `duplicate_candidate` (V10, M1.26), `mcp_client`,
   `mcp_access_log` and `setting` (V11, M2.1), the schedule tables and
-  `recurring_dismissal` (V12, M2.6/M2.10) and the inbox's decision columns (V13, M2.3).
+  `recurring_dismissal` (V12, M2.6/M2.10), the inbox's decision columns (V13, M2.3) and
+  `mcp_access_log` rebuilt with two outcomes, `pending_id` and `summarised_calls` (V14).
 - refinery embeds migrations in file-name order (`V10__` before `V1__`);
   `db::migrations::embedded` sorts them by version.
 
@@ -1777,11 +1811,16 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   enabled client is `known`. An unknown name creates a `requested` row that isn't
   enabled. Revoking sets `enabled = 0` and the level back to `aggregate`
 - `mcp_access_log(id, at, client, tool, access_level?, outcome [ok|refused_off|
-  refused_not_enabled|refused_level|error], purpose?, args_redacted_json, row_count,
-  result_hash?, withheld_count)` (V11) — read-only; never stores returned data. `client`
-  is the name (no foreign key, so a log row outlives its client); a refused or failed call
-  has no rows, hash or withheld count; `withheld_count` is how many descriptions the call
-  withheld as instructions. Rows older than 12 months are deleted when a server starts
+  refused_not_enabled|refused_level|refused_restoring|refused_unavailable|error],
+  purpose?, args_redacted_json, row_count, result_hash?, withheld_count, pending_id?,
+  summarised_calls?)` (V11, rebuilt by V14) — read-only; never stores returned data.
+  `client` is the name (no foreign key, so a log row outlives its client); a refused or
+  failed call has no rows, hash or withheld count; `withheld_count` is how many
+  descriptions the call withheld as instructions. `refused_restoring` and
+  `refused_unavailable` are calls refused while the database couldn't be opened, moved in
+  from the pending file with their own time and `pending_id` (unique); `summarised_calls`
+  is set only on a row standing for calls past the pending file's cap (decision record
+  "M2: MCP server", F.8). Rows older than 12 months are deleted when a server starts
 - `setting(key, value)` (V11) — `mcp.enabled` (the kill switch; on unless set off) and
   `mcp.pseudonym_key` (32 random bytes, created by `coffer ai-access enable`, never
   exposed)
@@ -1857,15 +1896,19 @@ AI's inputs to it are the untrusted `purpose` (stored without invisible characte
 the arguments, redacted by the tool's schema: numbers, booleans, dates and schema enum
 values are kept, any other string becomes `{"length":N,"type":"string"}`, undeclared keys
 are only counted (`"_undeclared": N`). `result_hash` is SHA-256 of the result's canonical
-JSON (compact, keys sorted). `coffer ai-access log` shows the log. Exceptions, all
-returning no data: a refusal while a restore holds its lock or when the database can't be
-opened (the log is in that database), and getting a prompt.
+JSON (compact, keys sorted). `coffer ai-access log` shows the log. A call refused because
+the database can't be opened (a restore holds its lock: `refused_restoring`; migrations
+pending or the lock unreadable: `refused_unavailable`) can't be written there: it waits
+in `<database>-access-pending` and goes into the log, at its own time, the next time the
+database is opened to write (decision record "M2: MCP server", F.8). The one exception,
+returning no data: getting a prompt.
 
 **Restores.** The server opens the database for each call and keeps no connection
 between calls. `coffer restore` holds the file lock on `<database>-restoring` while it
 swaps the files; the server checks it before and after opening and refuses the call while
-it's held, so the next call reads the restored file. The lock goes with the restore's
-process, so a crashed restore blocks nothing (decision record "M2: MCP server", F.1).
+it's held, so the next call reads the restored file; the refused calls go into the
+restored database's log. The lock goes with the restore's process, so a crashed restore
+blocks nothing (decision record "M2: MCP server", F.1).
 
 Transaction descriptions are untrusted input (prompt-injection surface); inbox-only
 writes are the containment. In addition:

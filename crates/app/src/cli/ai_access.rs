@@ -12,8 +12,15 @@
 //! A running server reads all of this on every call, so a change applies
 //! to a connected client's next call without restarting it.
 //!
+//! Every subcommand first moves the calls servers refused while they
+//! couldn't open the database (during a restore, or with migrations
+//! pending) from the pending file into the log
+//! ([`access_log::pending`]), so `log` and the clients' last-seen times
+//! include them.
+//!
 //! The log shows what the server recorded: the arguments with free text
-//! already redacted, the outcome and the counts. The client's `purpose` is
+//! already redacted, the outcome and the counts. A row summarising calls
+//! the pending file had no room for shows how many, and has no arguments. The client's `purpose` is
 //! untrusted text from the AI client: it is shown on one line, without
 //! invisible or control characters, and cut to [`PURPOSE_CHARS`].
 
@@ -111,6 +118,21 @@ fn level_parser() -> impl TypedValueParser<Value = AccessLevel> {
 /// exist.
 pub fn run(database: &Path, args: AiAccessArgs, out: &mut dyn Write) -> anyhow::Result<()> {
     let mut db = open_existing(database)?;
+    // Refused calls waiting outside the database. A failure leaves them
+    // there for next time; the command still runs.
+    match access_log::pending::flush(&mut db) {
+        Ok(flushed) if flushed.unreadable > 0 => writeln!(
+            out,
+            "Skipped {} unreadable entries waiting for the AI access log.",
+            flushed.unreadable
+        )?,
+        Ok(_) => {}
+        Err(error) => writeln!(
+            out,
+            "Couldn't move the calls refused while the database was unavailable into the \
+             AI access log ({error}); they're kept and moved next time."
+        )?,
+    }
     match args.command.unwrap_or(AiAccessCommand::List) {
         AiAccessCommand::List => list(&db, out),
         AiAccessCommand::Enable(args) => enable(&mut db, &args.name, out),
@@ -266,7 +288,10 @@ fn call_row(call: &LoggedCall) -> Vec<String> {
         call.tool.clone(),
         call.access_level
             .map_or_else(|| "-".to_owned(), |level| level.as_str().to_owned()),
-        call.outcome.as_str().to_owned(),
+        match call.summarised_calls {
+            Some(calls) => format!("{} ({calls} calls)", call.outcome),
+            None => call.outcome.as_str().to_owned(),
+        },
         call.row_count.to_string(),
         call.withheld_count.to_string(),
         // Already redacted by the server; keys can still come from the

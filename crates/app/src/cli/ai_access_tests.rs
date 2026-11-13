@@ -326,6 +326,79 @@ fn log_shows_the_latest_calls_with_redacted_arguments() {
     assert!(!out.contains(&"ab".repeat(32)));
 }
 
+/// Calls a server refused while it couldn't open the database wait in the
+/// pending file; `coffer ai-access` moves them into the log first.
+#[test]
+fn log_shows_calls_refused_while_the_database_was_unavailable() {
+    let scratch = Scratch::new();
+    append(&scratch, "codex", Outcome::Ok, None);
+    for (client, outcome) in [
+        ("codex", Outcome::RefusedRestoring),
+        ("claude-code", Outcome::RefusedUnavailable),
+    ] {
+        access_log::pending::record(
+            &scratch.db,
+            &NewEntry {
+                client: name(client),
+                tool: "monthly_summary".to_owned(),
+                access_level: None,
+                outcome,
+                purpose: Some("check".to_owned()),
+                args_redacted_json: "{}".to_owned(),
+                row_count: 0,
+                result_hash: None,
+                withheld_count: 0,
+            },
+        )
+        .unwrap();
+    }
+    // What a server past the pending file's cap leaves: counts only.
+    std::fs::write(
+        access_log::pending::path(&scratch.db).with_file_name("coffer.db-access-pending-dropped"),
+        r#"{"groups":[{"id":"0192f000-0000-7000-8000-000000000001","client":"codex",
+            "tool":"list_reports","outcome":"refused_restoring","calls":40,
+            "first_at":"2000-01-01T00:00:00.000Z"}]}"#,
+    )
+    .unwrap();
+
+    let out = scratch.ok(&["ai-access", "log"]);
+    let rows = table(&out);
+    assert_eq!(rows.len(), 5, "{out}");
+    assert_eq!(
+        rows[1][2..6],
+        ["claude-code", "monthly_summary", "-", "refused_unavailable"]
+    );
+    assert_eq!(rows[1][9], "check");
+    assert_eq!(
+        rows[2][2..6],
+        ["codex", "monthly_summary", "-", "refused_restoring"]
+    );
+    assert_eq!(rows[3][5], "ok");
+    assert_eq!(
+        rows[4][..9],
+        [
+            "2000-01-01",
+            "00:00:00",
+            "codex",
+            "list_reports",
+            "-",
+            "refused_restoring",
+            "(40",
+            "calls)",
+            "0"
+        ]
+    );
+
+    // Moved, not copied.
+    assert_eq!(table(&scratch.ok(&["ai-access", "log"])).len(), 5);
+    assert_eq!(
+        std::fs::metadata(access_log::pending::path(&scratch.db))
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
 #[test]
 fn log_filters_by_client_and_limits() {
     let scratch = Scratch::new();

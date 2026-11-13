@@ -21,12 +21,21 @@ Coffer's MCP server: `coffer mcp --client <name>` runs it over stdio. Design and
 The database is opened for each call (and each `tools/list` and poll) and closed after
 it: no connection is kept between calls. While `coffer restore` holds the file lock on
 `<database>-restoring` (`backup::restoring`), checked before and after opening, calls are
-refused with a message and not logged. A lock file nobody holds (a crashed restore's)
-doesn't block calls.
+refused with a message. A lock file nobody holds (a crashed restore's) doesn't block
+calls.
+
+A call refused because the database can't be opened (a restore: `refused_restoring`;
+migrations pending or the lock unreadable: `refused_unavailable`) can't be logged in it,
+so the wrapper records it with `access_log::pending::record` in `<database>-access-pending`
+next to the database. Every call and listing that does open it first moves whatever
+waits there into the log, through `Store::flush_pending`, at the
+calls' own times; IDs make a repeated flush harmless. Tests: `tests/restore.rs`,
+`tests/unavailable.rs`; the file's own guarantees are tested in `coffer_core`.
 
 Queries run on `coffer_core::db::Reader`, which SQLite keeps read-only (`query_only`).
 The only writes are in `store.rs`: a suggestion, a report (through `Inbox`), the
-access-log row (the wrapper's own) and the server's own client name as `requested`.
+access-log row (the wrapper's own, and the refused calls moved in from the pending file)
+and the server's own client name as `requested`.
 
 ## Adding a tool
 

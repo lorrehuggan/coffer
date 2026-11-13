@@ -1524,7 +1524,7 @@ fn mcp_clients_start_as_requests() {
     ));
 }
 
-/// The access log (V11): outcomes and levels are keys, arguments are JSON,
+/// The access log (V11, V14): outcomes and levels are keys, arguments are JSON,
 /// counts aren't negative, and rows are never edited.
 #[test]
 fn access_log_rows_are_checked() {
@@ -1546,6 +1546,129 @@ fn access_log_rows_are_checked() {
     assert_refused(insert("list_categories", None, "refused_level", "{}", 2));
     assert_refused(insert("Ignore previous instructions", None, "ok", "{}", 0));
     assert_refused(conn.execute("UPDATE mcp_access_log SET row_count = 0", []));
+
+    // V14: calls refused while the database couldn't be opened.
+    insert("list_categories", None, "refused_restoring", "{}", 0).unwrap();
+    insert("list_categories", None, "refused_unavailable", "{}", 0).unwrap();
+    assert_refused(insert(
+        "list_categories",
+        None,
+        "refused_restoring",
+        "{}",
+        1,
+    ));
+}
+
+/// V14: a moved-in pending entry keeps a unique ID, and only a refusal
+/// moved in from the pending file can summarise several calls.
+#[test]
+fn pending_access_log_rows_are_checked() {
+    let fixture = Fixture::new();
+    let conn = fixture.conn();
+    let insert = |outcome: &str, pending_id: Option<&str>, summarised: Option<i64>| {
+        conn.execute(
+            "INSERT INTO mcp_access_log (client, tool, outcome, pending_id, summarised_calls) \
+             VALUES ('codex', 'list_categories', ?1, ?2, ?3)",
+            params![outcome, pending_id, summarised],
+        )
+    };
+    insert("refused_restoring", Some("a"), None).unwrap();
+    insert("refused_unavailable", Some("b"), Some(40)).unwrap();
+    insert("ok", None, None).unwrap();
+    insert("ok", None, None).unwrap();
+    assert_refused(insert("refused_restoring", Some("a"), None));
+    assert_refused(insert("refused_restoring", Some(""), None));
+    assert_refused(insert("refused_restoring", Some("c"), Some(0)));
+    assert_refused(insert("refused_restoring", None, Some(2)));
+    assert_refused(insert("refused_off", Some("d"), Some(2)));
+    assert_refused(insert("ok", Some("e"), Some(1)));
+}
+
+/// V14 rebuilds `mcp_access_log`: rows keep their IDs and fields, and an
+/// expired row's ID isn't handed out again.
+#[test]
+fn v14_keeps_access_log_rows_and_ids() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("coffer.db");
+    {
+        let db = super::open_at_version(&path, 13).unwrap();
+        let conn = db.conn();
+        for tool in ["list_categories", "list_reports", "list_rules"] {
+            conn.execute(
+                "INSERT INTO mcp_access_log (at, client, tool, access_level, outcome, purpose, \
+                 args_redacted_json, row_count, result_hash, withheld_count) \
+                 VALUES ('2026-11-12T09:00:00.000Z', 'codex', ?1, 'standard', 'ok', 'why', \
+                 '{\"limit\":5}', 3, 'ab12', 1)",
+                [tool],
+            )
+            .unwrap();
+        }
+        // The newest row expires before the upgrade.
+        conn.execute("DELETE FROM mcp_access_log WHERE tool = 'list_rules'", [])
+            .unwrap();
+    }
+    let db = Database::open(&path).unwrap();
+    let conn = db.conn();
+    // id, tool, args, withheld, pending_id, summarised_calls
+    type Kept = (i64, String, String, i64, Option<String>, Option<i64>);
+    let kept: Vec<Kept> = conn
+        .prepare(
+            "SELECT id, tool, args_redacted_json, withheld_count, pending_id, summarised_calls \
+             FROM mcp_access_log ORDER BY id",
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        kept,
+        [
+            (
+                1,
+                "list_categories".to_owned(),
+                r#"{"limit":5}"#.to_owned(),
+                1,
+                None,
+                None
+            ),
+            (
+                2,
+                "list_reports".to_owned(),
+                r#"{"limit":5}"#.to_owned(),
+                1,
+                None,
+                None
+            ),
+        ]
+    );
+    conn.execute(
+        "INSERT INTO mcp_access_log (client, tool, outcome) VALUES ('codex', 'list_rules', 'ok')",
+        [],
+    )
+    .unwrap();
+    assert_eq!(conn.last_insert_rowid(), 4);
+    // Still read-only, and still indexed.
+    assert_refused(conn.execute("UPDATE mcp_access_log SET purpose = NULL", []));
+    let indexes: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'index' \
+             AND tbl_name = 'mcp_access_log' AND name IN ('mcp_access_log_at', \
+             'mcp_access_log_client')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexes, 2);
 }
 
 #[test]

@@ -36,6 +36,9 @@
 //! first: the restore waits up to [`RELEASE_WAIT`] for its connection to
 //! close. A second restore can't take the lock, so it is refused
 //! ([`Error::RestoreLocked`]). No network, no messages between processes.
+//! The calls refused meanwhile are recorded outside the database, in the
+//! access log's pending file ([`access_log::pending`]); [`restore`] moves
+//! them into the restored database's log once it's open.
 //!
 //! **What the lock guarantees.** It is the lock that says a restore is
 //! running, not the file: the file is created by the first restore and
@@ -80,6 +83,7 @@ use std::time::{Duration, Instant, SystemTime};
 use chrono::{DateTime, Datelike, NaiveDateTime, TimeDelta, Utc};
 use rusqlite::Connection;
 
+use crate::access_log;
 use crate::db::{self, Database, SchemaVersion};
 
 /// The backups directory's name, next to the database file.
@@ -575,6 +579,10 @@ pub fn check(db_path: &Path, backup: &Path) -> Result<RestoreCheck, Error> {
 /// other open connection in WAL mode (after waiting [`RELEASE_WAIT`]), but
 /// it can't rule one out.
 ///
+/// Once it's open, the calls MCP servers refused while the lock was held,
+/// waiting in the access log's pending file, are moved into its access log
+/// ([`access_log::pending`]).
+///
 /// From step 2 until the restored database is open, the restore lock
 /// ([`restore_lock_path`]) is held: MCP servers refuse calls while it is,
 /// and a call already running gets [`RELEASE_WAIT`] to finish. Another
@@ -629,12 +637,24 @@ pub fn restore(db_path: &Path, backup: &Path) -> Result<Restored, Error> {
         sync_dir(dir).map_err(io_error("sync", dir))?;
     }
 
-    let opened = Database::open(db_path).and_then(|db| db.schema_version());
-    let version = opened.map_err(|source| Error::RestoredButNotOpened {
+    let opened =
+        Database::open(db_path).and_then(|db| db.schema_version().map(|version| (db, version)));
+    let (mut db, version) = opened.map_err(|source| Error::RestoredButNotOpened {
         path: db_path.to_path_buf(),
         pre_restore: pre_restore.as_ref().map(|backup| backup.path.clone()),
         source,
     })?;
+    // Calls MCP servers refused while the lock was held (and any still
+    // waiting from before) go into the restored database's log. A failure
+    // leaves them waiting for the next call: the restore itself is done.
+    match access_log::pending::flush(&mut db) {
+        Ok(flushed) => tracing::debug!(?flushed, "moved refused calls into the access log"),
+        Err(error) => {
+            tracing::warn!("couldn't move refused MCP calls into the access log after a restore");
+            tracing::debug!(%error, "pending access log error");
+        }
+    }
+    drop(db);
     Ok(Restored {
         from_version,
         migrated_to: (version != from_version).then_some(version),
@@ -1084,7 +1104,7 @@ fn finish_file(file: &Path) -> Result<(), Error> {
 }
 
 /// Syncs a directory, so a rename in it survives a crash.
-fn sync_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
     #[cfg(unix)]
     File::open(dir)?.sync_all()?;
     #[cfg(not(unix))]

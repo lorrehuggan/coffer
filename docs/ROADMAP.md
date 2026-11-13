@@ -657,7 +657,10 @@ server (2026-11-13)"; setup: [`mcp-setup.md`](mcp-setup.md).
   `requested`
 - ✅ M2.12 AI access log: every tool call records the client, tool, redacted arguments,
   an optional `purpose`, row count, result hash and access level, never the returned data.
-  Arguments redacted by each tool's schema, SHA-256 of canonical JSON, 12 months' retention
+  Arguments redacted by each tool's schema, SHA-256 of canonical JSON, 12 months' retention.
+  Calls refused while the database can't be opened (a restore, pending migrations) wait in
+  a pending file next to it and are moved in at their own times (`access_log::pending`,
+  `V14__access_log_pending.sql`)
 - ✅ M2.13 Untrusted-text envelope: `merchant_display` by default; raw text only as a
   length-capped, labelled `description_untrusted`, with control, zero-width and bidi
   characters stripped and URLs made inert. Text matching injection patterns is withheld,

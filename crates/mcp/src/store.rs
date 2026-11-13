@@ -9,7 +9,9 @@
 //!   gets. The source is always the server's client name, never an
 //!   argument;
 //! - an access-log row, which only the server's call wrapper writes
-//!   ([`crate::server`]);
+//!   ([`crate::server`]), and the rows of calls it refused while it
+//!   couldn't open the database, moved in from the pending file
+//!   ([`access_log::pending::flush`]);
 //! - the server's own client as `requested`, when it has no `mcp_client`
 //!   row yet ([`crate::access::for_request`]). It never enables a client or
 //!   changes a level.
@@ -18,14 +20,15 @@
 
 use std::sync::{Mutex, MutexGuard};
 
-use coffer_core::access_log::{self, NewEntry};
+use coffer_core::access_log::{self, NewEntry, pending};
 use coffer_core::db::Database;
 use coffer_core::inbox::{self, Filed, NewReport, NewSuggestion};
 use coffer_core::mcp_client::{self, ClientName};
 
 use crate::registry::ToolError;
 
-/// The server's read-write connection, behind exactly four inserts.
+/// The server's read-write connection, behind exactly four inserts (and
+/// the pending access-log rows).
 pub struct Store {
     db: Mutex<Database>,
     client: ClientName,
@@ -39,6 +42,9 @@ pub enum StoreError {
 
     #[error(transparent)]
     Client(#[from] mcp_client::Error),
+
+    #[error(transparent)]
+    Pending(#[from] pending::Error),
 
     #[error("the database connection is unusable after a panic")]
     Poisoned,
@@ -59,6 +65,13 @@ impl Store {
     /// Appends a call to the access log. For the server's wrapper only.
     pub(crate) fn log(&self, entry: &NewEntry) -> Result<i64, StoreError> {
         Ok(access_log::append(&mut *self.lock()?, entry)?)
+    }
+
+    /// Moves the calls refused while the database couldn't be opened
+    /// (any client's, from any server) into the access log. For the
+    /// server's wrapper only.
+    pub(crate) fn flush_pending(&self) -> Result<pending::Flushed, StoreError> {
+        Ok(pending::flush(&mut *self.lock()?)?)
     }
 
     /// The inbox, filed as this server's client.

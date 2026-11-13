@@ -37,9 +37,21 @@
 //! nothing: a lock file nobody holds is ignored, and the database is
 //! complete whichever step the restore stopped at (see
 //! [`backup::restore`]). A lock file the server can't open or lock is
-//! refused with a message naming it and saying what to do. These refusals
-//! aren't in the access log: the log lives in the database being replaced.
-//! (Decision record "M2: MCP server (2026-11-13)".)
+//! refused with a message naming it and saying what to do. (Decision record
+//! "M2: MCP server (2026-11-13)", F.1.)
+//!
+//! **Refusals while the database can't be opened are logged too.** The log
+//! lives in the database, so a call refused while a restore holds the lock
+//! (`refused_restoring`), while the lock can't be checked or while
+//! [`Database::open_existing`] fails, e.g. with migrations pending
+//! (`refused_unavailable`), is recorded in the pending file next to the
+//! database instead ([`access_log::pending`]): the same redacted entry, at
+//! the call's time. Every call and listing that does open the database
+//! moves whatever is waiting there (from any server) into the log first,
+//! after the restore lock check; so do `coffer ai-access` and the restore
+//! itself. If
+//! the pending file can't be written either, the call is still refused and
+//! the failure goes to the server's log. (F.8.)
 //!
 //! Handlers are synchronous and short; they run on the runtime's thread
 //! under a lock that lets one call at a time hold connections. One client
@@ -50,7 +62,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use coffer_core::access_log::{self, NewEntry, Outcome};
+use coffer_core::access_log::{self, NewEntry, Outcome, pending};
 use coffer_core::backup;
 use coffer_core::db::{self, Database, Reader};
 use coffer_core::mcp_client::{AccessLevel, ClientName};
@@ -162,6 +174,7 @@ impl Server {
         let session = inner
             .open()
             .map_err(|unavailable| ErrorData::internal_error(unavailable.message(), None))?;
+        flushed(session.store.flush_pending());
         Ok(access::for_request(&session.reader, &session.store)
             .map_err(|error| {
                 tracing::debug!(%error, "couldn't read the client's access");
@@ -235,9 +248,17 @@ impl Server {
         let _busy = inner.busy.lock().map_err(|_| unusable())?;
         let session = match inner.open() {
             Ok(session) => session,
-            // Not logged: the log is in the database that can't be opened
-            // (or is being replaced).
+            // The log is in the database that can't be opened (or is being
+            // replaced): the entry waits in the pending file.
             Err(unavailable) => {
+                entry.outcome = unavailable.outcome();
+                if let Err(error) = pending::record(&inner.path, &entry) {
+                    tracing::warn!(
+                        tool = spec.name,
+                        "couldn't record a refused call for the access log"
+                    );
+                    tracing::debug!(%error, "pending access log error");
+                }
                 return Ok((
                     CallToolResult::error(vec![ContentBlock::text(unavailable.message())]),
                     false,
@@ -245,6 +266,7 @@ impl Server {
             }
         };
         let Session { reader, store } = &session;
+        flushed(store.flush_pending());
         let mut changed = false;
         let result = {
             let gate = access::for_request(reader, store).map(|access: Access| {
@@ -343,6 +365,14 @@ enum Unavailable {
 }
 
 impl Unavailable {
+    /// The outcome the refused call is logged with.
+    fn outcome(&self) -> Outcome {
+        match self {
+            Unavailable::Restoring => Outcome::RefusedRestoring,
+            Unavailable::LockUnreadable { .. } | Unavailable::Open => Outcome::RefusedUnavailable,
+        }
+    }
+
     fn message(&self) -> String {
         match self {
             Unavailable::Restoring => {
@@ -397,6 +427,19 @@ impl Inner {
                         .unwrap_or_default(),
                 })
             }
+        }
+    }
+}
+
+/// Reports a flush of the pending access-log entries. A failure doesn't
+/// fail the call: the entries stay in the file for the next one.
+fn flushed<E: std::fmt::Display>(result: Result<pending::Flushed, E>) {
+    match result {
+        Ok(flushed) if flushed == pending::Flushed::default() => {}
+        Ok(flushed) => tracing::debug!(?flushed, "moved refused calls into the access log"),
+        Err(error) => {
+            tracing::warn!("couldn't move refused calls into the access log; trying next call");
+            tracing::debug!(%error, "pending access log error");
         }
     }
 }

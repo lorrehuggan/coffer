@@ -12,6 +12,16 @@
 //! Rows are only appended, and deleted when they are older than
 //! [`RETENTION_MONTHS`] ([`expire`], run when the server starts: the log's
 //! own housekeeping, not a tool write). The schema refuses edits.
+//!
+//! **Calls refused because the database couldn't be opened** (a restore
+//! holds the restore lock, migrations are pending, the lock can't be
+//! checked) can't be appended: the log is in that database. The server
+//! records them in a pending file next to it instead ([`pending`]), and
+//! they are moved into the log, with their own times, the next time
+//! anything opens the database to write: any server's next call or listing,
+//! `coffer ai-access`, or the restore itself. Each keeps the ID it was given
+//! when recorded (`pending_id`, unique, V14), so one is never moved in twice.
+//! The log is read newest first by time, so they show where they happened.
 
 use std::fmt;
 use std::str::FromStr;
@@ -22,6 +32,8 @@ use rusqlite::{ToSql, params};
 use crate::db::{Database, Reader};
 use crate::mcp_client::{AccessLevel, ClientName};
 use crate::rule::{UnknownKey, key_enum};
+
+pub mod pending;
 
 /// The longest `purpose` stored, in characters. A longer one is cut:
 /// refusing it would leave the call unlogged.
@@ -38,8 +50,26 @@ key_enum! {
         RefusedNotEnabled => "refused_not_enabled",
         /// Refused: the tool is above the client's access level.
         RefusedLevel => "refused_level",
+        /// Refused: a restore was replacing the database (V14). Recorded in
+        /// the pending file, then moved into the log ([`pending`]).
+        RefusedRestoring => "refused_restoring",
+        /// Refused: the database couldn't be opened, e.g. migrations were
+        /// pending, or whether a restore was running couldn't be checked
+        /// (V14). Recorded in the pending file, then moved into the log.
+        RefusedUnavailable => "refused_unavailable",
         /// The tool failed and returned an error, no data.
         Error => "error",
+    }
+}
+
+impl Outcome {
+    /// Whether this is a refusal the server records in the pending file
+    /// because it couldn't open the database ([`pending`]).
+    pub fn is_unavailable(self) -> bool {
+        matches!(
+            self,
+            Outcome::RefusedRestoring | Outcome::RefusedUnavailable
+        )
     }
 }
 
@@ -94,6 +124,10 @@ pub struct LoggedCall {
     pub row_count: u64,
     pub result_hash: Option<String>,
     pub withheld_count: u64,
+    /// `None` for a row that records one call. A row that summarises the
+    /// refused calls the pending file had no room for holds how many there
+    /// were ([`pending::MAX_ENTRIES`]); it has no arguments or purpose.
+    pub summarised_calls: Option<u64>,
 }
 
 /// Why appending or reading the log failed.
@@ -146,12 +180,14 @@ pub fn expire(db: &mut Database) -> Result<usize, Error> {
     )?)
 }
 
-/// The latest `limit` calls, newest first.
+/// The latest `limit` calls, newest first (by time, then by row ID).
 pub fn recent(reader: &Reader, limit: u32) -> Result<Vec<LoggedCall>, Error> {
     recent_for(reader, None, limit)
 }
 
-/// The latest `limit` calls, newest first, only `client`'s when given. The
+/// The latest `limit` calls, newest first (by time, then by row ID: a call
+/// moved in from the pending file gets a newer ID than calls logged after
+/// it), only `client`'s when given. The
 /// name is matched as stored, so it finds calls from a name that has no
 /// `mcp_client` row.
 pub fn recent_for(
@@ -161,8 +197,9 @@ pub fn recent_for(
 ) -> Result<Vec<LoggedCall>, Error> {
     let mut statement = reader.conn().prepare(
         "SELECT id, at, client, tool, access_level, outcome, purpose, args_redacted_json, \
-         row_count, result_hash, withheld_count \
-         FROM mcp_access_log WHERE ?1 IS NULL OR client = ?1 ORDER BY id DESC LIMIT ?2",
+         row_count, result_hash, withheld_count, summarised_calls \
+         FROM mcp_access_log WHERE ?1 IS NULL OR client = ?1 \
+         ORDER BY at DESC, id DESC LIMIT ?2",
     )?;
     let rows = statement.query_map(params![client, limit], |row| {
         Ok(LoggedCall {
@@ -177,6 +214,7 @@ pub fn recent_for(
             row_count: row.get::<_, i64>(8)?.unsigned_abs(),
             result_hash: row.get(9)?,
             withheld_count: row.get::<_, i64>(10)?.unsigned_abs(),
+            summarised_calls: row.get::<_, Option<i64>>(11)?.map(i64::unsigned_abs),
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

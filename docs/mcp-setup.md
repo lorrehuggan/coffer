@@ -187,11 +187,22 @@ coffer ai-access log --client codex --limit 200
 ```
 
 Each row shows the time, client, tool, the level and outcome (`ok`, `refused_off`,
-`refused_not_enabled`, `refused_level`, `error`), how many rows the call returned, how many
+`refused_not_enabled`, `refused_level`, `refused_restoring`, `refused_unavailable`,
+`error`), how many rows the call returned, how many
 descriptions were withheld as instructions, the client's `purpose`, and the call's
 arguments with any free text replaced by its length (`{"length":12,"type":"string"}`).
 The log never stores what was returned. Rows older than 12 months are deleted when a
 server starts.
+
+Calls refused because the database couldn't be opened are logged too, a little later:
+`refused_restoring` while a backup was being restored, `refused_unavailable` when the
+database needed updating (migrations pending) or the restore lock couldn't be checked.
+The log is inside the database, so the server keeps them in `coffer.db-access-pending`
+next to it (same fields, same redaction) and moves them in, at the time they happened,
+on the next call that can open the database, or when you run `coffer ai-access`. If a
+client keeps calling for a long time while the database is unavailable, the file stops at
+1,000 calls; the rest are counted, and the log shows one row per client and tool with
+how many (`refused_restoring (40 calls)`).
 
 ## The kill switch
 
@@ -208,7 +219,8 @@ coffer ai-access revoke codex   # one client; it stays listed and can be enabled
 `coffer restore` works while a client is connected: the server keeps no database
 connection open between calls. While the files are swapped it refuses calls with
 "Coffer is restoring a backup", and its next call reads the restored database. Those
-refused calls aren't in the log, because the log is in the database being replaced.
+refused calls are in the restored database's log as `refused_restoring`, at the time
+they were made.
 
 If a restore is killed or crashes, nothing stays blocked: the restore's lock on
 `coffer.db-restoring` goes with its process, and the database is complete either way (the

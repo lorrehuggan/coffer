@@ -127,6 +127,10 @@ pub fn refusal_message(outcome: Outcome) -> &'static str {
             "This client isn't enabled in Coffer. The user can enable it in Coffer's settings."
         }
         Outcome::RefusedLevel => "This tool isn't available at this client's access level.",
+        // The server's own message says why (`server::Unavailable`).
+        Outcome::RefusedRestoring | Outcome::RefusedUnavailable => {
+            "Coffer couldn't open its database for this call."
+        }
         Outcome::Ok | Outcome::Error => "Refused.",
     }
 }
