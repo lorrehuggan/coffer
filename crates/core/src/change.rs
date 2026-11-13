@@ -984,6 +984,9 @@ impl Recorder {
                 change.new.to_json(),
             ])?;
         }
+        if self.kind == ChangeKind::BulkEdit {
+            crate::inbox::own::after_user_recategorization(conn, self.changes())?;
+        }
         tracing::info!(
             batch = %batch,
             kind = self.kind.as_str(),
