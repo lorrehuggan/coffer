@@ -15,6 +15,7 @@ pub mod change;
 pub mod clock;
 pub mod db;
 pub mod duplicate;
+pub mod edit;
 pub mod envelope;
 pub mod exclusion;
 pub mod export;

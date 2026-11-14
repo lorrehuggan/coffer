@@ -11,10 +11,11 @@
 use chrono::{NaiveDate, NaiveTime};
 use coffer_core::account::AccountKind;
 use coffer_core::category::{CategoryKey, CategoryKind};
-use coffer_core::id::{AccountId, TransactionId};
+use coffer_core::id::{AccountId, TagId, TransactionId};
 use coffer_core::money::{Currency, Money};
 use coffer_core::reporting::register::{
-    Colour, Register, RegisterAccount, RegisterCategory, RegisterRow, RowCategory,
+    Colour, Register, RegisterAccount, RegisterCategory, RegisterRow, RegisterTag, RowCategory,
+    SplitPart,
 };
 use gpui_kit::Rgba;
 
@@ -597,7 +598,49 @@ fn account_id(name: &str) -> AccountId {
 /// The rows of the Transactions artboards (`18E-0`, `1NP-0`) as a
 /// [`Register`]: what the view shows without a database.
 pub fn register() -> Register {
-    let categories = Category::ALL
+    Register::new(rows(), register_accounts(), categories())
+}
+
+/// The tags of Transactions · split and tags (`2Q3-0`).
+pub const BIRTHDAY_TAG: TagId = TagId::new(1);
+pub const WEEKLY_SHOP_TAG: TagId = TagId::new(2);
+
+/// [`register`] as Transactions · split and tags draws it (`2Q3-0`): the
+/// Waitrose payment named by the user, split into Groceries, Shopping and
+/// an uncategorised line, tagged "Mum's birthday" (private) and "Weekly
+/// shop", with the bank's note and the user's.
+pub fn split_register() -> Register {
+    let waitrose = id("txn-waitrose-07");
+    let mut rows = rows();
+    if let Some(row) = rows.iter_mut().find(|row| row.id == waitrose) {
+        let gbp = |minor| Money::new(minor, Currency::GBP);
+        row.merchant = "Waitrose & Partners".to_owned();
+        row.merchant_set = true;
+        row.category = RowCategory::Split(vec![
+            SplitPart::new(gbp(-3866), Some(Category::Groceries.id())),
+            SplitPart::new(gbp(-950), Some(Category::Shopping.id())),
+            SplitPart::new(gbp(-400), None),
+        ]);
+        row.tags = vec![BIRTHDAY_TAG, WEEKLY_SHOP_TAG];
+        row.bank_note = Some("Flowers + weekly shop".to_owned());
+        row.note = Some("Card for Mum is in the bag too".to_owned());
+    }
+    Register::new(rows, register_accounts(), categories()).with_tags(vec![
+        RegisterTag {
+            id: BIRTHDAY_TAG,
+            name: "Mum's birthday".to_owned(),
+            private: true,
+        },
+        RegisterTag {
+            id: WEEKLY_SHOP_TAG,
+            name: "Weekly shop".to_owned(),
+            private: false,
+        },
+    ])
+}
+
+fn categories() -> Vec<RegisterCategory> {
+    Category::ALL
         .into_iter()
         .map(|category| RegisterCategory {
             id: category.id(),
@@ -608,9 +651,12 @@ pub fn register() -> Register {
             group: None,
             colour: category.colour(),
         })
-        .collect();
+        .collect()
+}
+
+fn rows() -> Vec<RegisterRow> {
     let first = NaiveDate::from_ymd_opt(2026, 11, 9).expect("a date");
-    let rows = TRANSACTIONS
+    TRANSACTIONS
         .iter()
         .map(|transaction| {
             let (category, transfer) = match transaction.categorisation {
@@ -622,6 +668,7 @@ pub fn register() -> Register {
                     (RowCategory::Uncategorised, Some(vec![account_id(pot)]))
                 }
             };
+            let splittable = transfer.is_none();
             RegisterRow {
                 id: id(transaction.id),
                 account: account_id(transaction.account),
@@ -640,10 +687,13 @@ pub fn register() -> Register {
                 transfer,
                 excluded: None,
                 note: None,
+                bank_note: None,
+                merchant_set: false,
+                tags: Vec::new(),
+                splittable,
             }
         })
-        .collect();
-    Register::new(rows, register_accounts(), categories)
+        .collect()
 }
 
 /// `pence` as pounds for en-GB: "£1,284.10", with a true minus (U+2212)

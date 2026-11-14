@@ -10,7 +10,9 @@
 //! Every change is core's: [`own::recategorize`] sets the categories as the
 //! user's, in one DB transaction recorded as one undoable change batch (the
 //! CLI's `coffer categorize` takes the same path), and [`change::undo`]
-//! reverts it. Nothing here touches an imported source field.
+//! reverts it. The inspector's split, tags, note and merchant name go
+//! through [`edit`] (M3.9), each one undoable change batch too. Nothing
+//! here touches an imported source field.
 
 use std::path::PathBuf;
 
@@ -19,9 +21,11 @@ use coffer_core::backup;
 use coffer_core::category::CategoryKey;
 use coffer_core::change::{self, UndoSummary};
 use coffer_core::db::Database;
-use coffer_core::id::{ChangeBatchId, TransactionId};
+use coffer_core::edit;
+use coffer_core::id::{ChangeBatchId, TagId, TransactionId};
 use coffer_core::inbox::own;
 use coffer_core::reporting::register::Register;
+use coffer_core::split::SplitLine;
 
 use crate::accounts::store::StoreError;
 
@@ -70,6 +74,77 @@ impl TransactionStore {
     ) -> Result<Option<ChangeBatchId>, StoreError> {
         let mut db = self.open()?;
         Ok(own::recategorize(&mut db, items)?)
+    }
+
+    /// Splits `transaction` into `lines`, replacing any split it has.
+    pub fn set_split(
+        &self,
+        transaction: TransactionId,
+        lines: &[SplitLine],
+    ) -> Result<Option<ChangeBatchId>, StoreError> {
+        let mut db = self.open()?;
+        Ok(edit::set_split(&mut db, transaction, lines)?)
+    }
+
+    /// Removes `transaction`'s split, leaving it uncategorised.
+    pub fn remove_split(
+        &self,
+        transaction: TransactionId,
+    ) -> Result<Option<ChangeBatchId>, StoreError> {
+        let mut db = self.open()?;
+        Ok(edit::remove_split(&mut db, transaction)?)
+    }
+
+    /// Tags `transaction` with `tag`.
+    pub fn add_tag(
+        &self,
+        transaction: TransactionId,
+        tag: TagId,
+    ) -> Result<Option<ChangeBatchId>, StoreError> {
+        let mut db = self.open()?;
+        Ok(edit::add_tag(&mut db, transaction, tag)?)
+    }
+
+    /// Takes `tag` off `transaction`.
+    pub fn remove_tag(
+        &self,
+        transaction: TransactionId,
+        tag: TagId,
+    ) -> Result<Option<ChangeBatchId>, StoreError> {
+        let mut db = self.open()?;
+        Ok(edit::remove_tag(&mut db, transaction, tag)?)
+    }
+
+    /// Tags `transaction` with the tag named `name`, creating it (`private`
+    /// or not) when there is none.
+    pub fn add_new_tag(
+        &self,
+        transaction: TransactionId,
+        name: &str,
+        private: bool,
+    ) -> Result<Option<ChangeBatchId>, StoreError> {
+        let mut db = self.open()?;
+        Ok(edit::add_new_tag(&mut db, transaction, name, private)?.1)
+    }
+
+    /// Sets the user's note on `transaction`; blank clears it.
+    pub fn set_note(
+        &self,
+        transaction: TransactionId,
+        text: &str,
+    ) -> Result<Option<ChangeBatchId>, StoreError> {
+        let mut db = self.open()?;
+        Ok(edit::set_note(&mut db, transaction, text)?)
+    }
+
+    /// Names `transaction`'s merchant; blank goes back to the derived name.
+    pub fn set_merchant(
+        &self,
+        transaction: TransactionId,
+        text: &str,
+    ) -> Result<Option<ChangeBatchId>, StoreError> {
+        let mut db = self.open()?;
+        Ok(edit::set_merchant(&mut db, transaction, text)?)
     }
 
     /// Reverts a change batch where its values still hold.
@@ -129,5 +204,74 @@ mod tests {
             store.load(today).unwrap().row(id).unwrap().category,
             RowCategory::Uncategorised
         );
+    }
+
+    #[test]
+    fn splits_tags_notes_and_names_read_back_and_undo() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("coffer.db");
+        let id = {
+            let mut db = Database::open(&path).unwrap();
+            let current = account::create(
+                &mut db,
+                &NewAccount::new("Joint account", AccountKind::Current, Currency::GBP),
+            )
+            .unwrap();
+            let day = NaiveDate::from_ymd_opt(2026, 11, 7).unwrap();
+            manual::create(
+                &mut db,
+                &ManualTransaction::new(current, day, Money::new(-5216, Currency::GBP), "WAITROSE"),
+            )
+            .unwrap()
+        };
+        let store = TransactionStore::new(path);
+        let today = NaiveDate::from_ymd_opt(2026, 11, 14).unwrap();
+        let gbp = |minor| Money::new(minor, Currency::GBP);
+        let groceries = CategoryKey::new("food.groceries").unwrap();
+
+        let batch = store
+            .set_split(
+                id,
+                &[
+                    SplitLine::new(gbp(-3866), Some(groceries)),
+                    SplitLine::new(gbp(-1350), None),
+                ],
+            )
+            .unwrap()
+            .unwrap();
+        let register = store.load(today).unwrap();
+        let RowCategory::Split(parts) = &register.row(id).unwrap().category else {
+            panic!("split");
+        };
+        assert_eq!(parts.len(), 2);
+        store.undo(batch).unwrap();
+        assert_eq!(
+            store.load(today).unwrap().row(id).unwrap().category,
+            RowCategory::Uncategorised
+        );
+
+        store
+            .add_new_tag(id, "Mum's birthday", true)
+            .unwrap()
+            .unwrap();
+        store.set_note(id, "Card for Mum").unwrap().unwrap();
+        store
+            .set_merchant(id, "Waitrose & Partners")
+            .unwrap()
+            .unwrap();
+        let register = store.load(today).unwrap();
+        let row = register.row(id).unwrap();
+        let tag = register.tag(row.tags[0]).unwrap();
+        assert_eq!((tag.name.as_str(), tag.private), ("Mum's birthday", true));
+        assert_eq!(row.note.as_deref(), Some("Card for Mum"));
+        assert_eq!(row.merchant, "Waitrose & Partners");
+        assert!(row.merchant_set);
+
+        let tag = row.tags[0];
+        store.remove_tag(id, tag).unwrap().unwrap();
+        assert!(store.load(today).unwrap().row(id).unwrap().tags.is_empty());
+        store.add_tag(id, tag).unwrap().unwrap();
+        assert_eq!(store.load(today).unwrap().row(id).unwrap().tags, [tag]);
+        assert_eq!(store.remove_split(id).unwrap(), None);
     }
 }

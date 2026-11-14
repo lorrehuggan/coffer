@@ -1413,6 +1413,59 @@ the build. Everything else follows `DESIGN.md` → "Settings" or the records abo
    `refused` icon while it's off, else the fixture's "1 agent connected"; either opens
    Settings → AI clients. The rest of the status bar is still fixture data.
 
+### Decision record: splits, tags and notes in the inspector (2026-11-14)
+
+M3.9. No migration. Marked **(user)**: decided by the user on 2026-11-14 when asked
+before the build (each was the recommended option). Everything else follows `DESIGN.md`
+→ "Transactions additions" and the decision record "splits, tags and notes, manual rows,
+merchant names".
+
+1. **Each inspector edit is one undoable change batch.** Core's `edit` module
+   (`set_split`, `remove_split`, `add_tag`, `remove_tag`, `add_new_tag`, `set_note`,
+   `set_merchant`) runs one DB transaction and records one `bulk_edit` change batch
+   through `change::Recorder`, as the table's category edits do
+   (`inbox::own::recategorize`), so `change::undo` reverts it and the change history
+   (M3.13) will list it. A single-row edit shows no undo bar (the M3.3 rule). An edit
+   that changes nothing records nothing. A split goes through `split::prepare`, the same
+   checks as `split::set` (not a transfer, not linked money in, lines in the amount's
+   sign and currency summing to it exactly, the categories exist), and clears the
+   transaction's own category and share first in the same batch.
+2. **The split editor's model is core's `split::draft::SplitDraft`.** Remaining is the
+   amount less the lines typed so far, signed (`−£4.00` short, `+£3.60` over). The sign
+   is never typed: a line takes the transaction's sign. "Add line" fills in the
+   remainder when the lines are short, and starts empty otherwise. A draft is saved only
+   when balanced (two or more lines, none missing or zero, summing exactly), and then on
+   leaving an amount field or Enter, choosing a category, or adding or removing a line.
+   An unbalanced draft stays through reloads and is dropped when the row is left, so the
+   last balanced split stays. **"Split" starts one line with the whole amount in the
+   row's category (user)**; lowering it and "Add line" make the common two-way split.
+   Lines keep the share, share label and note they were stored with (the register's
+   `SplitPart` carries them, in the app only), so an edit never drops what the editor
+   doesn't show yet (M3.11).
+3. **The register says what the inspector needs.** `RegisterRow` gains the row's tags
+   (by name ignoring case), the bank's imported note, whether the user named the
+   merchant (`merchant_set`) and whether the row can be split (`splittable`: not in a
+   suggested or confirmed transfer, not the money in of a confirmed link). A row that
+   can't be split has no Split section rather than a button that would fail. The
+   register lists every tag (`Register::tags`, with its privacy) for the tag menu.
+4. **Tags (user).** The "+ Tag" menu is the category menu's pattern: every tag A–Z,
+   ticked when on the row (choosing one toggles it), a private one with the lock; when
+   the typed text isn't a tag's name (ignoring case, with the same folding as tag
+   names), "Create “…”" and "Create “…” as private". Privacy is chosen at creation and
+   changed later in the tag editor (M3.7). Creating a name another tag has links that
+   tag and keeps its privacy. A pill's ✕ on hover removes the tag too (user). Undoing
+   the batch unlinks the tag; the tag itself stays.
+5. **The display merchant (user: built now, not in M3.13).** A typed name is the
+   user's (`merchant_display_source = user`) and no recompute changes it; a blank field
+   goes back to the derived name (a rule's name is dropped too). The field is empty for
+   a derived name and shows that name as its placeholder.
+6. **Text saves on blur, Enter and leaving the row.** Merchant and Note save when the
+   field loses focus, on Enter, and when the selection moves on (what was typed is
+   kept, as the account inspector does). A field being typed in isn't overwritten when
+   the register is read again. The bank's note is read-only, shown above Note only when
+   the import carried one. Notes, names and tag names are shown as plain text and only
+   ever matched, never acted on.
+
 ## Architecture
 
 ```

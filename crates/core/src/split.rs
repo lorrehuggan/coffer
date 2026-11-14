@@ -44,6 +44,7 @@
 //! Errors never quote transaction text, notes, share labels or category
 //! keys: they name lines by their position, from 1.
 
+pub mod draft;
 #[cfg(test)]
 mod tests;
 
@@ -245,31 +246,8 @@ pub fn replace(
     transaction: TransactionId,
     lines: &[SplitLine],
 ) -> Result<Vec<SplitId>, Error> {
-    let parent = load_parent(conn, transaction)?;
-    if parent.in_transfer {
-        return Err(Error::InTransfer(transaction));
-    }
-    validate(parent.amount, lines)?;
-    // Drops suggestions where it is the money in, which a split ends.
-    if !crate::link::release_inflow(conn, transaction)? {
-        return Err(Error::Linked(transaction));
-    }
-
-    let mut find_category = conn.prepare_cached("SELECT id FROM category WHERE key = ?1")?;
-    let mut categories = Vec::with_capacity(lines.len());
-    for (index, line) in lines.iter().enumerate() {
-        let id: Option<i64> = match &line.category {
-            Some(key) => Some(
-                find_category
-                    .query_row([key], |row| row.get(0))
-                    .optional()?
-                    .ok_or(Error::UnknownCategory(index + 1))?,
-            ),
-            None => None,
-        };
-        categories.push(id);
-    }
-
+    let categories = prepare(conn, transaction, lines)?;
+    release_suggestions(conn, transaction)?;
     clear(conn, transaction)?;
     conn.execute(
         "UPDATE \"transaction\" SET category_id = NULL, category_source = NULL, rule_id = NULL, \
@@ -300,6 +278,63 @@ pub fn replace(
         "split a transaction"
     );
     Ok(ids)
+}
+
+/// Checks `lines` as a split of the stored `transaction` (it exists, isn't
+/// in a transfer, [`validate`], isn't the money in of a confirmed link, the
+/// categories exist) and returns each line's category ID. Writes nothing:
+/// for [`replace`] and for the user's edit recorded as a change batch
+/// (`crate::edit`), which call [`release_suggestions`] only once they know
+/// the split changes. Opens no transaction of its own.
+pub(crate) fn prepare(
+    conn: &Connection,
+    transaction: TransactionId,
+    lines: &[SplitLine],
+) -> Result<Vec<Option<i64>>, Error> {
+    let parent = load_parent(conn, transaction)?;
+    if parent.in_transfer {
+        return Err(Error::InTransfer(transaction));
+    }
+    validate(parent.amount, lines)?;
+    let linked: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM transaction_link \
+         WHERE inflow_id = ?1 AND status = 'confirmed')",
+        [transaction],
+        |row| row.get(0),
+    )?;
+    if linked {
+        return Err(Error::Linked(transaction));
+    }
+
+    let mut find_category = conn.prepare_cached("SELECT id FROM category WHERE key = ?1")?;
+    let mut categories = Vec::with_capacity(lines.len());
+    for (index, line) in lines.iter().enumerate() {
+        let id: Option<i64> = match &line.category {
+            Some(key) => Some(
+                find_category
+                    .query_row([key], |row| row.get(0))
+                    .optional()?
+                    .ok_or(Error::UnknownCategory(index + 1))?,
+            ),
+            None => None,
+        };
+        categories.push(id);
+    }
+    Ok(categories)
+}
+
+/// Drops the link suggestions where `transaction` is the money in, which
+/// splitting it ends (the schema would refuse the split while they stand).
+/// After [`prepare`], which refused a confirmed link. Opens no transaction
+/// of its own.
+pub(crate) fn release_suggestions(
+    conn: &Connection,
+    transaction: TransactionId,
+) -> Result<(), Error> {
+    if !crate::link::release_inflow(conn, transaction)? {
+        return Err(Error::Linked(transaction));
+    }
+    Ok(())
 }
 
 /// Removes `transaction`'s split in one DB transaction and returns how many

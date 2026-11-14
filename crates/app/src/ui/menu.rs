@@ -73,6 +73,9 @@ pub struct MenuOption {
     /// A category's marker, drawn in the icon slot.
     pub marker: Option<Marker>,
     pub disabled: bool,
+    /// Ticked whatever the menu's chosen option: one of several a menu
+    /// toggles (the tags on a transaction, M3.9).
+    pub checked: bool,
 }
 
 impl MenuOption {
@@ -84,6 +87,7 @@ impl MenuOption {
             icon: None,
             marker: None,
             disabled: false,
+            checked: false,
         }
     }
 
@@ -100,6 +104,13 @@ impl MenuOption {
     /// Leads the label with a category marker, centred in the icon slot.
     pub fn marker(mut self, marker: Marker) -> Self {
         self.marker = Some(marker);
+        self
+    }
+
+    /// Ticks the option in a menu of several on/off choices (composed for
+    /// M3.9: the chosen option's tick, without its fill).
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.checked = checked;
         self
     }
 
@@ -400,6 +411,7 @@ impl MenuList {
 
     fn render_option(&self, option: &MenuOption) -> AnyElement {
         let chosen = self.chosen.as_ref() == Some(&option.key);
+        let ticked = chosen || option.checked;
         let highlighted = self.highlighted.as_ref() == Some(&option.key);
         let key = option.key.clone();
         let on_choose = self.on_choose.clone();
@@ -412,7 +424,7 @@ impl MenuList {
             .id(ElementId::Name(format!("option-{}", option.key).into()))
             .role(gpui_kit::Role::ListBoxOption)
             .aria_label(option.label.clone())
-            .aria_selected(chosen)
+            .aria_selected(ticked)
             .when(highlighted, |this| this.aria_active_descendant())
             .flex()
             .flex_none()
@@ -466,7 +478,7 @@ impl MenuList {
                     .flex()
                     .flex_none()
                     .w(size::ICON_SM)
-                    .when(chosen, |this| {
+                    .when(ticked, |this| {
                         this.child(Glyph::Chosen.render().text_color(color::TEXT))
                     }),
             )

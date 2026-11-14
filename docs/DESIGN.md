@@ -924,6 +924,40 @@ token, `--container-dialog`.
 - **Every unsplit transaction** has the Split section, as on `3WT-0` and `4D7-0`: title
   "Split", outline "Split" button, caption "Divide this amount across categories." It sits
   between Details and Source.
+- **Built in M3.9** (`crates/app/src/transactions/editor.rs`, `ui::tag`; `ARCHITECTURE.md`
+  → "Decision record: splits, tags and notes in the inspector"): Details (Date and
+  Account locked, Merchant, Category unless split, Tags, Bank note when the import has
+  one, Note), the Split section with its states, and the split row's table label, which
+  names every line ("Groceries, Shopping, Uncategorised", as `2Q3-0` draws it). A row
+  in a transfer, or linked money in, has no Split section. Source, Exclude… and Undo
+  import… wait for M3.10; the Raw description and Rule sections stay as built in M3.3.
+  **Composed from existing specs, not drawn** (user, 2026-11-14; review):
+  - *Starting a split*: "Split" opens the editor with one line holding the whole amount
+    in the row's category, its amount field focused; the footer reads "Remaining £0.00"
+    as balanced but with no `check` (nothing is saved yet), over the short state's
+    caption.
+  - *Tag menu*: the category menu (filter field, placeholder "Find or create a tag")
+    below "+ Tag": every tag A–Z, a private one with the 10px lock in the icon slot, the
+    row's tags ticked with the chosen option's tick (no fill), choosing one toggles it;
+    when the typed text names no tag, "Create “…”" (12px plus) and "Create “…” as
+    private" (lock). A name a tag can't have is a faded "Create a tag" with the reason
+    as its hint. "+ Tag" takes the `hover` fill while hovered or open.
+  - *Removing a tag*: on hover a pill shows the 10px Close glyph 4px after its name in
+    `icon-faint` (`text-muted` under the pointer); the tag menu removes it too.
+  - *Other split states*: a line with no amount, a zero line and a line below its share
+    use the not-balanced look, with captions "Line 3 has no amount. Saved when
+    Remaining is £0.00.", "Line 3 is £0.00: give it an amount or remove it." and
+    "Line 1 is less than the share you set on it."
+  - *Merchant*: empty for a derived name, which shows as the placeholder; the user's
+    own name is the field's value.
+  - *"Add line"*: the ghost button as drawn (24px, radius 6, 8px padding pulled 8px
+    left, 12px plus, caption 500 `text-secondary`), with the `hover` and
+    `control-active` fills and the focus ring.
+
+  Differences from Paper: the amount field shows what was typed until it's left, then
+  the signed amount; the lock follows the value text (as `LockedValue` has since M3.2)
+  where `2Q3-0` puts it at the field's end; Paper's focus ring on the new line's
+  category select (`2Q3-0`) sits on its amount field, as the Split section's spec says.
 - **Undo notification** (states board `53O-0`). After a change to many existing rows
   (bulk categorise, apply a rule, merge duplicates), a floating bar replaces the
   bulk-action bar in its place. It is drawn with `float`, a `border` line, `radius-lg` and

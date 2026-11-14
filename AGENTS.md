@@ -21,7 +21,8 @@ M1.9 checked against a real Monzo export. Every M2 item is done, tested on synth
 data and checked with Claude Code against a real Monzo export (2026-11-13). M3 has
 started: M3.1 (the app shell and window state), M3.2 (accounts management), M3.3 (the
 Transactions view on the database), M3.6 with M3.14 (the Inbox and its impact preview),
-M3.15 (AI access settings) and M3.16 (backups and the export dialog) are done.
+M3.15 (AI access settings), M3.16 (backups and the export dialog) and M3.9 (the split
+editor, tags and notes in the inspector) are done.
 The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
@@ -42,12 +43,14 @@ accounts and entered balances, and since M3.2 editing (`update`, `usage`),
 `V3__import_flags.sql`) and local backups (`backup`: `VACUUM INTO` snapshots in
 `<data dir>/backups`, rotation, checked restore; taken before import commits and
 migrations; M1.28) and splits (`split`: lines summing exactly to the parent, the
-`ledger_line` view; M1.20, `V5__transaction_split.sql`) and tags and user notes (`tag`,
+`ledger_line` view; M1.20, `V5__transaction_split.sql`; `split::draft::SplitDraft`, the
+split editor's model, M3.9) and tags and user notes (`tag`,
 `note`; private tags; M1.21, `V6__tags.sql`) and manual rows and exclusions (`manual`,
 `exclusion`; M1.22, no migration) and merchant names (`merchant`: deterministic
 clean-up, aliases, `merchant_display_source`; run in the import commit before rules;
 M1.23, `V7__merchant_alias.sql`) and change batches (`change`: recorded, undoable
-changes to user-facing fields, `dry_run` previews; `V8__change_batch.sql`) and every rule
+changes to user-facing fields, `dry_run` previews; `V8__change_batch.sql`; `edit`, the
+inspector's split, tag, note and merchant-name edits as one change batch each, M3.9) and every rule
 action at import plus applying a rule to history (`rule::preview_apply`/`commit_apply`;
 M1.24) and refunds, reimbursements and shared costs (`link`; `V9__transaction_link.sql`,
 which redefines `ledger_line`; M1.25) and the possible-duplicates queue (`duplicate`;
@@ -117,7 +120,11 @@ on a background thread, category changes through `inbox::own::recategorize`, und
 through `change::undo`), is filtered by the accounts panel and its chips, sorts within
 each day, and sets categories in place; `present` turns rows into cells and menu
 options, `fixture` keeps the Paper rows as a `Register` for snapshots and tests, and
-`ui::undo_bar` is the undo notification. The Inbox (M3.6, M3.14) is
+`ui::undo_bar` is the undo notification. Since M3.9 the inspector edits the selected
+row (`transactions/editor.rs`: Merchant, Tags with `ui::tag` pills and the tag menu,
+Note, the bank's note read-only, and the split editor), each change through
+`TransactionStore` to core's `edit`; the register carries tags, the bank's note, the
+user-set name and whether a row can be split. The Inbox (M3.6, M3.14) is
 `crates/app/src/inbox/`: `Inbox` (status, filters, groups, selection, decisions through
 `store::InboxStore`, which opens the database per call), `panel`, `view` (the grouped
 table, the selected suggestion open in place, A / R / ↑↓) and `inspector` ("If you
