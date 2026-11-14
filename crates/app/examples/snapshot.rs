@@ -14,7 +14,13 @@
 //! - `transactions-multi`: Paper `1NP-0`, three uncategorised rows selected;
 //! - `rules`: the shell with the Rules tab active and its screen not built
 //!   yet (title bar: Paper `B8Y-0`);
-//! - `settings`: the shell with Settings open (title bar: Paper `B08-0`);
+//! - `settings`: Settings · AI clients on sample data (Paper `AQ2-0`, title
+//!   bar `B08-0`); `settings-off`: the same with AI access off (`GR9-0`);
+//!   `settings-log` (`DC6-0`); `settings-backups` (`F63-0`);
+//!   `settings-backed-up`: the notification after "Back up now" (`HF7-0`);
+//!   `settings-enable` (`GYO-0`), `settings-restore` (`H6D-0`),
+//!   `settings-restore-fails` (`H73-0`) and `settings-export` (`HAG-0`): the
+//!   dialogs over Settings;
 //! - `account`: Current account selected with no transaction selected, on
 //!   the states board's accounts (panel and inspector: Paper `8D8-0`);
 //! - `account-kind`: the same with the Kind menu open (Paper `FHZ-0`);
@@ -31,6 +37,10 @@ use anyhow::{Context as _, Result};
 use gpui_kit::{AnyView, App, AppContext as _, Entity, HeadlessAppContext, Window, size};
 
 use coffer_app::accounts::{Accounts, fixture as accounts_fixture};
+use coffer_app::settings::restore::{RestoreDialog, Stage};
+use coffer_app::settings::{
+    Notice, NoticeMessage, RestoreTarget, Section, SettingsView, fixture as settings_fixture,
+};
 use coffer_app::shell::{ShellView, View};
 use coffer_app::showcase::Showcase;
 
@@ -79,6 +89,103 @@ fn main() -> Result<()> {
         cx.new(|cx| ShellView::new(View::Settings, window, cx))
             .into()
     })?;
+    for (name, section) in [
+        ("settings-log", Section::Log),
+        ("settings-backups", Section::Backups),
+    ] {
+        snapshot(&mut cx, &out, name, move |window, cx| {
+            let shell = cx.new(|cx| ShellView::new(View::Settings, window, cx));
+            let settings = shell.read(cx).settings().clone();
+            settings.update(cx, |settings, cx| settings.show(section, cx));
+            shell.into()
+        })?;
+    }
+    snapshot(&mut cx, &out, "settings-off", |window, cx| {
+        let accounts = cx.new(|_| Accounts::fixture(accounts_fixture::accounts()));
+        let settings = cx.new(SettingsView::fixture_off);
+        cx.new(|cx| ShellView::with_settings(View::Settings, accounts, settings, window, cx))
+            .into()
+    })?;
+    snapshot(&mut cx, &out, "settings-backed-up", |window, cx| {
+        let shell = cx.new(|cx| ShellView::new(View::Settings, window, cx));
+        let settings = shell.read(cx).settings().clone();
+        settings.update(cx, |settings, cx| {
+            settings.show(Section::Backups, cx);
+            settings.set_notice(
+                Some(Notice {
+                    message: NoticeMessage::BackedUp {
+                        transactions: Some(1_312),
+                        size: 53 * 1024 * 1024 / 10,
+                    },
+                    reveal: Some(PathBuf::from("backup.db")),
+                }),
+                cx,
+            );
+        });
+        shell.into()
+    })?;
+    for (name, dialog) in [
+        ("settings-enable", SettingsDialog::Enable),
+        ("settings-export", SettingsDialog::Export),
+    ] {
+        snapshot(&mut cx, &out, name, move |window, cx| {
+            let shell = cx.new(|cx| ShellView::new(View::Settings, window, cx));
+            let settings = shell.read(cx).settings().clone();
+            settings.update(cx, |settings, cx| match dialog {
+                SettingsDialog::Enable => settings.request_enable(
+                    coffer_core::mcp_client::ClientName::new("my-agent").unwrap(),
+                    cx,
+                ),
+                SettingsDialog::Export => settings.request_export(cx),
+            });
+            shell.into()
+        })?;
+    }
+    for (name, fails) in [
+        ("settings-restore", false),
+        ("settings-restore-fails", true),
+    ] {
+        snapshot(&mut cx, &out, name, move |_, cx| {
+            let settings = cx.new(SettingsView::fixture);
+            let supported = coffer_core::db::Database::supported_schema_version();
+            let (target, stage, since) = if fails {
+                (
+                    RestoreTarget {
+                        path: PathBuf::from("coffer-laptop.db"),
+                        taken_at: None,
+                        local: None,
+                    },
+                    Stage::Checked(coffer_core::backup::detail::Assessment::TooNew {
+                        found: supported + 2,
+                        supported,
+                    }),
+                    None,
+                )
+            } else {
+                let row = settings.read(cx).backups().rows[0].clone();
+                (
+                    RestoreTarget {
+                        path: row.backup.path.clone(),
+                        taken_at: Some(row.backup.taken_at),
+                        local: Some(row.local),
+                    },
+                    Stage::Checked(coffer_core::backup::detail::Assessment::Ready(
+                        coffer_core::backup::RestoreCheck {
+                            path: row.backup.path.clone(),
+                            named: Some((row.backup.reason, row.backup.taken_at)),
+                            schema_version: supported,
+                            supported_version: supported,
+                            current: coffer_core::backup::Current::At(supported),
+                            interrupted: None,
+                        },
+                    )),
+                    Some(settings_fixture::since()),
+                )
+            };
+            cx.new(|cx| RestoreDialog::preview(settings, target, stage, since, cx))
+                .into()
+        })?;
+    }
     for (name, step) in [
         ("account", AccountStep::Select),
         ("account-kind", AccountStep::KindMenu),
@@ -125,6 +232,13 @@ fn main() -> Result<()> {
         cx.new(|cx| Showcase::new(window, cx)).into()
     })?;
     Ok(())
+}
+
+/// Which Settings dialog a snapshot opens over the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettingsDialog {
+    Enable,
+    Export,
 }
 
 /// What the account snapshots do after selecting Current account.

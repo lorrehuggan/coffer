@@ -51,7 +51,11 @@ There are three levels:
 Notes, share labels, private tags, merchant addresses, account numbers, sort codes and
 IBANs are never sent at any level.
 
-Enable the client, then set its level. Enabling starts at `aggregate`:
+Enable the client, then set its level. In the app, Settings (⌘, or the title bar's
+Settings button) → AI clients lists a client that asked to connect under "Asked to
+connect", with "Enable…", where you choose its level; each enabled client has a level
+select and an on/off switch, the toolbar has the kill switch, and Settings → Access log
+shows the log. From a terminal, enabling starts at `aggregate`:
 
 ```sh
 coffer ai-access enable claude-code

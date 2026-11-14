@@ -361,6 +361,12 @@ pub(crate) fn peek_schema_version(path: &Path) -> Result<SchemaVersion, Error> {
     Ok(migrations::current_version(&inspect(path)?)?)
 }
 
+/// For [`crate::backup`]: the schema version of the database `conn` is
+/// open on, without checking its history.
+pub(crate) fn schema_version_on(conn: &Connection) -> Result<SchemaVersion, Error> {
+    Ok(migrations::current_version(conn)?)
+}
+
 /// For tests elsewhere in core: a database with only this build's first
 /// `version` migrations applied, as an older Coffer left it.
 #[cfg(test)]

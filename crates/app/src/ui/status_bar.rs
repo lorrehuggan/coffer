@@ -2,9 +2,12 @@
 //! `RG-0`; on the Transactions artboard `1CU-0`): import status, the agent
 //! connection, counts and the home currency, along the bottom of the window.
 
+use std::rc::Rc;
+
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, IntoElement, ParentElement as _, RenderOnce, Rgba, SharedString, Styled as _, Window, div,
+    App, InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce, Rgba, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 
 use crate::theme::tokens::{color, radius, size, spacing, typography};
@@ -19,6 +22,8 @@ enum Lead {
     Dot(Rgba),
     /// A 12px icon in `text`.
     Icon(Glyph),
+    /// A 12px icon in `text-muted`: a state that's off ("AI access off").
+    MutedIcon(Glyph),
 }
 
 /// One item in the status bar: caption text in `text-muted`, optionally in
@@ -28,6 +33,29 @@ pub struct StatusItem {
     text: SharedString,
     mono: bool,
     lead: Option<Lead>,
+    action: Option<Action>,
+}
+
+/// A click handler.
+type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// What clicking an item does, under an element id.
+#[derive(Clone)]
+struct Action {
+    id: SharedString,
+    handler: Handler,
+}
+
+impl std::fmt::Debug for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Action").field(&self.id).finish()
+    }
+}
+
+impl PartialEq for Action {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 impl StatusItem {
@@ -37,7 +65,23 @@ impl StatusItem {
             text: text.into(),
             mono: false,
             lead: None,
+            action: None,
         }
+    }
+
+    /// Runs `handler` when the item is clicked: "1 agent connected" and
+    /// "AI access off" open Settings → AI clients (`DESIGN.md` →
+    /// "Settings"). `id` is the item's element id.
+    pub fn on_click(
+        mut self,
+        id: impl Into<SharedString>,
+        handler: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.action = Some(Action {
+            id: id.into(),
+            handler: Rc::new(handler),
+        });
+        self
     }
 
     /// A count or a code ("328 transactions", "GBP"), in Geist Mono.
@@ -61,6 +105,13 @@ impl StatusItem {
         self
     }
 
+    /// Leads the text with `glyph` in `text-muted`: the `refused` icon
+    /// before "AI access off" (Paper `GXO-0`).
+    pub fn muted_icon(mut self, glyph: Glyph) -> Self {
+        self.lead = Some(Lead::MutedIcon(glyph));
+        self
+    }
+
     /// Leads the text with `glyph` in `text`, as the check before
     /// "Reconciled" (success is neutral: `DESIGN.md` → "Colour semantics").
     pub fn icon(mut self, glyph: Glyph) -> Self {
@@ -68,7 +119,7 @@ impl StatusItem {
         self
     }
 
-    fn render(self) -> impl Iterator<Item = gpui_kit::AnyElement> {
+    fn render(self) -> Vec<gpui_kit::AnyElement> {
         let lead = self.lead.map(|lead| match lead {
             Lead::Dot(fill) => div()
                 .flex_none()
@@ -77,6 +128,10 @@ impl StatusItem {
                 .bg(fill)
                 .into_any_element(),
             Lead::Icon(glyph) => glyph.render().text_color(color::TEXT).into_any_element(),
+            Lead::MutedIcon(glyph) => glyph
+                .render()
+                .text_color(color::TEXT_MUTED)
+                .into_any_element(),
         });
         let text = div()
             .flex_none()
@@ -89,7 +144,25 @@ impl StatusItem {
             .text_color(color::TEXT_MUTED)
             .child(self.text)
             .into_any_element();
-        lead.into_iter().chain(std::iter::once(text))
+        let parts: Vec<gpui_kit::AnyElement> =
+            lead.into_iter().chain(std::iter::once(text)).collect();
+        match self.action {
+            // One target for the lead and the text, spaced as the bar spaces
+            // them.
+            Some(action) => vec![
+                div()
+                    .id(gpui_kit::ElementId::Name(action.id))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(spacing::S2)
+                    .cursor_pointer()
+                    .on_click(move |_, window, cx| (action.handler)(window, cx))
+                    .children(parts)
+                    .into_any_element(),
+            ],
+            None => parts,
+        }
     }
 }
 

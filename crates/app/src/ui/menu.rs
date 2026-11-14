@@ -190,7 +190,9 @@ type Move = Rc<dyn Fn(isize, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct Select {
     id: ElementId,
-    field: SelectField,
+    field: AnyElement,
+    /// Hugs its trigger instead of filling the row (a toolbar filter).
+    hug: bool,
     label: SharedString,
     groups: Vec<MenuGroup>,
     chosen: Option<SharedString>,
@@ -218,7 +220,8 @@ impl Select {
     ) -> Self {
         Self {
             id: id.into(),
-            field,
+            field: field.into_any_element(),
+            hug: false,
             label: label.into(),
             groups,
             chosen,
@@ -233,6 +236,15 @@ impl Select {
             on_choose: None,
             on_move: None,
         }
+    }
+
+    /// Draws the closed select as `trigger` instead of its field, hugging
+    /// it: the access log's filters, outline compact buttons with a
+    /// chevron (Paper `E2S-0`).
+    pub fn trigger(mut self, trigger: impl IntoElement) -> Self {
+        self.field = trigger.into_any_element();
+        self.hug = true;
+        self
     }
 
     /// The menu's width; the Kind menu's 276px unless set.
@@ -455,8 +467,13 @@ impl RenderOnce for Select {
                 }
             })
             .flex()
-            .flex_1()
-            .min_w_0()
+            .map(|this| {
+                if self.hug {
+                    this.flex_none()
+                } else {
+                    this.flex_1().min_w_0()
+                }
+            })
             .relative()
             // On press, not click: pressing the field while the menu is open
             // also closes it (outside the menu), and both must see this

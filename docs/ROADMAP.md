@@ -651,7 +651,8 @@ server (2026-11-13)"; setup: [`mcp-setup.md`](mcp-setup.md).
   skips; user decision 2026-11-13); matched in the import commit, cleared by undo;
   `coffer schedules detect|list|show|confirm|skip|unskip|match|unmatch|pause|resume|end|
   delete|dismiss|undismiss`; lock dates apply to occurrence dates
-- ✅ M2.11 MCP access control: MCP is off until a client is enabled (CLI until M3.15). Each
+- ✅ M2.11 MCP access control: MCP is off until a client is enabled (CLI, and the app's
+  Settings since M3.15). Each
   client has an access level: `aggregate` (totals only), `pseudonymous` (stable keyed-hash
   merchant tokens) or `standard`. Tools above a client's level are never registered. This
   guards against over-sharing; it is not a security boundary against local processes.
@@ -736,9 +737,31 @@ Every tool call appears in the access log.
   editor
 - ⬜ M3.14 Inbox impact preview: what approving each suggestion would change (e.g. "changes
   143 past transactions; 12 have a category you set")
-- ⬜ M3.15 AI access settings: enabled clients, access levels, revoke, kill switch, and the
-  access log
-- ⬜ M3.16 Backups (list, create, restore with the M1.28 checks) and the export dialog
+- ✅ M3.15 AI access settings: enabled clients, access levels, revoke, kill switch, and the
+  access log. `crates/app/src/settings/` (`SettingsView`, `store::SettingsStore` opening
+  the database per call): the kill switch, clients with level, last call, calls in 7
+  days and an ON switch that keeps the level, requests (Ignore, Enable… at a chosen
+  level, starting at Aggregate), what each level shares, the client inspector (Level,
+  the command with copy, the last 7 days, Remove client…); the access log by day,
+  filtered by client and period, with the call inspector (redacted arguments, the
+  purpose as untrusted text, never the result hash). Core: `mcp_client::enable_at`,
+  `turn_off`, `turn_on`, `remove`; `access_log::activity`; `clock`. The status bar
+  follows the kill switch. No migration: no display names, no live connection state
+  (user, 2026-11-14). Snapshots `settings`, `settings-off`, `settings-log`,
+  `settings-enable` checked by eye against `AQ2-0`, `GR9-0`, `DC6-0`, `GYO-0`.
+  Decisions: `ARCHITECTURE.md` → "Decision record: Settings, AI access and backups
+  (built)"
+- ✅ M3.16 Backups (list, create, restore with the M1.28 checks) and the export dialog.
+  Backups: Recent and One a month with what each holds (read `immutable`), Back up now
+  (with the notification), Restore from a file…, the backup inspector (what restoring
+  undoes, Show in folder, Save a copy…), and the Restore dialog with each check shown
+  and an explicit confirmation. The export dialog (CSV / JSON, dates, account,
+  category, tag, excluded rows, notes and tags) through the system's save dialog.
+  Core: `backup::detail` (`contents`, `details`, `monthly`, `since`, `assess`,
+  `save_copy`), `export::Options::include_excluded`, `count`, `date_span`, and
+  `to_file` refusing the database; `docs/EXPORT.md`. Snapshots `settings-backups`,
+  `settings-backed-up`, `settings-restore`, `settings-restore-fails`, `settings-export`
+  checked by eye against `F63-0` and `GQA-0`
 - ⬜ M3.17 Manual asset and liability accounts (house, car, pension, mortgage, loan) with
   dated valuations; closing an account ("Close account…", every kind, with its lock-date
   guard; moved here from M3.2, user 2026-11-14)

@@ -61,6 +61,26 @@ pub enum Glyph {
     /// The chosen item in a menu (Paper `FHZ-0`). Its tick is a little
     /// shorter than [`Glyph::Check`]'s. 12px.
     Chosen,
+    /// AI clients in Settings: a plug (Paper `BPW-0`). 12px.
+    Plug,
+    /// The access log in Settings: a list (Paper `BQ2-0`). 12px.
+    Log,
+    /// Backups in Settings: a clock turning back (Paper `BQY-0`). 12px.
+    Backup,
+    /// Export…: an arrow out of a tray (Paper `BR4-0`). 12px.
+    Export,
+    /// Refused: a circle with a slash (Paper `E9T-0`): a refused call, AI
+    /// access off. 12px; the off banner draws it at 14px.
+    Refused,
+    /// A write to the Inbox: a tray (Paper `EAF-0`). 12px.
+    Inbox,
+    /// Copy to the clipboard (Paper `D9W-0`). 12px.
+    Copy,
+    /// A check that failed: a circle with an exclamation mark (Paper
+    /// `H8G-0`). 12px.
+    Alert,
+    /// Dismiss a notification (Paper `HF9-0`). 12px.
+    Dismiss,
 }
 
 impl Glyph {
@@ -78,7 +98,16 @@ impl Glyph {
             | Self::Cash
             | Self::Asset
             | Self::Liability
-            | Self::Chosen => size::ICON_SM,
+            | Self::Chosen
+            | Self::Plug
+            | Self::Log
+            | Self::Backup
+            | Self::Export
+            | Self::Refused
+            | Self::Inbox
+            | Self::Copy
+            | Self::Alert
+            | Self::Dismiss => size::ICON_SM,
             Self::Close | Self::Minimize | Self::Maximize | Self::Lock => size::ICON_XS,
             Self::Settings => size::ICON_MD,
             Self::ChevronDown => size::MARKER,
@@ -166,6 +195,42 @@ impl Glyph {
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">"#,
                 r#"<path d="M2.5 6.25L4.75 8.5L9.5 3.5"/></svg>"#
             ),
+            Self::Plug => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M4.5 1.5V3.5M7.5 1.5V3.5M3 3.5H9V5.5A3 3 0 0 1 3 5.5ZM6 8.5V10.5"/></svg>"#
+            ),
+            Self::Log => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M4.5 3H10M4.5 6H10M4.5 9H10M2 3H2.5M2 6H2.5M2 9H2.5"/></svg>"#
+            ),
+            Self::Backup => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M2 6A4 4 0 1 0 3.2 3.2M2 1.5V3.5H4M6 4V6L7.5 7"/></svg>"#
+            ),
+            Self::Export => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M6 7.5V1.5M3.75 3.75L6 1.5L8.25 3.75M2 7V10H10V7"/></svg>"#
+            ),
+            Self::Refused => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<circle cx="6" cy="6" r="4.25"/><path d="M3 9L9 3"/></svg>"#
+            ),
+            Self::Inbox => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M1.5 6.75H4L4.75 8H7.25L8 6.75H10.5M1.5 6.75L3 2.75H9L10.5 6.75V9.25H1.5Z"/></svg>"#
+            ),
+            Self::Copy => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<rect x="4" y="4" width="6.5" height="6.5" rx="1.25"/><path d="M8 2.5V2.25A0.75 0.75 0 0 0 7.25 1.5H2.25A0.75 0.75 0 0 0 1.5 2.25V7.25A0.75 0.75 0 0 0 2.25 8H2.5"/></svg>"#
+            ),
+            Self::Alert => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<circle cx="6" cy="6" r="4.75"/><path d="M6 3.5V6.25M6 8.25V8.3"/></svg>"#
+            ),
+            Self::Dismiss => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M3 3L9 9M9 3L3 9"/></svg>"#
+            ),
         }
     }
 
@@ -193,7 +258,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Glyph; 19] = [
+    const ALL: [Glyph; 28] = [
         Glyph::Account,
         Glyph::Pot,
         Glyph::Plus,
@@ -213,6 +278,15 @@ mod tests {
         Glyph::Liability,
         Glyph::Lock,
         Glyph::Chosen,
+        Glyph::Plug,
+        Glyph::Log,
+        Glyph::Backup,
+        Glyph::Export,
+        Glyph::Refused,
+        Glyph::Inbox,
+        Glyph::Copy,
+        Glyph::Alert,
+        Glyph::Dismiss,
     ];
 
     /// The `viewBox` side in the markup, which `size` must match so strokes

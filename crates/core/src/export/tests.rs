@@ -586,3 +586,69 @@ fn a_file_is_private_and_not_overwritten_unless_asked() {
     assert!(to_file(&fixture.db, Format::Csv, &bad, &missing, false).is_err());
     assert!(!missing.exists());
 }
+
+#[test]
+fn excluded_rows_can_be_left_out_and_counted() {
+    let fixture = Fixture::new();
+    // Every row by default, the excluded one included.
+    assert_eq!(
+        count(&fixture.db, &Options::default()).unwrap(),
+        Counts {
+            transactions: 3,
+            rows: 4
+        }
+    );
+    let without = Options {
+        include_excluded: false,
+        ..Options::default()
+    };
+    assert!(
+        fixture
+            .rows(&without)
+            .iter()
+            .all(|row| row.transaction_id != fixture.refund)
+    );
+    assert_eq!(
+        count(&fixture.db, &without).unwrap(),
+        Counts {
+            transactions: 2,
+            rows: 3
+        }
+    );
+}
+
+#[test]
+fn never_writes_over_the_database() {
+    let fixture = Fixture::new();
+    let database = fixture.db.path().to_path_buf();
+    let before = fs::read(&database).unwrap();
+    for target in [
+        database.clone(),
+        PathBuf::from(format!("{}-wal", database.display())),
+    ] {
+        assert!(matches!(
+            to_file(&fixture.db, Format::Csv, &Options::default(), &target, true),
+            Err(Error::IsDatabase(path)) if path == target
+        ));
+    }
+    // Through another spelling of the same directory, too.
+    let dotted = database
+        .parent()
+        .unwrap()
+        .join(".")
+        .join(database.file_name().unwrap());
+    assert!(matches!(
+        to_file(&fixture.db, Format::Csv, &Options::default(), &dotted, true),
+        Err(Error::IsDatabase(_))
+    ));
+    assert_eq!(fs::read(&database).unwrap(), before);
+}
+
+#[test]
+fn the_date_span_covers_the_ledger() {
+    let fixture = Fixture::new();
+    assert_eq!(date_span(&fixture.db).unwrap(), Some((day(2), day(5))));
+    let dir = TempDir::new().unwrap();
+    let empty = Database::open(&dir.path().join("coffer.db")).unwrap();
+    assert_eq!(date_span(&empty).unwrap(), None);
+}

@@ -12,6 +12,7 @@ pub mod balance;
 pub mod budget;
 pub mod category;
 pub mod change;
+pub mod clock;
 pub mod db;
 pub mod duplicate;
 pub mod envelope;

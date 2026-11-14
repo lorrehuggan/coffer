@@ -315,7 +315,7 @@ fn timestamp(at: &str) -> String {
 /// Untrusted text for one table cell: invisible and control characters
 /// removed, whitespace runs (tabs and newlines too) as one space, cut to
 /// `max` characters with an ellipsis.
-fn one_line(text: &str, max: usize) -> String {
+pub fn one_line(text: &str, max: usize) -> String {
     let clean = strip_invisible(text);
     let words: Vec<&str> = clean.split_whitespace().collect();
     let line = words.join(" ");

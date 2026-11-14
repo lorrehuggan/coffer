@@ -19,7 +19,8 @@ charts, and exposes the data to AI clients through an MCP server.
 M0 and the design track (D1–D6) are done and signed off; every M1 item is done,
 M1.9 checked against a real Monzo export. Every M2 item is done, tested on synthetic
 data and checked with Claude Code against a real Monzo export (2026-11-13). M3 has
-started: M3.1 (the app shell and window state) and M3.2 (accounts management) are done.
+started: M3.1 (the app shell and window state), M3.2 (accounts management), M3.15 (AI
+access settings) and M3.16 (backups and the export dialog) are done.
 The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
@@ -64,8 +65,10 @@ importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 `crates/app/tests/` (M1.19).
 
 M2 added to `crates/core`: settings and AI clients (`setting`: the kill switch and the
-pseudonym key, and since M3.1 the window state; `mcp_client`: enable, level, revoke, ignore, `requested`; `access_log`:
-append, list, 12-month retention; `access_log::pending`: calls refused while the
+pseudonym key, and since M3.1 the window state; `mcp_client`: enable, level, revoke, ignore, `requested`,
+and since M3.15 `enable_at`, `turn_off`/`turn_on` (keeping the level) and `remove`; `access_log`:
+append, list, 12-month retention, and `access_log::activity` (pages, counts, per-client
+activity, argument lines; M3.15); `access_log::pending`: calls refused while the
 database can't be opened, moved into the log later; `V11__mcp.sql`,
 `V14__access_log_pending.sql`), the untrusted-text envelope
 (`envelope`: `sanitize`, `strip_invisible`, `reads_like_instructions`, merchant
@@ -92,11 +95,21 @@ through `store::AccountStore`, which opens the database per call), `panel` (from
 database: pots nested, balances, flagged and "No balance" rows, arrow keys), `inspector`
 (the account inspector on Transactions while an account and no transaction is selected:
 details, balances, pots, imports), the `new_account` and `add_balance` dialogs, and
-`fixture` (sample accounts for snapshots and tests). Coffer's dialog and select are
+`fixture` (sample accounts for snapshots and tests). Settings (M3.15, M3.16) is
+`crates/app/src/settings/`: `SettingsView` (every change through `store::SettingsStore`,
+which opens the database per call), the panel, `clients` (kill switch, clients,
+requests, the client inspector), `log` (the access log and call inspector; never the
+result hash), `backups` (list, Back up now, the backup inspector), the `enable`,
+`remove`, `restore` (checks shown one by one, then `backup::restore` on a background
+thread) and `export` dialogs, and `fixture`. Core for it: `clock` (now and local time via
+SQLite), `backup::detail` (what a backup holds, read `immutable`; reasons; "since";
+`assess`; `save_copy`), `export::count`, `date_span`, `Options::include_excluded`;
+`docs/EXPORT.md` documents the export's columns. New components: `ui::toggle`,
+`ui::segmented`, `ui::notification`. Coffer's dialog and select are
 `ui::dialog` and `ui::menu`, on the unstyled `gpui-base` roots; `format` writes and reads
 money and dates. Transactions (`crates/app/src/transactions.rs`) is still on fixture
-data (the table isn't filtered by account until M3.3); the other views show the shell
-and `ui::empty_state`. And
+data (the table isn't filtered by account until M3.3); Settings reads the database; the
+other views show the shell and `ui::empty_state`. And
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
 `import`, `accounts` (`list`, `add`, `--preset` since M3.2), `undo-import`, `backup` (`--list`) and
 `restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2

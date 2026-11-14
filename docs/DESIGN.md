@@ -1794,6 +1794,77 @@ Claude Code connected at standard access, the November Monzo import, 1,312 trans
      and then migrated; a newer one is refused. Running MCP servers are refused while a
      restore swaps the files and reopen the database afterwards.
 
+- **Built in M3.15 and M3.16** (`crates/app/src/settings/`): the three screens, the
+  states board's off state, the Enable, Restore and export dialogs and the "Back up now"
+  notification, checked by eye against `AQ2-0`, `DC6-0`, `F63-0` and `GQA-0` in the
+  `settings*` snapshots. New Coffer components, all from existing specs: the toggle
+  (`ui::toggle`, on the unstyled `gpui-base` switch), the inspector-size segmented
+  control (`ui::segmented`, `gpui-base` toggles), the notification bar
+  (`ui::notification`), and the `refused`, `plug`, `log`, `backup`, `export`, `inbox`,
+  `copy`, `alert` and dismiss icons from the artboards' paths. No new tokens.
+  **Decided with the user (2026-11-14)**:
+  - *No display names*: clients are their `--client` name, in Geist Mono, everywhere
+    (no migration). The Enable dialog has no Name field.
+  - *No live connection state*: LAST CONNECTED is the last call's time ("Today,
+    10:42"), with no moldavite dot; nothing records whether a client is connected now.
+  - *The access log shows what `coffer ai-access log` shows*: no result hash (the
+    inspector's Result row and its caption are replaced by "The rows themselves aren't
+    stored: the log keeps how many went back, never the data."); rows cut the purpose
+    as the CLI does (60 characters), the inspector shows it whole; arguments are
+    lines of key and value, free text as "text, N characters", keys cleaned of
+    invisible characters.
+  - *The ON toggle keeps the level; Remove forgets it* (`mcp_client::turn_off`,
+    `turn_on`, `remove`), as the inspector's caption says.
+  - *Backups are read*: each listed backup is opened read-only and `immutable` for its
+    transactions, accounts and rules; a reason names the import's file where the current
+    database still records that import; "Since this backup" counts imports, bulk edits
+    (change batches) and suggestions made after it.
+  - *Export*: "Excluded transactions" off leaves excluded rows out
+    (`export::Options::include_excluded`); "Notes and tags" turns on notes and private
+    tags together; the caption's `docs/EXPORT.md` now exists.
+  **Composed from existing specs, not drawn** (review):
+  - *Status bar*: "1 agent connected" and "AI access off" open Settings → AI clients;
+    the other items are still fixtures.
+  - *Empty and failed reads*: no clients reads as a caption under the Clients header
+    (how a client asks to connect); an empty log period, and no backups, as a caption
+    in the canvas; a read that failed, in caption type `danger` where its data would be.
+  - *A client turned off*: its Level is read-only with the lock (`LockedValue`), and the
+    caption says to turn it on to change it. While AI access is off, the faded clients
+    stay usable.
+  - *Remove client dialog*: "Remove `name`?", what removing does and keeps, Cancel /
+    "Remove client" (destructive solid). The inspector's button is the outline's 24px
+    geometry in `danger` (`ButtonVariant::DestructiveCompact`, Paper `DB7-0`).
+  - *Refused and failed calls*: refusals say why ("Refused: AI access was off",
+    "Refused: my-agent isn't enabled", …); a failed call reads "The tool failed"; a
+    summary of calls the pending file had no room for says how many. The call
+    inspector's figure is "—" for them, and Kind reads "Refused · before the tool ran" or
+    "Failed · nothing returned"; a write reads "Wrote · to the Inbox".
+  - *Log filters*: outline compact buttons with an 8px `icon-faint` chevron (`E2S-0`)
+    opening the select menu: All clients and every client in the log; Today, Last 7 days,
+    Last 30 days, Last 12 months. Earlier calls load 100 at a time as the list is
+    scrolled to its end.
+  - *Backups*: Recent holds every manual backup and the automatic ones rotation keeps as
+    recent; One a month the rest. A restore backup reads "Before restoring a backup"
+    (which one isn't recorded); an update with an unknown schema reads "Before updating
+    Coffer". Schema rows say "· updated to N after restoring" for an older backup and
+    "· newer than this version's N" for a newer one, whose Restore… is disabled. Nothing
+    to undo reads "Nothing has been imported, edited in bulk or suggested since."
+  - *Restore dialog*: "Checking the file…" while the checks run; "Restoring…" with the
+    buttons disabled and Escape ignored while it restores; a damaged file fails the
+    first row ("The file is damaged") and has no second; "It isn't a Coffer backup" and
+    "It's from a different build of Coffer" fail the second; a current database that
+    can't be read, or a refused restore, is said in `danger` with what to do; an earlier
+    restore that stopped part-way is mentioned, as `coffer restore` does. After a
+    restore, the notification bar says so, with "Show in folder" for the backup of what
+    it replaced.
+  - *Notifications*: the D6.3 bar also reports an export ("Exported 1,327 rows to
+    `file`"), a saved copy, and failures (the 12px `alert` and the message in `danger`).
+  - *Export dialog*: the dates start at the ledger's first and last days (everything);
+    an empty date is no bound; a date that doesn't read, or a filter core refuses, is
+    said in `danger` and Export… is disabled; private tags are offered only while notes
+    and tags are included. Category options hint their group. Opening it from
+    Transactions with the table's filters waits for M3.3.
+
 **Rules** — drawn in D6.7 (M3.13, M1.23, M1.24). Four 1440×900 artboards built from the
 Review · possible duplicates shell (`8SE-0`): Rules (`B1J-0`), Rules · apply to past
 transactions (`EFT-0`), Rules · merchant names (`G2O-0`) and Rules · change history

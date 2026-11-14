@@ -433,6 +433,7 @@ fn m1_exit_criteria_end_to_end() {
             },
             include_notes: true,
             include_private_tags: true,
+            include_excluded: true,
         },
         &mut with_notes,
     )

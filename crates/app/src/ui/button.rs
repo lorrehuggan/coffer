@@ -87,6 +87,10 @@ pub enum ButtonVariant {
     /// A destructive action that can be undone or is confirmed later ("Delete
     /// import"): 30px, `danger` outline and label 12/16 500.
     DestructiveOutline,
+    /// A destructive action at the foot of an inspector, confirmed in a
+    /// dialog ("Remove client…", Paper `DB7-0`): the outline's 24px geometry
+    /// with a `danger` outline and label 11/14 500.
+    DestructiveCompact,
     /// The confirming button of a destructive dialog, and nowhere else
     /// ("Delete 312 transactions"): 30px, `danger` fill, `on-danger` label
     /// 12/16 600.
@@ -177,6 +181,13 @@ impl ButtonVariant {
                 color::DANGER,
                 color::DANGER,
             ),
+            Self::DestructiveCompact => outline(
+                size::CONTROL_SM,
+                spacing::S2,
+                radius::MD,
+                color::DANGER,
+                color::DANGER,
+            ),
             Self::DestructiveSolid => solid(
                 color::DANGER,
                 color::DANGER_HOVER,
@@ -233,7 +244,7 @@ impl ButtonVariant {
                 weight: weight::BOLD,
                 ..typography::BUTTON
             },
-            Self::Outline | Self::OutlineCompact => TextRole {
+            Self::Outline | Self::OutlineCompact | Self::DestructiveCompact => TextRole {
                 weight: weight::MEDIUM,
                 ..typography::CAPTION
             },

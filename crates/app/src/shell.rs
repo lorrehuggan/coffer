@@ -25,7 +25,9 @@
 //!
 //! It also owns the accounts ([`Accounts`], M3.2), which the panel, the
 //! Transactions inspector and the account dialogs share, and opens those
-//! dialogs over everything when the panel or inspector asks.
+//! dialogs over everything when the panel or inspector asks; and Settings
+//! ([`SettingsView`], M3.15, M3.16), whose dialogs it opens the same way,
+//! and whose kill switch the status bar shows.
 
 pub mod window_state;
 
@@ -47,6 +49,12 @@ use crate::accounts::add_balance::AddBalanceDialog;
 use crate::accounts::new_account::NewAccountDialog;
 use crate::accounts::store::AccountStore;
 use crate::accounts::{self, Accounts, AccountsEvent, DialogClosed};
+use crate::settings::enable::EnableDialog;
+use crate::settings::export::ExportDialog;
+use crate::settings::remove::RemoveDialog;
+use crate::settings::restore::RestoreDialog;
+use crate::settings::store::SettingsStore;
+use crate::settings::{self, Section, SettingsEvent, SettingsView};
 use crate::theme::tokens::{color, size as token_size, typography};
 use crate::transactions::{self, TransactionsView};
 use crate::ui::button::IconButton;
@@ -195,7 +203,7 @@ impl View {
 
     /// Whether its screen exists yet.
     pub fn is_built(self) -> bool {
-        self == View::Transactions
+        matches!(self, View::Transactions | View::Settings)
     }
 }
 
@@ -225,6 +233,7 @@ pub fn init(cx: &mut App) {
     cx.bind_keys(bindings);
     transactions::init(cx);
     accounts::init(cx);
+    settings::init(cx);
 }
 
 /// Opens Coffer's window as it was last left: the saved bounds and view
@@ -242,6 +251,7 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
         Ok(database) => Accounts::from_store(AccountStore::new(database)),
         Err(error) => Accounts::unavailable(format!("Coffer has no data folder: {error}")),
     };
+    let settings_store = paths::database_path().map(SettingsStore::new);
     let saved = store.as_ref().and_then(WindowStore::load);
     let fallback = Bounds::centered(None, size(px(1440.), px(900.)), cx);
     let displays: Vec<_> = cx
@@ -265,7 +275,13 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
     gpui_kit::open_window(options, cx, move |window, cx| {
         cx.new(|cx| {
             let accounts = cx.new(|_| accounts);
-            let mut shell = ShellView::with_accounts(view, accounts, window, cx);
+            let settings = cx.new(|cx| match settings_store {
+                Ok(store) => SettingsView::from_store(store, cx),
+                Err(error) => {
+                    SettingsView::unavailable(format!("Coffer has no data folder: {error}"), cx)
+                }
+            });
+            let mut shell = ShellView::with_settings(view, accounts, settings, window, cx);
             if let Some(store) = store {
                 shell.keep_window_state(store, window, cx);
             }
@@ -293,6 +309,7 @@ pub struct ShellView {
     before_settings: View,
     transactions: Entity<TransactionsView>,
     accounts: Entity<Accounts>,
+    settings: Entity<SettingsView>,
     /// The dialog open over the window, and its subscription.
     dialog: Option<(AnyView, Subscription)>,
     /// The accounts panel's focus: a Tab stop where the arrow keys move the
@@ -311,10 +328,24 @@ impl ShellView {
         Self::with_accounts(view, accounts, window, cx)
     }
 
-    /// The shell showing `view` with `accounts` in its panel.
+    /// The shell showing `view` with `accounts` in its panel, and Settings
+    /// on sample data.
     pub fn with_accounts(
         view: View,
         accounts: Entity<Accounts>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let settings = cx.new(SettingsView::fixture);
+        Self::with_settings(view, accounts, settings, window, cx)
+    }
+
+    /// The shell showing `view` with `accounts` in its panel and `settings`
+    /// as Settings.
+    pub fn with_settings(
+        view: View,
+        accounts: Entity<Accounts>,
+        settings: Entity<SettingsView>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -331,12 +362,16 @@ impl ShellView {
                 this.on_accounts_event(*event, window, cx)
             }),
             cx.observe(&accounts, |_, _, cx| cx.notify()),
+            cx.subscribe_in(&settings, window, |this, _, event, window, cx| {
+                this.on_settings_event(event.clone(), window, cx)
+            }),
         ];
         Self {
             view,
             before_settings: View::default(),
             transactions,
             accounts,
+            settings,
             dialog: None,
             panel_focus: cx.focus_handle(),
             focus,
@@ -348,6 +383,11 @@ impl ShellView {
     /// The accounts the panel shows.
     pub fn accounts(&self) -> &Entity<Accounts> {
         &self.accounts
+    }
+
+    /// Settings: AI access, backups and export.
+    pub fn settings(&self) -> &Entity<SettingsView> {
+        &self.settings
     }
 
     /// The dialog open over the window, if any.
@@ -379,6 +419,43 @@ impl ShellView {
                 self.open_dialog(dialog, window, cx);
             }
         }
+    }
+
+    fn on_settings_event(
+        &mut self,
+        event: SettingsEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let settings = self.settings.clone();
+        match event {
+            SettingsEvent::EnableRequested(name) => {
+                let dialog = cx.new(|cx| EnableDialog::new(settings, name, window, cx));
+                self.open_dialog(dialog, window, cx);
+            }
+            SettingsEvent::RemoveRequested(name) => {
+                let dialog = cx.new(|cx| RemoveDialog::new(settings, name, window, cx));
+                self.open_dialog(dialog, window, cx);
+            }
+            SettingsEvent::RestoreRequested(target) => {
+                let dialog = cx.new(|cx| RestoreDialog::new(settings, target, window, cx));
+                self.open_dialog(dialog, window, cx);
+            }
+            SettingsEvent::ExportRequested => {
+                let dialog = cx.new(|cx| ExportDialog::new(settings, window, cx));
+                self.open_dialog(dialog, window, cx);
+            }
+            // The database was replaced: everything reads it again.
+            SettingsEvent::Restored => self.accounts.update(cx, |accounts, cx| accounts.reload(cx)),
+            SettingsEvent::AiAccessChanged => cx.notify(),
+        }
+    }
+
+    /// Opens Settings on AI clients: the status bar's AI item.
+    pub fn show_ai_clients(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show(View::Settings, window, cx);
+        self.settings
+            .update(cx, |settings, cx| settings.show(Section::Clients, cx));
     }
 
     /// Shows `dialog` over the window until it closes, then puts focus back
@@ -418,6 +495,9 @@ impl ShellView {
         self.focus.focus(window, cx);
         if view == View::Settings {
             self.before_settings = self.view;
+            // What clients did and which backups exist change while it's
+            // closed.
+            self.settings.update(cx, |settings, cx| settings.reload(cx));
         }
         self.view = view;
         self.remember(window, cx);
@@ -556,13 +636,24 @@ impl ShellView {
 }
 
 /// The status bar, with the Transactions fixture's values on every view
-/// until each reads the database.
-fn status_bar() -> StatusBar {
+/// until each reads the database. The first item follows the kill switch
+/// (M3.15): "AI access off" with the `refused` icon while it's off
+/// (Paper `GW6-0`); either opens Settings → AI clients.
+fn status_bar(ai_on: bool, cx: &mut Context<ShellView>) -> StatusBar {
     // The fixture holds a page of the month; the status bar counts the
     // whole import, as Paper does.
     const IMPORTED: usize = 328;
+    let shell = cx.entity().downgrade();
+    let open = move |window: &mut Window, cx: &mut gpui_kit::App| {
+        let _ = shell.update(cx, |shell, cx| shell.show_ai_clients(window, cx));
+    };
+    let ai = if ai_on {
+        StatusItem::text("1 agent connected").agent_dot()
+    } else {
+        StatusItem::text("AI access off").muted_icon(Glyph::Refused)
+    };
     StatusBar::new()
-        .start(StatusItem::text("1 agent connected").agent_dot())
+        .start(ai.on_click("status-ai-access", open))
         .start(StatusItem::text("Reconciled").icon(Glyph::Check))
         .start(StatusItem::text(
             "Imported 2 min ago from monzo-november.csv",
@@ -589,12 +680,10 @@ impl Render for ShellView {
                     cx,
                 ))
             })
-            .map(|this| {
-                if view == View::Transactions {
-                    this.child(self.transactions.clone())
-                } else {
-                    this.child(self.render_unbuilt())
-                }
+            .map(|this| match view {
+                View::Transactions => this.child(self.transactions.clone()),
+                View::Settings => this.child(self.settings.clone()),
+                _ => this.child(self.render_unbuilt()),
             });
         window_border().child(
             div()
@@ -639,7 +728,7 @@ impl Render for ShellView {
                 .text_color(color::TEXT)
                 .child(self.render_title_bar(cx))
                 .child(body)
-                .child(status_bar())
+                .child(status_bar(self.settings.read(cx).ai_on(), cx))
                 .when_some(
                     self.dialog.as_ref().map(|(view, _)| view.clone()),
                     |this, dialog| this.child(dialog),
