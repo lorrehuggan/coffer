@@ -12,6 +12,12 @@
 //!
 //! - `transactions`: Paper `18E-0`, one AI-suggested transaction selected;
 //! - `transactions-multi`: Paper `1NP-0`, three uncategorised rows selected;
+//! - `transactions-category-menu`: the in-place category select open on the
+//!   Blue Bottle row (composed for M3.3, no Paper drawing);
+//! - `transactions-date-menu`: the Date chip's menu (composed for M3.3);
+//! - `transactions-sorted`: sorted by amount, largest out first, with the
+//!   Uncategorised chip on;
+//! - `transactions-no-match`: a search that matches nothing;
 //! - `rules`: the shell with the Rules tab active and its screen not built
 //!   yet (title bar: Paper `B8Y-0`);
 //! - `settings`: the shell with Settings open (title bar: Paper `B08-0`);
@@ -33,6 +39,8 @@ use gpui_kit::{AnyView, App, AppContext as _, Entity, HeadlessAppContext, Window
 use coffer_app::accounts::{Accounts, fixture as accounts_fixture};
 use coffer_app::shell::{ShellView, View};
 use coffer_app::showcase::Showcase;
+use coffer_app::transactions::{Menu, fixture};
+use coffer_core::reporting::register::{Sort, SortColumn};
 
 const WIDTH: f32 = 1440.;
 const HEIGHT: f32 = 900.;
@@ -66,12 +74,47 @@ fn main() -> Result<()> {
         cx.new(|cx| {
             let shell = ShellView::new(View::Transactions, window, cx);
             shell.transactions().update(cx, |view, cx| {
-                view.select(["txn-bluebottle-09", "txn-steam-07", "txn-vinted-06"], cx)
+                view.select(
+                    ["txn-bluebottle-09", "txn-steam-07", "txn-vinted-06"].map(fixture::id),
+                    cx,
+                )
             });
             shell
         })
         .into()
     })?;
+    for (name, step) in [
+        ("transactions-category-menu", TableStep::CategoryMenu),
+        ("transactions-date-menu", TableStep::DateMenu),
+        ("transactions-sorted", TableStep::Sorted),
+        ("transactions-no-match", TableStep::NoMatch),
+    ] {
+        let built: Rc<RefCell<Option<Entity<ShellView>>>> = Rc::default();
+        let keep = built.clone();
+        let build = move |window: &mut Window, cx: &mut App| -> AnyView {
+            let shell = cx.new(|cx| ShellView::new(View::Transactions, window, cx));
+            *keep.borrow_mut() = Some(shell.clone());
+            shell.into()
+        };
+        let then = move |window: &mut Window, cx: &mut App| {
+            let shell = built.borrow().clone().expect("the shell was built");
+            let view = shell.read(cx).transactions().clone();
+            view.update(cx, |view, cx| match step {
+                TableStep::CategoryMenu => {
+                    let id = fixture::id("txn-bluebottle-09");
+                    view.select([id], cx);
+                    view.show_menu(Menu::Row(id), window, cx);
+                }
+                TableStep::DateMenu => view.show_menu(Menu::Date, window, cx),
+                TableStep::Sorted => {
+                    view.set_sort(Sort::Ascending(SortColumn::Amount), cx);
+                    view.set_uncategorised(true, cx);
+                }
+                TableStep::NoMatch => view.set_search("zzz", window, cx),
+            });
+        };
+        snapshot_then(&mut cx, &out, name, build, then)?;
+    }
     snapshot(&mut cx, &out, "rules", |window, cx| {
         cx.new(|cx| ShellView::new(View::Rules, window, cx)).into()
     })?;
@@ -125,6 +168,15 @@ fn main() -> Result<()> {
         cx.new(|cx| Showcase::new(window, cx)).into()
     })?;
     Ok(())
+}
+
+/// What a Transactions snapshot does once the window has settled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TableStep {
+    CategoryMenu,
+    DateMenu,
+    Sorted,
+    NoMatch,
 }
 
 /// What the account snapshots do after selecting Current account.

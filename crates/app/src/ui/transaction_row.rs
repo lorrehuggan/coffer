@@ -11,9 +11,10 @@
 //!
 //! These are presentation only. Virtualisation, sorting, keyboard movement
 //! and the in-place category select belong to the table that owns the rows
-//! (D5 decides whether that's the stock `DataTable`). Like [`ListRow`], a row
-//! wraps the stock `ListItem` and draws the focus ring when its owner says
-//! it's the keyboard target.
+//! (`crate::transactions`): the header reports clicks on its titles, and a
+//! row reports a double-click on its category and shows the menu its owner
+//! gives it there. Like [`ListRow`], a row wraps the stock `ListItem` and
+//! draws the focus ring when its owner says it's the keyboard target.
 //!
 //! Amounts arrive formatted: sign, currency symbol and locale are the money
 //! formatter's job (M1.5). `DESIGN.md` → "Money": a true minus (U+2212) for
@@ -21,12 +22,17 @@
 //!
 //! [`ListRow`]: crate::ui::list_row::ListRow
 
+use std::rc::Rc;
+
 use gpui_kit::component::list::ListItem;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, ClickEvent, Div, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
-    RenderOnce, Rgba, SharedString, Styled as _, Window, div,
+    AnyElement, App, ClickEvent, Div, ElementId, InteractiveElement as _, IntoElement,
+    ParentElement as _, RenderOnce, Rgba, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Transformation, Window, div, radians,
 };
+
+use gpui_kit::base::TestSupportExt as _;
 
 use crate::theme::focus::{FocusRingExt as _, FocusRingPlacement};
 use crate::theme::tokens::{color, radius, size, spacing, typography};
@@ -37,6 +43,7 @@ use crate::ui::text::TextRoleExt as _;
 use crate::ui::tracked::Tracked;
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+type SortHandler = Rc<dyn Fn(TransactionColumn, &mut Window, &mut App)>;
 
 /// A table column.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +55,23 @@ pub enum TransactionColumn {
 }
 
 impl TransactionColumn {
+    pub const ALL: [TransactionColumn; 4] = [
+        TransactionColumn::Merchant,
+        TransactionColumn::Category,
+        TransactionColumn::Account,
+        TransactionColumn::Amount,
+    ];
+
+    /// The element id of its header title.
+    pub fn element_id(self) -> &'static str {
+        match self {
+            Self::Merchant => "sort-merchant",
+            Self::Category => "sort-category",
+            Self::Account => "sort-account",
+            Self::Amount => "sort-amount",
+        }
+    }
+
     fn title(self) -> &'static str {
         match self {
             Self::Merchant => "Merchant",
@@ -122,12 +146,16 @@ fn truncating(text: impl Into<SharedString>) -> Div {
 /// rows scroll under it), bottom `hairline`, section-label type.
 ///
 /// The column the table is sorted by has a `text` label and a chevron in
-/// `icon-faint`; the others are `text-muted`.
+/// `icon-faint`, pointing down for Z–A or largest first and up otherwise;
+/// the others are `text-muted`. With [`TransactionHeader::on_sort`], every
+/// title is clickable and shows the chevron on hover.
 #[derive(IntoElement)]
 pub struct TransactionHeader {
     sorted_by: Option<TransactionColumn>,
+    descending: bool,
     show_account: bool,
     full_bleed: bool,
+    on_sort: Option<SortHandler>,
 }
 
 impl TransactionHeader {
@@ -135,14 +163,33 @@ impl TransactionHeader {
     pub fn new() -> Self {
         Self {
             sorted_by: None,
+            descending: true,
             show_account: true,
             full_bleed: false,
+            on_sort: None,
         }
     }
 
-    /// Marks the column the table is sorted by.
+    /// Marks the column the table is sorted by, largest or Z–A first.
     pub fn sorted_by(mut self, column: TransactionColumn) -> Self {
         self.sorted_by = Some(column);
+        self.descending = true;
+        self
+    }
+
+    /// Marks the column the table is sorted by, and which way.
+    pub fn sorted(mut self, column: TransactionColumn, descending: bool) -> Self {
+        self.sorted_by = Some(column);
+        self.descending = descending;
+        self
+    }
+
+    /// Runs `handler` with the column whose title was clicked.
+    pub fn on_sort(
+        mut self,
+        handler: impl Fn(TransactionColumn, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_sort = Some(Rc::new(handler));
         self
     }
 
@@ -171,14 +218,49 @@ impl Default for TransactionHeader {
 impl RenderOnce for TransactionHeader {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let role = typography::SECTION_LABEL;
+        let on_sort = self.on_sort.clone();
+        let descending = self.descending;
         let title = |column: TransactionColumn| {
             let sorted = self.sorted_by == Some(column);
+            let sortable = on_sort.is_some();
+            let group = column.element_id();
+            let chevron = || {
+                Glyph::ChevronDown
+                    .render()
+                    .text_color(color::ICON_FAINT)
+                    .when(sorted && !descending, |this| {
+                        this.with_transformation(Transformation::rotate(radians(
+                            std::f32::consts::PI,
+                        )))
+                    })
+            };
+            let handler = on_sort.clone();
+            // The chevron sits on the column's inner side, so no title moves:
+            // before the right-aligned Amount (as Paper `XL-0` draws it),
+            // after the others.
+            let lead = column == TransactionColumn::Amount;
+            let marker = || {
+                (sorted || sortable).then(|| {
+                    div()
+                        .flex()
+                        .flex_none()
+                        .when(!sorted, |this| {
+                            this.opacity(0.)
+                                .group_hover(group, |style| style.opacity(1.))
+                        })
+                        .child(chevron())
+                })
+            };
             div()
+                .id(column.element_id())
+                .group(group)
                 .flex()
                 .items_center()
                 .gap(spacing::S1)
-                .when(sorted, |this| {
-                    this.child(Glyph::ChevronDown.render().text_color(color::ICON_FAINT))
+                .when(lead, |this| this.children(marker()))
+                .when_some(handler, |this, handler| {
+                    this.cursor_pointer()
+                        .on_click(move |_, window, cx| handler(column, window, cx))
                 })
                 .child(
                     div()
@@ -192,6 +274,8 @@ impl RenderOnce for TransactionHeader {
                         })
                         .child(Tracked::new(role, column.title())),
                 )
+                .when(!lead, |this| this.children(marker()))
+                .test_support()
         };
         columns(
             div()
@@ -412,6 +496,8 @@ pub struct TransactionRow {
     focus_visible: bool,
     preview: Option<PreviewState>,
     on_click: Option<ClickHandler>,
+    on_edit_category: Option<ClickHandler>,
+    category_menu: Option<AnyElement>,
 }
 
 impl TransactionRow {
@@ -435,6 +521,8 @@ impl TransactionRow {
             focus_visible: false,
             preview: None,
             on_click: None,
+            on_edit_category: None,
+            category_menu: None,
         }
     }
 
@@ -482,6 +570,22 @@ impl TransactionRow {
         self
     }
 
+    /// Runs `handler` on a double-click on the category: open the in-place
+    /// select (`DESIGN.md` → "Inline edit").
+    pub fn on_edit_category(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_edit_category = Some(Box::new(handler));
+        self
+    }
+
+    /// Shows `menu` below the category cell: the open in-place select.
+    pub fn category_menu(mut self, menu: impl IntoElement) -> Self {
+        self.category_menu = Some(menu.into_any_element());
+        self
+    }
+
     /// Draws `state` without the input that causes it; see [`PreviewState`].
     /// Rows have no pressed look, so [`PreviewState::Pressed`] draws the
     /// resting row.
@@ -508,7 +612,7 @@ impl TransactionRow {
         .into()
     }
 
-    fn render_category(&self, text: Rgba) -> Div {
+    fn render_category(&mut self, text: Rgba) -> AnyElement {
         let role = typography::BODY;
         let label = |name: SharedString| {
             truncating(name)
@@ -519,7 +623,7 @@ impl TransactionRow {
                 .text_color(text)
         };
         let cell = div().flex().items_center().gap(spacing::S2).min_w_0();
-        match &self.category.0 {
+        let cell = match &self.category.0 {
             CategoryKind::Assigned { name, marker } => {
                 cell.child(marker.render()).child(label(name.clone()))
             }
@@ -537,12 +641,30 @@ impl TransactionRow {
                 )
                 .child(label(name.clone())),
             CategoryKind::Transfer { label: name } => cell.child(label(name.clone())),
-        }
+        };
+        let on_edit = self.on_edit_category.take();
+        let menu = self.category_menu.take();
+        cell.id("category")
+            .flex_1()
+            .when_some(on_edit, |this, handler| {
+                this.on_click(move |event, window, cx| {
+                    if event.click_count() >= 2 {
+                        handler(event, window, cx);
+                    }
+                })
+            })
+            .when_some(menu, |this, menu| {
+                // The cell is 16px tall, centred in the 28px row: 26px down
+                // puts the menu 4px below the row.
+                this.relative()
+                    .child(crate::ui::menu::below(size::CONTROL - spacing::S0_5, menu))
+            })
+            .into_any_element()
     }
 }
 
 impl RenderOnce for TransactionRow {
-    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, _: &mut App) -> impl IntoElement {
         let colors = RowColors::new(&self.category, self.selected);
         let hovered = !self.selected && self.preview == Some(PreviewState::Hovered);
         let ring = self.focus_visible || self.preview == Some(PreviewState::FocusVisible);

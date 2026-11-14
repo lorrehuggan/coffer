@@ -672,6 +672,7 @@ pub struct Chip {
     label: SharedString,
     count: Option<SharedString>,
     menu: bool,
+    active: bool,
 }
 
 impl Chip {
@@ -682,7 +683,27 @@ impl Chip {
             label: label.into(),
             count: None,
             menu: false,
+            active: false,
         }
+    }
+
+    /// Marks the chip on: a toggle that's on, or a menu chip whose filter
+    /// is set. `hover` fill and a `text` label (Paper `3TU-0`, the Excluded
+    /// chip on `3FE-0`).
+    pub fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+
+    /// Uses `focus` as the chip's focus handle, so focus can come back to it
+    /// when its menu closes.
+    pub fn track_focus(mut self, focus: &FocusHandle) -> Self {
+        self.control.focus = Some(focus.clone());
+        self
     }
 
     /// Shows `count` after the label, in Geist Mono. Pass it formatted for the
@@ -724,7 +745,7 @@ impl Chip {
         self.control.disabled
     }
 
-    fn appearance() -> Appearance {
+    fn appearance(active: bool) -> Appearance {
         Appearance {
             height: size::CONTROL,
             width: None,
@@ -732,10 +753,14 @@ impl Chip {
             padding_end: None,
             radius: radius::PILL,
             border: Some(color::BORDER),
-            fill: None,
+            fill: active.then_some(color::HOVER),
             hover: color::HOVER,
             pressed: color::CONTROL_ACTIVE,
-            foreground: color::TEXT_SECONDARY,
+            foreground: if active {
+                color::TEXT
+            } else {
+                color::TEXT_SECONDARY
+            },
             foreground_active: None,
         }
     }
@@ -754,7 +779,7 @@ impl RenderOnce for Chip {
             Some(count) => format!("{} {count}", self.label).into(),
             None => self.label.clone(),
         };
-        let look = Self::appearance();
+        let look = Self::appearance(self.active);
         let disabled = self.control.disabled_mode(&look, false);
         let paint = |color| disabled.map_or(color, |disabled| disabled.paint(color));
         let content = div()
@@ -1063,7 +1088,7 @@ mod tests {
             Some((Glyph::Sparkle, color::MOLDAVITE))
         );
 
-        let chip = Chip::appearance();
+        let chip = Chip::appearance(false);
         assert_eq!(
             (chip.height, chip.padding_x, chip.radius),
             (px(28.), px(12.), px(14.))
@@ -1092,7 +1117,7 @@ mod tests {
             ButtonVariant::OutlineCompact.appearance(),
             ButtonVariant::Secondary.appearance(),
             ButtonVariant::DestructiveOutline.appearance(),
-            Chip::appearance(),
+            Chip::appearance(false),
         ] {
             assert_eq!(look.fill, None, "{look:?}");
             assert_eq!(
@@ -1329,7 +1354,7 @@ mod tests {
             ButtonVariant::AgentOutline.appearance(),
             ButtonVariant::Toolbar.appearance(),
             IconButtonSize::Standard.appearance(),
-            Chip::appearance(),
+            Chip::appearance(false),
         ] {
             assert_eq!(
                 disabled.disabled_mode(&look, false),

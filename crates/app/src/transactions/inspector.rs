@@ -1,102 +1,159 @@
 //! The inspector (`docs/DESIGN.md` → "Transactions"; Paper `1A0-0` for one
 //! transaction, `1O7-0` for a multi-selection): 14px sections divided by
 //! hairlines.
+//!
+//! One transaction: its merchant, amount and how it was paid; Date and
+//! Account read-only with a lock (D6.3's Details: imported source fields
+//! never change); the Category select, which sets the category through core
+//! like the table's in-place select; the raw description; and whether a
+//! rule set the category. A transfer or a split row shows its category
+//! read-only: transfers are confirmed in M3.8 and split lines are set in the
+//! split editor (M3.9). Several transactions: a count, the total, what they
+//! share, one Category select that sets all of them, and the list.
 
+use coffer_core::reporting::register::RegisterRow;
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _,
+    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 
+use crate::format::{self, Sign};
 use crate::theme::tokens::{color, size, spacing, typography};
-use crate::ui::agent_suggestion::AgentSuggestion;
-use crate::ui::button::{Button, ButtonVariant};
-use crate::ui::field::{Field, FieldRow, SelectField, text_input};
+use crate::ui::field::{FieldRow, LockedValue, SelectField, error_caption};
 use crate::ui::inspector::{caption, header, section, section_title};
 use crate::ui::marker::Marker;
+use crate::ui::menu::{Select, filter_groups};
 use crate::ui::text::TextRoleExt as _;
 
-use super::TransactionsView;
-use super::fixture::{Categorisation, DAYS, Sign, Transaction, gbp};
+use super::{Menu, TransactionsView, present};
 
-/// The category select for one transaction.
-fn category_select(transaction: &Transaction) -> SelectField {
-    let select = |value: String| SelectField::new("inspector-category", value);
-    match transaction.categorisation {
-        Categorisation::Assigned(category) => {
-            select(category.name().into()).marker(category.marker())
-        }
-        Categorisation::Suggested { category, .. } => select(category.name().into()).suggested(),
-        Categorisation::Uncategorised => select("Choose a category".into())
+/// The Category select for the selection: `value` with `marker`, or a
+/// placeholder.
+fn category_select(
+    view: &TransactionsView,
+    value: Option<(String, Marker)>,
+    cx: &mut Context<TransactionsView>,
+) -> AnyElement {
+    let field = match value {
+        Some((label, marker)) => SelectField::new("inspector-category-field", label).marker(marker),
+        None => SelectField::new("inspector-category-field", "Choose a category")
             .marker(Marker::None)
             .placeholder(true),
-        Categorisation::Transfer { pot } => select(format!("Transfer · {pot}")),
-    }
+    };
+    let groups = if view.menu == Some(Menu::Inspector) {
+        filter_groups(
+            &present::category_groups(&view.register),
+            &view.menu_filter.read(cx).value(),
+        )
+    } else {
+        present::category_groups(&view.register)
+    };
+    let (toggled, chosen, moved) = (
+        cx.entity().downgrade(),
+        cx.entity().downgrade(),
+        cx.entity().downgrade(),
+    );
+    Select::new(
+        "inspector-category",
+        "Category",
+        field,
+        groups,
+        view.chosen_key(Menu::Inspector),
+        &view.inspector_select,
+    )
+    .filter(&view.menu_filter)
+    .max_height(size::CONTROL * super::MENU_ROWS)
+    .on_toggle(move |open, window, cx| {
+        toggled
+            .update(cx, |this, cx| {
+                if open != (this.menu == Some(Menu::Inspector)) {
+                    if open {
+                        this.open(Menu::Inspector, window, cx);
+                    } else {
+                        this.close(window, cx);
+                    }
+                }
+            })
+            .ok();
+    })
+    .on_choose(move |key, window, cx| {
+        chosen
+            .update(cx, |this, cx| this.choose(key, window, cx))
+            .ok();
+    })
+    .on_move(move |step, _, cx| {
+        moved
+            .update(cx, |this, cx| this.move_highlight(step, cx))
+            .ok();
+    })
+    .into_any_element()
+}
+
+/// The error under the Category select, when the last change failed.
+fn edit_error(view: &TransactionsView) -> Option<AnyElement> {
+    view.edit_error
+        .clone()
+        .map(|error| error_caption(error).into_any_element())
 }
 
 fn single(
     view: &TransactionsView,
-    transaction: &Transaction,
+    row: &RegisterRow,
     cx: &mut Context<TransactionsView>,
 ) -> Vec<AnyElement> {
-    let id = transaction.id;
+    let register = &view.register;
+    let method = row
+        .payment_type
+        .clone()
+        .filter(|text| !text.trim().is_empty());
+    let time = row.time.map(|time| time.format("%H:%M").to_string());
+    let caption_line = match (method, time) {
+        (None, None) => None,
+        (method, time) => Some(
+            caption(
+                div()
+                    .flex()
+                    .items_center()
+                    .when_some(method.clone(), |this, method| this.child(method))
+                    .when(method.is_some() && time.is_some(), |this| this.child(" · "))
+                    .when_some(time, |this, time| {
+                        this.child(div().text_role(typography::MONO_VALUE).child(time))
+                    }),
+            )
+            .into_any_element(),
+        ),
+    };
+    let account = register
+        .account(row.account)
+        .map_or(String::new(), |account| account.name.clone());
+    let category: AnyElement = if present::can_recategorise(row) {
+        let value = register
+            .row_categories(row)
+            .first()
+            .map(|category| (category.label.clone(), present::marker(category.colour)));
+        category_select(view, value, cx)
+    } else {
+        LockedValue::new(present::category_label(register, row)).into_any_element()
+    };
+
     let mut sections = vec![
         header(
-            transaction.merchant,
-            Some(gbp(transaction.amount, Sign::Always)),
-            Some(
-                caption(format!("{} · ", transaction.method))
-                    .child(
-                        div()
-                            .text_role(typography::MONO_VALUE)
-                            .child(transaction.time),
-                    )
-                    .into_any_element(),
-            ),
+            row.merchant.clone(),
+            Some(format::money(row.amount, Sign::Always)),
+            caption_line,
         )
         .into_any_element(),
         section(true)
             .gap(spacing::S2)
             .child(FieldRow::new(
                 "Date",
-                Field::new(DAYS[transaction.day].date).mono(true),
+                LockedValue::new(format::field_date(row.date)).mono(true),
             ))
-            .child(FieldRow::new(
-                "Account",
-                SelectField::new("inspector-account", transaction.account),
-            ))
-            .child(FieldRow::new("Category", category_select(transaction)))
-            .child(FieldRow::new("Note", text_input(&view.note)))
+            .child(FieldRow::new("Account", LockedValue::new(account)))
+            .child(FieldRow::new("Category", category))
+            .children(edit_error(view))
             .into_any_element(),
-    ];
-
-    if let Categorisation::Suggested { category, reason } = transaction.categorisation {
-        sections.push(
-            div()
-                .flex()
-                .flex_col()
-                .flex_none()
-                .px(spacing::S3_5)
-                .pb(spacing::S3_5)
-                .child(
-                    AgentSuggestion::new(
-                        "Claude",
-                        "Claude Code · 2h ago",
-                        "Categorise as",
-                        category.name(),
-                    )
-                    .reason(reason)
-                    .on_approve(
-                        cx.listener(move |this, _, _, cx| this.resolve_suggestion(id, true, cx)),
-                    )
-                    .on_reject(
-                        cx.listener(move |this, _, _, cx| this.resolve_suggestion(id, false, cx)),
-                    ),
-                )
-                .into_any_element(),
-        );
-    }
-
-    sections.push(
         section(true)
             .gap(spacing::S2)
             .child(section_title("Raw description"))
@@ -104,62 +161,66 @@ fn single(
                 div()
                     .text_role(typography::MONO_VALUE)
                     .text_color(color::TEXT_SECONDARY)
-                    .child(transaction.raw_description),
+                    .child(row.description.clone()),
             )
             .into_any_element(),
-    );
-    sections.push(
-        section(true)
-            .gap(spacing::S2)
-            .child(section_title("Rule"))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(spacing::S2)
-                    .child(
-                        div()
-                            .text_role(typography::BODY)
-                            .text_color(color::TEXT_MUTED)
-                            .child("No rule matched"),
-                    )
-                    .child(
-                        Button::new("create-rule", "Create rule from this")
-                            .with_variant(ButtonVariant::Outline),
-                    ),
-            )
-            .into_any_element(),
-    );
+    ];
+    if row.transfer.is_none() {
+        sections.push(
+            section(true)
+                .gap(spacing::S2)
+                .child(section_title("Rule"))
+                .child(
+                    div()
+                        .text_role(typography::BODY)
+                        .text_color(color::TEXT_MUTED)
+                        .child(if row.rule.is_some() {
+                            "A rule set this category"
+                        } else {
+                            "No rule matched"
+                        }),
+                )
+                .into_any_element(),
+        );
+    }
     sections
 }
 
-/// What every transaction in `selected` shares, for the summary caption:
+/// What every row in `selected` shares, for the summary caption:
 /// "Uncategorised · Current account".
-fn shared(selected: &[&Transaction]) -> Vec<String> {
+fn shared(view: &TransactionsView, selected: &[&RegisterRow]) -> Vec<String> {
     let mut parts = Vec::new();
-    let all = |same: &dyn Fn(&Transaction, &Transaction) -> bool| {
+    let all = |same: &dyn Fn(&RegisterRow, &RegisterRow) -> bool| {
         selected.windows(2).all(|pair| same(pair[0], pair[1]))
     };
-    if all(&|a, b| a.categorisation == b.categorisation) {
-        parts.push(match selected[0].categorisation {
-            Categorisation::Assigned(category) => category.name().to_owned(),
-            Categorisation::Uncategorised => "Uncategorised".to_owned(),
-            Categorisation::Suggested { category, .. } => format!("Suggested {}", category.name()),
-            Categorisation::Transfer { .. } => "Transfers".to_owned(),
+    if all(&|a, b| a.category == b.category && a.transfer.is_some() == b.transfer.is_some()) {
+        let first = selected[0];
+        parts.push(if first.transfer.is_some() {
+            "Transfers".to_owned()
+        } else {
+            present::category_label(&view.register, first)
         });
     }
-    if all(&|a, b| a.account == b.account) {
-        parts.push(selected[0].account.to_owned());
+    if all(&|a, b| a.account == b.account)
+        && let Some(account) = view.register.account(selected[0].account)
+    {
+        parts.push(account.name.clone());
     }
     parts
 }
 
-fn multiple(selected: &[&Transaction]) -> Vec<AnyElement> {
-    let total: i64 = selected.iter().map(|transaction| transaction.amount).sum();
-    let shared = shared(selected);
-    let rows = selected.iter().map(|transaction| {
+fn multiple(
+    view: &TransactionsView,
+    selected: &[&RegisterRow],
+    cx: &mut Context<TransactionsView>,
+) -> Vec<AnyElement> {
+    let totals = present::total(selected);
+    let figure = (totals.len() == 1).then(|| format::money(totals[0], Sign::Always));
+    let shared = shared(view, selected);
+    let today = view.today;
+    let rows = selected.iter().map(|row| {
         div()
+            .id(SharedString::from(format!("selected-{}", row.id)))
             .flex()
             .items_center()
             .gap(spacing::S3)
@@ -169,7 +230,7 @@ fn multiple(selected: &[&Transaction]) -> Vec<AnyElement> {
                     .flex_none()
                     .text_role(typography::MONO_VALUE)
                     .text_color(color::TEXT_MUTED)
-                    .child(DAYS[transaction.day].short),
+                    .child(format::list_date(row.date, today)),
             )
             .child(
                 div()
@@ -179,31 +240,35 @@ fn multiple(selected: &[&Transaction]) -> Vec<AnyElement> {
                     .text_ellipsis()
                     .text_role(typography::BODY)
                     .text_color(color::TEXT_SECONDARY)
-                    .child(transaction.merchant),
+                    .child(row.merchant.clone()),
             )
             .child(
                 div()
                     .flex_none()
                     .text_role(typography::MONO_AMOUNT)
                     .text_color(color::TEXT)
-                    .child(gbp(transaction.amount, Sign::Always)),
+                    .child(format::money(row.amount, Sign::Always)),
             )
     });
+    let value = view
+        .chosen_key(Menu::Inspector)
+        .and_then(|key| key.parse::<i64>().ok())
+        .and_then(|id| view.register.category(id))
+        .map(|category| (category.label.clone(), present::marker(category.colour)));
+    let editable = selected.iter().any(|row| present::can_recategorise(row));
     vec![
         header(
             format!("{} transactions", selected.len()),
-            Some(gbp(total, Sign::Always)),
+            figure,
             (!shared.is_empty()).then(|| caption(shared.join(" · ")).into_any_element()),
         )
         .into_any_element(),
         section(true)
             .gap(spacing::S2)
-            .child(FieldRow::new(
-                "Category",
-                SelectField::new("inspector-category", "Choose a category")
-                    .marker(Marker::None)
-                    .placeholder(true),
-            ))
+            .when(editable, |this| {
+                this.child(FieldRow::new("Category", category_select(view, value, cx)))
+                    .children(edit_error(view))
+            })
             .into_any_element(),
         section(true)
             .gap(spacing::S2)
@@ -237,8 +302,8 @@ pub(super) fn render(
             Some(account) => vec![account.into_any_element()],
             None => empty(),
         },
-        [transaction] => single(view, transaction, cx),
-        many => multiple(many),
+        [row] => single(view, row, cx),
+        many => multiple(view, many, cx),
     };
     div()
         .id("inspector")
@@ -256,31 +321,26 @@ pub(super) fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transactions::fixture::TRANSACTIONS;
+    use crate::transactions::fixture;
 
-    fn by_id(id: &str) -> &'static Transaction {
-        TRANSACTIONS
-            .iter()
-            .find(|transaction| transaction.id == id)
-            .expect("fixture transaction")
-    }
+    #[gpui_kit::test]
+    fn the_summary_names_what_the_selection_shares(cx: &mut gpui_kit::TestAppContext) {
+        let view = super::super::tests::fixture_view(cx);
+        cx.update(|cx| {
+            let view = view.read(cx);
+            let rows: Vec<_> = ["txn-bluebottle-09", "txn-steam-07", "txn-vinted-06"]
+                .into_iter()
+                .map(|name| view.register.row(fixture::id(name)).unwrap())
+                .collect();
+            assert_eq!(shared(view, &rows), ["Uncategorised", "Current account"]);
+            let totals = present::total(&rows);
+            assert_eq!(format::money(totals[0], Sign::Always), "−£29.94");
 
-    #[test]
-    fn the_summary_names_what_the_selection_shares() {
-        // The multi-select artboard's three rows.
-        let selected = [
-            by_id("txn-bluebottle-09"),
-            by_id("txn-steam-07"),
-            by_id("txn-vinted-06"),
-        ];
-        assert_eq!(shared(&selected), ["Uncategorised", "Current account"]);
-        let total: i64 = selected.iter().map(|transaction| transaction.amount).sum();
-        assert_eq!(gbp(total, Sign::Always), "−£29.94");
-    }
-
-    #[test]
-    fn the_summary_leaves_out_what_differs() {
-        let selected = [by_id("txn-pret-09"), by_id("txn-amazon-09")];
-        assert!(shared(&selected).is_empty());
+            let rows: Vec<_> = ["txn-pret-09", "txn-amazon-09"]
+                .into_iter()
+                .map(|name| view.register.row(fixture::id(name)).unwrap())
+                .collect();
+            assert!(shared(view, &rows).is_empty());
+        });
     }
 }

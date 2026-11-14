@@ -3,12 +3,12 @@
 //! multi-selection, floating over the table.
 
 use gpui_kit::{
-    App, ClickEvent, IntoElement, ParentElement as _, RenderOnce, SharedString, Styled as _,
-    Window, div,
+    AnyElement, App, ClickEvent, IntoElement, ParentElement as _, RenderOnce, SharedString,
+    Styled as _, Window, div,
 };
 
 use crate::theme::tokens::{color, radius, shadow, size, spacing, typography, weight};
-use crate::ui::button::{Button, IconButton};
+use crate::ui::button::IconButton;
 use crate::ui::icon::Glyph;
 use crate::ui::separator;
 use crate::ui::text::TextRoleExt as _;
@@ -24,7 +24,7 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 #[derive(IntoElement)]
 pub struct BulkActionBar {
     count: SharedString,
-    actions: Vec<Button>,
+    actions: Vec<AnyElement>,
     on_clear: Option<ClickHandler>,
 }
 
@@ -39,11 +39,11 @@ impl BulkActionBar {
     }
 
     /// Adds an action after the others: a [`ButtonVariant::Toolbar`]
-    /// button.
+    /// button, or one wrapped by its owner (to open a menu from it).
     ///
     /// [`ButtonVariant::Toolbar`]: crate::ui::button::ButtonVariant::Toolbar
-    pub fn action(mut self, action: Button) -> Self {
-        self.actions.push(action);
+    pub fn action(mut self, action: impl IntoElement) -> Self {
+        self.actions.push(action.into_any_element());
         self
     }
 
@@ -98,7 +98,7 @@ impl RenderOnce for BulkActionBar {
             .shadow(vec![shadow::TOOLBAR.box_shadow()])
             .child(count)
             .child(rule())
-            .children(self.actions.into_iter().map(IntoElement::into_any_element))
+            .children(self.actions)
             .child(rule())
             .child(clear)
     }

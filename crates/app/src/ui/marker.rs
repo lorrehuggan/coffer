@@ -2,7 +2,7 @@
 //! "Data table (Transactions)"): a category's colour wherever the category
 //! is named, in lists, table cells and selects.
 
-use gpui_kit::{Div, Rgba, Styled as _, div};
+use gpui_kit::{Div, ParentElement as _, Rgba, Styled as _, div};
 
 use crate::theme::tokens::{color, radius, size};
 
@@ -18,6 +18,9 @@ pub enum Marker {
     /// `text-muted` outline and no fill, so it stays distinct from
     /// [`Other`](Self::Other).
     None,
+    /// A split row: the left and right halves in the two largest lines'
+    /// colours (`DESIGN.md` → "Split row in the table").
+    Split(Rgba, Rgba),
 }
 
 impl Marker {
@@ -34,6 +37,11 @@ impl Marker {
                 .border(size::HAIRLINE)
                 .border_dashed()
                 .border_color(color::TEXT_MUTED),
+            Self::Split(left, right) => marker
+                .flex()
+                .overflow_hidden()
+                .child(div().flex_1().h_full().bg(left))
+                .child(div().flex_1().h_full().bg(right)),
         }
     }
 }

@@ -27,6 +27,7 @@ pub mod text;
 pub mod title_bar;
 pub mod tracked;
 pub mod transaction_row;
+pub mod undo_bar;
 
 use gpui_kit::{Div, Pixels, Rgba, Styled as _, div};
 

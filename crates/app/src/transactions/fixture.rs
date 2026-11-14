@@ -3,10 +3,19 @@
 //! Transactions · multi-select (`1NP-0`). Merchants, amounts and
 //! descriptions are made up.
 //!
-//! Stands in for the database until M1. Amounts are integer pence, as the
-//! real money type will be (`docs/ARCHITECTURE.md` → invariants); [`gbp`]
-//! formats them until the money formatter exists (M1.5).
+//! The view reads the database since M3.3; [`register`] turns these rows
+//! into the same [`Register`] core reads, for snapshots and tests without a
+//! database. The agent's suggestions there show as uncategorised: the
+//! table shows suggestions with the Inbox (M3.6). Amounts are integer pence.
 
+use chrono::{NaiveDate, NaiveTime};
+use coffer_core::account::AccountKind;
+use coffer_core::category::{CategoryKey, CategoryKind};
+use coffer_core::id::{AccountId, TransactionId};
+use coffer_core::money::{Currency, Money};
+use coffer_core::reporting::register::{
+    Colour, Register, RegisterAccount, RegisterCategory, RegisterRow, RowCategory,
+};
 use gpui_kit::Rgba;
 
 use crate::theme::tokens::color;
@@ -527,6 +536,116 @@ pub fn net_worth() -> i64 {
 
 pub use crate::format::Sign;
 
+impl Category {
+    /// Its ID in the [`register`]: its place in [`Category::ALL`], from 1.
+    pub fn id(self) -> i64 {
+        Self::ALL
+            .iter()
+            .position(|c| *c == self)
+            .map_or(0, |at| at as i64 + 1)
+    }
+
+    fn colour(self) -> Colour {
+        match self {
+            Self::Groceries => Colour::Chart(1),
+            Self::EatingOut => Colour::Chart(2),
+            Self::Shopping => Colour::Chart(3),
+            Self::Transport => Colour::Chart(4),
+            Self::Bills => Colour::Chart(5),
+            Self::Entertainment => Colour::Chart(6),
+            Self::Other => Colour::Other,
+        }
+    }
+}
+
+/// The ID a fixture transaction gets in the [`register`]: descending in
+/// [`TRANSACTIONS`] order, so the register's newest-first order (date, then
+/// ID) keeps each day's rows as Paper draws them.
+pub fn id(name: &str) -> TransactionId {
+    let index = TRANSACTIONS
+        .iter()
+        .position(|transaction| transaction.id == name)
+        .unwrap_or_else(|| panic!("no fixture transaction {name}"));
+    TransactionId::new((TRANSACTIONS.len() - index) as i64)
+}
+
+/// The accounts the rows name, as [`crate::accounts::fixture::accounts`]
+/// numbers them.
+fn register_accounts() -> Vec<RegisterAccount> {
+    let account = |id: i64, name: &str, kind| RegisterAccount {
+        id: AccountId::new(id),
+        name: name.to_owned(),
+        kind,
+    };
+    vec![
+        account(1, CURRENT, AccountKind::Current),
+        account(2, "Holiday", AccountKind::Pot),
+        account(3, "Rainy day", AccountKind::Pot),
+        account(4, JOINT, AccountKind::Current),
+        account(5, "Savings", AccountKind::Savings),
+        account(6, "Stocks ISA", AccountKind::Savings),
+    ]
+}
+
+fn account_id(name: &str) -> AccountId {
+    register_accounts()
+        .into_iter()
+        .find(|account| account.name == name || format!("{} pot", account.name) == name)
+        .map_or(AccountId::new(0), |account| account.id)
+}
+
+/// The rows of the Transactions artboards (`18E-0`, `1NP-0`) as a
+/// [`Register`]: what the view shows without a database.
+pub fn register() -> Register {
+    let categories = Category::ALL
+        .into_iter()
+        .map(|category| RegisterCategory {
+            id: category.id(),
+            key: CategoryKey::new(&category.name().to_lowercase().replace(' ', "_"))
+                .expect("a fixture key"),
+            label: category.name().to_owned(),
+            kind: CategoryKind::Spending,
+            group: None,
+            colour: category.colour(),
+        })
+        .collect();
+    let first = NaiveDate::from_ymd_opt(2026, 11, 9).expect("a date");
+    let rows = TRANSACTIONS
+        .iter()
+        .map(|transaction| {
+            let (category, transfer) = match transaction.categorisation {
+                Categorisation::Assigned(category) => (RowCategory::Category(category.id()), None),
+                Categorisation::Uncategorised | Categorisation::Suggested { .. } => {
+                    (RowCategory::Uncategorised, None)
+                }
+                Categorisation::Transfer { pot } => {
+                    (RowCategory::Uncategorised, Some(vec![account_id(pot)]))
+                }
+            };
+            RegisterRow {
+                id: id(transaction.id),
+                account: account_id(transaction.account),
+                date: first - chrono::Days::new(transaction.day as u64),
+                time: NaiveTime::parse_from_str(transaction.time, "%H:%M").ok(),
+                amount: Money::new(transaction.amount, Currency::GBP),
+                original: transaction
+                    .original_amount
+                    .map(|_| Money::new(-4800, Currency::EUR)),
+                merchant: transaction.merchant.to_owned(),
+                bank_merchant: None,
+                description: transaction.raw_description.to_owned(),
+                payment_type: Some(transaction.method.to_owned()),
+                category,
+                rule: None,
+                transfer,
+                excluded: None,
+                note: None,
+            }
+        })
+        .collect();
+    Register::new(rows, register_accounts(), categories)
+}
+
 /// `pence` as pounds for en-GB: "£1,284.10", with a true minus (U+2212)
 /// and an explicit plus where `sign` asks (`docs/DESIGN.md` → "Money").
 pub fn gbp(pence: i64, sign: Sign) -> String {
@@ -562,6 +681,17 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), TRANSACTIONS.len());
+    }
+
+    #[test]
+    fn the_register_keeps_the_artboard_order() {
+        let register = register();
+        let order: Vec<_> = register.rows().iter().map(|row| row.id).collect();
+        let expected: Vec<_> = TRANSACTIONS.iter().map(|txn| id(txn.id)).collect();
+        assert_eq!(order, expected);
+        let rainy = register.row(id("txn-rainy-day-09")).unwrap();
+        assert_eq!(rainy.transfer, Some(vec![AccountId::new(3)]));
+        assert_eq!(rainy.account, AccountId::new(1));
     }
 
     #[test]

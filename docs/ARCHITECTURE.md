@@ -1185,7 +1185,8 @@ Everything else follows `DESIGN.md` or an earlier record.
    Until its roadmap item lands, a view shows its shell (the accounts panel on the money
    views, nothing on the others), with the Empty state component (`13L-0`) centred on the
    canvas, as `DESIGN.md` → "Review queues" centres an empty canvas: "{View} isn't built
-   yet", a line saying Transactions works on sample data, and the ⌘2 shortcut.
+   yet", a line saying Transactions works on sample data (since M3.3, that Transactions
+   works), and the ⌘2 shortcut.
 
 ### Decision record: accounts management (2026-11-14)
 
@@ -1235,8 +1236,66 @@ Everything else follows `DESIGN.md` → "Accounts panel" or an earlier record.
    that can't be read leaves the panel empty with the reason in `danger`.
 7. **Where the account inspector shows (user).** On Transactions, while an account is
    selected and no transaction is: clicking an account clears the transaction
-   selection. The table isn't filtered by it until it reads the database (M3.3); on the
-   views without an inspector, selection only highlights the row.
+   selection. Since M3.3 the table is filtered by it too; on the views without an
+   inspector, selection only highlights the row.
+
+### Decision record: the Transactions view (2026-11-14)
+
+M3.3. Marked **(user)**: decided by the user on 2026-11-14 when asked before the build
+(each was the recommended option). Everything else follows `DESIGN.md` → "Transactions"
+and "Data table (Transactions)", or an earlier record.
+
+1. **A read model of its own, in core (`reporting::register`).** The reports' `Ledger`
+   keeps only what counts (no transfers, no excluded rows, one line per split), so the
+   table reads every transaction once into a `Register`: one `RegisterRow` per
+   transaction with its split lines, its confirmed-transfer partners, its exclusion and
+   the accounts and categories it names. `Register::select` is pure: it filters, groups
+   by day (each day's net leaves transfers and excluded rows out, per currency) and
+   sorts. A person's ledger fits in memory, so the app reads the register on a
+   background thread at start and after each change, and filters in memory: a
+   keystroke in the search field never reads the database. No migration and no FTS5
+   index (`research/crates.md` suggested one): substring matching in memory covers it.
+2. **Category colours are ranked when the register is read (user).** No colour is
+   stored on `category` yet. The six top-level groups with the most spending over the 12
+   months to today (the user's share, `personal_minor`) take `chart-1` … `chart-6`, in
+   order; their subcategories share the colour; everything else, income, transfers,
+   groups with no spending and the `other` group, is the "Other" marker. Amounts in
+   different currencies are never added: the ranking uses the currency with the most
+   spending lines. M4.1 stores the colours so charts and the table agree.
+3. **Category edits are core's `inbox::own::recategorize`**, as `coffer categorize`:
+   one DB transaction, one undoable `bulk_edit` change batch, category source `user`
+   (so repeated identical edits can still file Coffer's own `rule` suggestion). The
+   table's in-place select (Enter, or a double-click on the category), the inspector's
+   Category select and the bulk-action bar's Categorise all take that path; a split row
+   or a confirmed transfer isn't offered one (split lines are set in the split editor,
+   M3.9; transfers are M3.8). After a change to several rows the undo bar (`53O-0`)
+   offers `change::undo`; a single edit is undone from the change history (M3.13). The
+   fixture can't change: an edit there says so under the Category select.
+4. **Filters.** The accounts panel's selection is the account filter, and the Account
+   chip mirrors it ("All accounts" clears the panel). The Category chip takes one
+   category; a group includes its subcategories, and a split row matches when any line
+   does. The Date chip's presets (this month, last month, the last 3 months, this year,
+   all time) cover whole periods, so a later row this month still shows. "Uncategorised"
+   means no category and not a confirmed transfer, or a split line without one; its
+   count follows every other filter. Search matches the display merchant, the bank's
+   merchant and the raw description, ignoring case; the text is only matched. Excluded
+   rows stay hidden until the Excluded chip (M3.10). Escape clears the selection, and
+   with nothing selected, the search and every filter.
+5. **Sorting stays within each day (user).** A click on a column title sorts each day's
+   rows by it (merchant, category, account A–Z; amount smallest first, so the largest
+   payments out lead), a second click reverses, a third goes back to newest first. Day
+   headers and nets never move.
+6. **Composed states, not drawn (user; `DESIGN.md` → "Transactions" → "Built in
+   M3.3").** The category menu is the Kind menu with the marker in the icon slot, each
+   group under its caps label (its own category first), and a filter field at the top;
+   the chip menus are the same menu; a filtered chip and the Uncategorised chip when on
+   take the Excluded chip's on look; no match shows the Empty state with "Esc Clear
+   filters".
+7. **Left for later.** AI suggestions in the table and the inspector's agent card are
+   the Inbox's (M3.6, M3.14): approving one is a whole-suggestion change. No row is
+   flagged yet: nothing records a per-transaction problem. Mark as transfer, Create
+   rule and Import stay inert until M3.8, M3.13 and M3.4. The left panel's CATEGORIES
+   list and the status bar still show the fixture.
 
 ## Architecture
 

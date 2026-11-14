@@ -7,7 +7,10 @@ use super::*;
 
 /// A transaction row on the Transactions screen, present only while it
 /// shows.
-const A_ROW: &str = "txn-amazon-09";
+/// The fixture's Amazon payment, the row the window opens on.
+fn a_row() -> String {
+    format!("txn-{}", crate::transactions::fixture::id("txn-amazon-09"))
+}
 
 /// The accounts panel's "Add account" button, present only while the panel
 /// shows.
@@ -32,8 +35,9 @@ fn view(shell: &Entity<ShellView>, cx: &mut VisualTestContext) -> View {
     cx.update(|_, cx| shell.read(cx).view())
 }
 
-fn shows(id: &'static str, cx: &mut VisualTestContext) -> bool {
-    cx.update(|window, _| window.try_find(id).is_some())
+fn shows(id: &str, cx: &mut VisualTestContext) -> bool {
+    let id = gpui_kit::SharedString::from(id.to_owned());
+    cx.update(move |window, _| window.try_find(id).is_some())
 }
 
 /// A shortcut with the platform's command key: ⌘ on macOS, Ctrl elsewhere,
@@ -107,13 +111,13 @@ fn the_money_views_share_the_accounts_panel() {
 #[gpui_kit::test]
 fn clicking_a_tab_opens_its_view(cx: &mut TestAppContext) {
     let (shell, cx) = open_shell(cx, View::Transactions);
-    assert!(shows(A_ROW, cx), "Transactions shows its table");
+    assert!(shows(&a_row(), cx), "Transactions shows its table");
     assert!(shows(ACCOUNTS_PANEL, cx));
 
     cx.update(|window, cx| window.click("view-rules", cx));
     assert_eq!(view(&shell, cx), View::Rules);
     redraw(cx);
-    assert!(!shows(A_ROW, cx), "Rules isn't the table");
+    assert!(!shows(&a_row(), cx), "Rules isn't the table");
     assert!(!shows(ACCOUNTS_PANEL, cx), "Rules has no accounts panel");
 
     cx.update(|window, cx| window.click("view-budgets", cx));
@@ -123,7 +127,7 @@ fn clicking_a_tab_opens_its_view(cx: &mut TestAppContext) {
 
     cx.update(|window, cx| window.click("view-transactions", cx));
     redraw(cx);
-    assert!(shows(A_ROW, cx));
+    assert!(shows(&a_row(), cx));
 }
 
 /// The tabs that report themselves selected to assistive technology.
@@ -207,7 +211,7 @@ fn shortcuts_open_the_views(cx: &mut TestAppContext) {
 fn shortcuts_work_from_inside_the_table(cx: &mut TestAppContext) {
     let (shell, cx) = open_shell(cx, View::Transactions);
     // A click focuses the table; its keys still reach the shell.
-    cx.update(|window, cx| window.click(A_ROW, cx));
+    cx.update(|window, cx| window.click(a_row(), cx));
     cx.simulate_keystrokes(&secondary("8"));
     assert_eq!(view(&shell, cx), View::Rules);
     // The focused table has left the window; the next shortcut still lands.
@@ -219,7 +223,8 @@ fn shortcuts_work_from_inside_the_table(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_transactions_selection_survives_a_switch(cx: &mut TestAppContext) {
     let (shell, cx) = open_shell(cx, View::Transactions);
-    cx.update(|window, cx| window.click("txn-pret-09", cx));
+    let pret = crate::transactions::fixture::id("txn-pret-09");
+    cx.update(|window, cx| window.click(format!("txn-{pret}"), cx));
     cx.update(|window, cx| window.click("view-overview", cx));
     redraw(cx);
     cx.update(|window, cx| window.click("view-transactions", cx));
@@ -231,7 +236,7 @@ fn the_transactions_selection_survives_a_switch(cx: &mut TestAppContext) {
             .map(|transaction| transaction.id)
             .collect::<Vec<_>>()
     });
-    assert_eq!(selected, ["txn-pret-09"]);
+    assert_eq!(selected, [pret]);
 }
 
 /// A shell that saves its window state to a database in a scratch dir.

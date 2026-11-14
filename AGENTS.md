@@ -71,7 +71,9 @@ database can't be opened, moved into the log later; `V11__mcp.sql`,
 (`envelope`: `sanitize`, `strip_invisible`, `reads_like_instructions`, merchant
 pseudonyms; M2.13), reporting (`reporting`: the `Ledger` over `ledger_line`, `Period`,
 per-currency `Totals`, `Limit`; `summary`, `spending`, `budget_status`, `net_worth`,
-`balance`, `rows`, `catalog`; M2.2; `account_tree`, the accounts panel's read model, M3.2) and budgets (`budget`), recurring detection
+`balance`, `rows`, `catalog`; M2.2; `account_tree`, the accounts panel's read model, M3.2;
+`register`, the Transactions table's read model: every transaction, filtered, grouped by
+day and sorted in memory, category colours ranked at read time, M3.3) and budgets (`budget`), recurring detection
 (`recurring`, M2.6) and schedules (`schedule`: confirm, match at import, skips, missed and
 late; M2.10; `V12__schedule.sql`), the inbox (`inbox`: typed payloads, filing with dedupe
 and caps, `approve`/`approve_all`/`reject`, `impact`, and `own`, Coffer's own rule
@@ -93,10 +95,16 @@ database: pots nested, balances, flagged and "No balance" rows, arrow keys), `in
 (the account inspector on Transactions while an account and no transaction is selected:
 details, balances, pots, imports), the `new_account` and `add_balance` dialogs, and
 `fixture` (sample accounts for snapshots and tests). Coffer's dialog and select are
-`ui::dialog` and `ui::menu`, on the unstyled `gpui-base` roots; `format` writes and reads
-money and dates. Transactions (`crates/app/src/transactions.rs`) is still on fixture
-data (the table isn't filtered by account until M3.3); the other views show the shell
-and `ui::empty_state`. And
+`ui::dialog` and `ui::menu` (since M3.3 also `MenuList`, the menu opened from a chip, a
+row or the bulk-action bar, with a filter field), on the unstyled `gpui-base` roots;
+`format` writes and reads money and dates. Transactions (`crates/app/src/transactions.rs`,
+M3.3) reads the database through `transactions::store::TransactionStore` (the register
+on a background thread, category changes through `inbox::own::recategorize`, undo
+through `change::undo`), is filtered by the accounts panel and its chips, sorts within
+each day, and sets categories in place; `present` turns rows into cells and menu
+options, `fixture` keeps the Paper rows as a `Register` for snapshots and tests, and
+`ui::undo_bar` is the undo notification. The other views show the shell and
+`ui::empty_state`. And
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
 `import`, `accounts` (`list`, `add`, `--preset` since M3.2), `undo-import`, `backup` (`--list`) and
 `restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2
