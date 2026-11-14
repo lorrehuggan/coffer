@@ -546,6 +546,14 @@ pub mod shadow {
         color: translucent(0x00000073),
         inset: false,
     };
+    /// `0 10px 30px #00000080`: dialogs (D6.3) and the bottom tool dock.
+    pub const DOCK: Shadow = Shadow {
+        offset_y: px(10.),
+        blur: px(30.),
+        spread: px(0.),
+        color: translucent(0x00000080),
+        inset: false,
+    };
 }
 
 /// Text roles from the type scale in `DESIGN.md`. Colour is not part of a role:
@@ -658,6 +666,18 @@ pub mod typography {
     /// [`weight::STRONG`].
     pub const MONO_MICRO: TextRole =
         role(font::MONO, text::MICRO, leading::MICRO, weight::REGULAR, 0.);
+    /// 10/12 600 +0.06em uppercase: a menu's group labels ("IMPORTED FROM
+    /// YOUR BANK", Paper `FHZ-0`).
+    pub const MENU_LABEL: TextRole = TextRole {
+        uppercase: true,
+        ..role(
+            font::UI,
+            text::MICRO,
+            leading::MICRO,
+            weight::STRONG,
+            tracking::CAPS,
+        )
+    };
     /// 10/12 700: count badges.
     pub const BADGE: TextRole = role(font::UI, text::MICRO, leading::MICRO, weight::BOLD, 0.);
 }

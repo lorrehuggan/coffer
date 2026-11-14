@@ -107,7 +107,7 @@ pub fn net_worth_history(
 }
 
 /// What `balance` adds to net worth: a liability always subtracts.
-fn counted(account: &Account, balance: Money) -> Result<Money, Error> {
+pub(crate) fn counted(account: &Account, balance: Money) -> Result<Money, Error> {
     Ok(match account.kind {
         AccountKind::Liability => balance.checked_abs()?.checked_neg()?,
         _ => balance,

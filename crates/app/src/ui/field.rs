@@ -15,6 +15,7 @@ use gpui_kit::{
     ParentElement as _, RenderOnce, Rgba, SharedString, StatefulInteractiveElement as _,
     Styled as _, Window, div,
 };
+use gpui_kit::{Div, Pixels};
 
 use crate::theme::tokens::{color, font, leading, radius, size, spacing, text, typography};
 use crate::ui::icon::Glyph;
@@ -264,4 +265,107 @@ pub fn search_input(state: &Entity<InputState>) -> Input {
         .gap(spacing::S2)
         .border(size::HAIRLINE)
         .border_color(color::HAIRLINE)
+}
+
+/// An amount field (Paper `8JE-0`, New account → Balance): the currency's
+/// symbol in mono `text-faint`, then the amount in Geist Mono. The
+/// placeholder ("Optional") is in UI type, so the font follows the value.
+pub fn amount_input(
+    state: &Entity<InputState>,
+    prefix: impl Into<SharedString>,
+    cx: &App,
+) -> Input {
+    let typed = !state.read(cx).value().is_empty();
+    text_input(state)
+        .prefix(
+            div()
+                .text_role(typography::MONO_AMOUNT)
+                .text_color(color::TEXT_FAINT)
+                .child(prefix.into()),
+        )
+        .when(typed, |this| this.font_family(font::MONO))
+}
+
+/// A date field typed as text, `9 Nov 2026`: 96px (`--container-column-
+/// amount`), Geist Mono. No picker is drawn yet (`DESIGN.md` → "Accounts
+/// management").
+pub fn date_input(state: &Entity<InputState>) -> Input {
+    text_input(state)
+        .flex_none()
+        .w(size::COLUMN_AMOUNT)
+        .font_family(font::MONO)
+}
+
+/// A value that can't be changed here, followed by a 10px `icon-faint`
+/// lock (Paper `8GJ-0`, the inspector's Currency once the account holds
+/// money): no field fill, 8px inline padding, the value in `text`.
+#[derive(IntoElement)]
+pub struct LockedValue {
+    value: SharedString,
+    mono: bool,
+}
+
+impl LockedValue {
+    pub fn new(value: impl Into<SharedString>) -> Self {
+        Self {
+            value: value.into(),
+            mono: false,
+        }
+    }
+
+    /// Sets the value in Geist Mono: a currency code.
+    pub fn mono(mut self, mono: bool) -> Self {
+        self.mono = mono;
+        self
+    }
+}
+
+impl RenderOnce for LockedValue {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .items_center()
+            .gap(spacing::S1_5)
+            .px(spacing::S2)
+            .child(
+                div()
+                    .text_role(if self.mono {
+                        typography::MONO_AMOUNT
+                    } else {
+                        typography::BODY
+                    })
+                    .text_color(color::TEXT)
+                    .child(self.value),
+            )
+            .child(Glyph::Lock.render().text_color(color::ICON_FAINT))
+    }
+}
+
+/// A caption under a form saying what's wrong with it, in `danger`
+/// (composed for M3.2: no field error state is drawn).
+pub fn error_caption(text: impl Into<SharedString>) -> Div {
+    div()
+        .text_role(typography::CAPTION)
+        .text_color(color::DANGER)
+        .child(text.into())
+}
+
+/// A caption: 11/14 `text-muted`, wrapping.
+pub fn caption(text: impl Into<SharedString>) -> Div {
+    div()
+        .text_role(typography::CAPTION)
+        .text_color(color::TEXT_MUTED)
+        .child(text.into())
+}
+
+/// The width of a date lane in a list of dated rows: 48px for `9 Nov`
+/// (Paper `8GJ-0`), 56px when a row shows a year, `2 Oct 25` (D6.9).
+pub fn date_lane(with_year: bool) -> Pixels {
+    if with_year {
+        spacing::S6 * 2. + spacing::S2
+    } else {
+        spacing::S6 * 2.
+    }
 }

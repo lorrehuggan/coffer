@@ -525,35 +525,15 @@ pub fn net_worth() -> i64 {
     ACCOUNTS.iter().map(|account| account.balance).sum()
 }
 
-/// How a formatted amount shows its sign.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Sign {
-    /// `−` for money out, `+` for money in: single transactions, and totals
-    /// that can go either way.
-    Always,
-    /// `−` only below zero: balances, and totals whose label gives the
-    /// direction.
-    Negative,
-}
+pub use crate::format::Sign;
 
 /// `pence` as pounds for en-GB: "£1,284.10", with a true minus (U+2212)
 /// and an explicit plus where `sign` asks (`docs/DESIGN.md` → "Money").
 pub fn gbp(pence: i64, sign: Sign) -> String {
-    let magnitude = pence.unsigned_abs();
-    let pounds = (magnitude / 100).to_string();
-    let mut grouped = String::new();
-    for (index, digit) in pounds.chars().enumerate() {
-        if index > 0 && (pounds.len() - index).is_multiple_of(3) {
-            grouped.push(',');
-        }
-        grouped.push(digit);
-    }
-    let prefix = match (pence < 0, sign) {
-        (true, _) => "\u{2212}",
-        (false, Sign::Always) if pence > 0 => "+",
-        _ => "",
-    };
-    format!("{prefix}£{grouped}.{:02}", magnitude % 100)
+    crate::format::money(
+        coffer_core::money::Money::new(pence, coffer_core::money::Currency::GBP),
+        sign,
+    )
 }
 
 #[cfg(test)]

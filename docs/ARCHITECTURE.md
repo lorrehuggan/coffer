@@ -1187,6 +1187,57 @@ Everything else follows `DESIGN.md` or an earlier record.
    canvas, as `DESIGN.md` → "Review queues" centres an empty canvas: "{View} isn't built
    yet", a line saying Transactions works on sample data, and the ⌘2 shortcut.
 
+### Decision record: accounts management (2026-11-14)
+
+M3.2. Marked **(user)**: decided by the user on 2026-11-14 when asked before the build.
+Everything else follows `DESIGN.md` → "Accounts panel" or an earlier record.
+
+1. **A preset per account (user).** The inspector's Preset select ("used by the next
+   import") is stored on the account: `account.preset_id` (V15), the preset's stable ID
+   (`uk-monzo`), the same text `import_batch.preset_id` records. Only current, savings and
+   credit card accounts have one (a `CHECK`): cash, asset and liability accounts are kept
+   by the user, and a pot's rows arrive with its parent's imports. Core doesn't check the
+   ID against the presets (they live in `coffer-import`, and user presets come in M3.5);
+   the app and `coffer accounts add --preset` offer only presets they have, and an
+   import whose preset has gone falls back to detection. The import flow (M3.4) is what
+   reads it; `coffer import` doesn't yet.
+2. **Editing is core's (`account::update`).** Name, bank, kind, currency and preset change
+   together through `AccountEdit`; the name is trimmed and can't be blank, a blank bank
+   or preset is none, and a kind that isn't imported keeps no preset. What the account
+   holds (`account::usage`) decides the rest, checked before the schema's triggers so
+   the error says why: the currency is fixed once the account has transactions,
+   balances, pots or a rule with amount bounds, and always for a pot (it follows its
+   parent); a pot stays a pot and nothing becomes one (imports make pots); an account
+   with transactions can't become an asset or liability; one with balances can't move
+   in or out of the valuation kinds; one with pots stays current or savings. Account
+   edits aren't change batches: they touch no transaction.
+3. **The opening balance is the first entered balance.** The New account dialog's
+   optional Balance is a `manual` `balance_snapshot` written in the same DB transaction
+   as the account (`account::create_with_balance`), so a refused balance adds no
+   account. It is the account's starting point, as "Decision record: import commit,
+   dedupe and undo", point 6 already has it; `account.opening_balance_minor` stays for
+   the checks that read it, and nothing writes it. "Add balance…" records more
+   (`account::add_balance`, one per day, after the lock date).
+4. **The panel's numbers** (`reporting::account_tree`): open accounts in creation order,
+   each pot under its parent; the latest balance at the end of each account's own last
+   active day; an account other than a pot with no stated balance shows "No balance"
+   and is left out of net worth (its sum from zero is right only if it started empty),
+   while a pot counts from its transfers; net worth per currency, never converted, a
+   liability always subtracting (as `net_worth_history`); `danger` only for a current,
+   savings, cash or pot account below zero; flagged when a balance check failed.
+5. **"Close account…" waits for M3.17 (user).** It isn't in the M3.2 line, closing a bank
+   account still needs its lock-date guard (M1 wave 4, point 21), and M3.17 brings the
+   close dialog for valuation accounts. The inspector has no footer until then.
+6. **The app holds no connection (as M3.1).** `accounts::store::AccountStore` opens the
+   database for each read or write, creating and migrating it as the CLI does, and checks
+   the restore lock first. Reads and writes are a person's accounts, so they run on the
+   main thread; the panel and inspector reread everything after a change. A database
+   that can't be read leaves the panel empty with the reason in `danger`.
+7. **Where the account inspector shows (user).** On Transactions, while an account is
+   selected and no transaction is: clicking an account clears the transaction
+   selection. The table isn't filtered by it until it reads the database (M3.3); on the
+   views without an inspector, selection only highlights the row.
+
 ## Architecture
 
 ```
@@ -1782,16 +1833,19 @@ The schema is SQL in `crates/core/migrations/`. Conventions (M1.4; the tests in
   redefines `ledger_line`), `duplicate_candidate` (V10, M1.26), `mcp_client`,
   `mcp_access_log` and `setting` (V11, M2.1), the schedule tables and
   `recurring_dismissal` (V12, M2.6/M2.10), the inbox's decision columns (V13, M2.3) and
-  `mcp_access_log` rebuilt with two outcomes, `pending_id` and `summarised_calls` (V14).
+  `mcp_access_log` rebuilt with two outcomes, `pending_id` and `summarised_calls` (V14),
+  and `account.preset_id` (V15, M3.2).
 - refinery embeds migrations in file-name order (`V10__` before `V1__`);
   `db::migrations::embedded` sorts them by version.
 
 - `account(id, parent_id?, name, institution, kind [current|savings|credit_card|pot|cash|
   asset|liability|...], currency, opening_balance_minor?, opening_date?,
-  reconciled_through?, closed_on?, sub_account_key?)` — pots are child accounts of their
-  parent; a pot's parent is a `current` or `savings` account in the same currency;
-  `sub_account_key` (V4, pots only, unique per parent, read-only once set) is the bank's
-  ID for a pot the import created;
+  reconciled_through?, closed_on?, sub_account_key?, preset_id?)` — pots are child
+  accounts of their parent; a pot's parent is a `current` or `savings` account in the same
+  currency; `sub_account_key` (V4, pots only, unique per parent, read-only once set) is
+  the bank's ID for a pot the import created; `preset_id` (V15, current, savings and
+  credit card only) is the preset the next import uses ("Decision record: accounts
+  management");
   `asset` and `liability` accounts hold `valuation` snapshots only, no transactions
 - `import_batch(id, account_id, source_file, format [csv|ofx|qif|camt053|mt940],
   preset_id?, imported_at, status [committed|undone])` — `source_file` is the file name

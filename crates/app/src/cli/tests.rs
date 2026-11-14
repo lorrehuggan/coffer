@@ -300,6 +300,8 @@ fn accounts_add_creates_the_database_and_list_shows_them() {
         "gbp",
         "--institution",
         "Monzo",
+        "--preset",
+        "uk-monzo",
     ]);
     assert_eq!(out, "Added account 1: Monzo (current, GBP)\n");
     let out = scratch.ok(&[
@@ -324,9 +326,9 @@ fn accounts_add_creates_the_database_and_list_shows_them() {
 
     assert_eq!(
         scratch.ok(&["accounts"]),
-        "ID  NAME       KIND     CURRENCY  INSTITUTION  PARENT  LOCKED THROUGH\n\
-         1   Monzo      current  GBP       Monzo        -       -\n\
-         2   Rainy Day  pot      GBP       -            1       -\n"
+        "ID  NAME       KIND     CURRENCY  INSTITUTION  PARENT  PRESET    LOCKED THROUGH\n\
+         1   Monzo      current  GBP       Monzo        -       uk-monzo  -\n\
+         2   Rainy Day  pot      GBP       -            1       -         -\n"
     );
     assert_eq!(scratch.ok(&["accounts", "list"]), scratch.ok(&["accounts"]));
 }
@@ -350,6 +352,8 @@ fn accounts_add_checks_pots_and_parents() {
     assert!(add(&["--kind", "savings", "--parent", "1"]).contains("only a pot"));
     assert!(add(&["--kind", "pot", "--parent", "9"]).contains("there is no account \"9\""));
     assert!(add(&["--kind", "pot", "--parent", "Euro"]).contains("in EUR"));
+    assert!(add(&["--kind", "cash", "--preset", "uk-monzo"]).contains("leave out --preset"));
+    assert!(add(&["--kind", "current", "--preset", "uk-nope"]).contains("uk-monzo"));
     assert!(
         scratch
             .err(&[

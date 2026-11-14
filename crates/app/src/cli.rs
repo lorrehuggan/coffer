@@ -153,8 +153,9 @@ pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Re
         Command::Accounts(AccountsArgs {
             command: Some(AccountsCommand::Add(args)),
         }) => {
+            let presets = Presets::bundled().context("the bundled presets don't load")?;
             let mut db = open_or_create(database)?;
-            accounts::add(&mut db, &args, out)
+            accounts::add(&mut db, &presets, &args, out)
         }
         Command::Accounts(AccountsArgs {
             command: None | Some(AccountsCommand::List),

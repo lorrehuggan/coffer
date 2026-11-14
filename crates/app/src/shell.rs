@@ -7,8 +7,8 @@
 //! inspector); the status bar. Navigation is the title bar's, as Paper draws
 //! it (Rules `B1J-0`, Settings · AI clients `AQ2-0`), not a sidebar: the
 //! left panel belongs to the view. The five views of the money share the
-//! accounts panel ([`accounts_panel`]); Inbox, Reviews, Rules and Settings
-//! get their own lists with their screens.
+//! accounts panel ([`crate::accounts::panel`]); Inbox, Reviews, Rules and
+//! Settings get their own lists with their screens.
 //!
 //! Keyboard: ⌘1–⌘8 open the views in tab order and ⌘, opens Settings
 //! (Ctrl on Linux and Windows). Clicking the Settings button while Settings
@@ -22,8 +22,11 @@
 //! ([`window_state`]): [`open`] restores the bounds and the view from the
 //! database, and the shell saves them again shortly after they change and
 //! when the window closes.
+//!
+//! It also owns the accounts ([`Accounts`], M3.2), which the panel, the
+//! Transactions inspector and the account dialogs share, and opens those
+//! dialogs over everything when the panel or inspector asks.
 
-pub mod accounts_panel;
 pub mod window_state;
 
 use std::rc::Rc;
@@ -31,6 +34,7 @@ use std::time::Duration;
 
 use coffer_core::paths;
 use coffer_core::setting::WindowState;
+use gpui_kit::AnyView;
 use gpui_kit::component::window_border;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -39,6 +43,10 @@ use gpui_kit::{
     Styled as _, Subscription, Task, Window, WindowOptions, div, px, size,
 };
 
+use crate::accounts::add_balance::AddBalanceDialog;
+use crate::accounts::new_account::NewAccountDialog;
+use crate::accounts::store::AccountStore;
+use crate::accounts::{self, Accounts, AccountsEvent, DialogClosed};
 use crate::theme::tokens::{color, size as token_size, typography};
 use crate::transactions::{self, TransactionsView};
 use crate::ui::button::IconButton;
@@ -216,6 +224,7 @@ pub fn init(cx: &mut App) {
     });
     cx.bind_keys(bindings);
     transactions::init(cx);
+    accounts::init(cx);
 }
 
 /// Opens Coffer's window as it was last left: the saved bounds and view
@@ -228,6 +237,10 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
             tracing::warn!(%error, "no data dir; the window state won't be kept");
             None
         }
+    };
+    let accounts = match paths::database_path() {
+        Ok(database) => Accounts::from_store(AccountStore::new(database)),
+        Err(error) => Accounts::unavailable(format!("Coffer has no data folder: {error}")),
     };
     let saved = store.as_ref().and_then(WindowStore::load);
     let fallback = Bounds::centered(None, size(px(1440.), px(900.)), cx);
@@ -251,7 +264,8 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
     let view = window_state::restored_view(saved.as_ref());
     gpui_kit::open_window(options, cx, move |window, cx| {
         cx.new(|cx| {
-            let mut shell = ShellView::new(view, window, cx);
+            let accounts = cx.new(|_| accounts);
+            let mut shell = ShellView::with_accounts(view, accounts, window, cx);
             if let Some(store) = store {
                 shell.keep_window_state(store, window, cx);
             }
@@ -278,23 +292,109 @@ pub struct ShellView {
     /// one open before Settings.
     before_settings: View,
     transactions: Entity<TransactionsView>,
+    accounts: Entity<Accounts>,
+    /// The dialog open over the window, and its subscription.
+    dialog: Option<(AnyView, Subscription)>,
+    /// The accounts panel's focus: a Tab stop where the arrow keys move the
+    /// selected account.
+    panel_focus: FocusHandle,
     focus: FocusHandle,
     persistence: Option<Persistence>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl ShellView {
-    /// The shell showing `view`, keeping no window state (tests, snapshots).
+    /// The shell showing `view` with the sample accounts, keeping no window
+    /// state (tests, snapshots).
     pub fn new(view: View, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let accounts = cx.new(|_| Accounts::fixture(accounts::fixture::accounts()));
+        Self::with_accounts(view, accounts, window, cx)
+    }
+
+    /// The shell showing `view` with `accounts` in its panel.
+    pub fn with_accounts(
+        view: View,
+        accounts: Entity<Accounts>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus = cx.focus_handle();
         // Focused from the start, so the shortcuts work before any click.
         focus.focus(window, cx);
+        let transactions = cx.new(|cx| {
+            let mut transactions = TransactionsView::new(window, cx);
+            transactions.show_accounts(accounts.clone(), window, cx);
+            transactions
+        });
+        let subscriptions = vec![
+            cx.subscribe_in(&accounts, window, |this, _, event, window, cx| {
+                this.on_accounts_event(*event, window, cx)
+            }),
+            cx.observe(&accounts, |_, _, cx| cx.notify()),
+        ];
         Self {
             view,
             before_settings: View::default(),
-            transactions: cx.new(|cx| TransactionsView::new(window, cx)),
+            transactions,
+            accounts,
+            dialog: None,
+            panel_focus: cx.focus_handle(),
             focus,
             persistence: None,
+            _subscriptions: subscriptions,
         }
+    }
+
+    /// The accounts the panel shows.
+    pub fn accounts(&self) -> &Entity<Accounts> {
+        &self.accounts
+    }
+
+    /// The dialog open over the window, if any.
+    pub fn dialog(&self) -> Option<&AnyView> {
+        self.dialog.as_ref().map(|(view, _)| view)
+    }
+
+    fn on_accounts_event(
+        &mut self,
+        event: AccountsEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            // Selecting an account shows it in the inspector, which a
+            // selected transaction would cover.
+            AccountsEvent::Selected(Some(_)) => self
+                .transactions
+                .update(cx, |transactions, cx| transactions.clear_selection(cx)),
+            AccountsEvent::Selected(None) => self.transactions.update(cx, |_, cx| cx.notify()),
+            AccountsEvent::NewAccountRequested => {
+                let accounts = self.accounts.clone();
+                let dialog = cx.new(|cx| NewAccountDialog::new(accounts, window, cx));
+                self.open_dialog(dialog, window, cx);
+            }
+            AccountsEvent::AddBalanceRequested(account) => {
+                let accounts = self.accounts.clone();
+                let dialog = cx.new(|cx| AddBalanceDialog::new(accounts, account, window, cx));
+                self.open_dialog(dialog, window, cx);
+            }
+        }
+    }
+
+    /// Shows `dialog` over the window until it closes, then puts focus back
+    /// on the shell.
+    fn open_dialog<D>(&mut self, dialog: Entity<D>, window: &mut Window, cx: &mut Context<Self>)
+    where
+        D: Render + gpui_kit::EventEmitter<DialogClosed>,
+    {
+        let subscription =
+            cx.subscribe_in(&dialog, window, |this, _, _: &DialogClosed, window, cx| {
+                this.dialog = None;
+                this.focus.focus(window, cx);
+                cx.notify();
+            });
+        self.dialog = Some((dialog.into(), subscription));
+        cx.notify();
     }
 
     /// The open view.
@@ -475,14 +575,19 @@ fn status_bar() -> StatusBar {
 }
 
 impl Render for ShellView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = self.view;
         let body = div()
             .flex()
             .flex_1()
             .min_h_0()
             .when(view.has_accounts_panel(), |this| {
-                this.child(accounts_panel::render())
+                this.child(accounts::panel::render(
+                    &self.accounts,
+                    &self.panel_focus,
+                    window,
+                    cx,
+                ))
             })
             .map(|this| {
                 if view == View::Transactions {
@@ -534,7 +639,11 @@ impl Render for ShellView {
                 .text_color(color::TEXT)
                 .child(self.render_title_bar(cx))
                 .child(body)
-                .child(status_bar()),
+                .child(status_bar())
+                .when_some(
+                    self.dialog.as_ref().map(|(view, _)| view.clone()),
+                    |this, dialog| this.child(dialog),
+                ),
         )
     }
 }

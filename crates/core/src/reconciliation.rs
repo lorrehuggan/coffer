@@ -190,7 +190,7 @@ impl BalanceSource {
     }
 
     /// The source of a snapshot, from `balance_snapshot.source`.
-    fn from_snapshot_key(key: &str) -> Option<BalanceSource> {
+    pub(crate) fn from_snapshot_key(key: &str) -> Option<BalanceSource> {
         Some(match key {
             "ofx" => BalanceSource::Ofx,
             "csv" => BalanceSource::Csv,
@@ -437,7 +437,7 @@ pub fn unlock(db: &mut Database, account: AccountId) -> Result<Option<NaiveDate>
 }
 
 /// Loads `account`'s balances and per-day movements and checks them.
-fn load(conn: &Connection, account: &Account) -> rusqlite::Result<AccountChecks> {
+pub(crate) fn load(conn: &Connection, account: &Account) -> rusqlite::Result<AccountChecks> {
     let mut balances: Vec<(BalanceRef, BalanceSource, StatedBalance)> = Vec::new();
     if let Some((date, balance)) = account.opening_balance {
         balances.push((

@@ -28,6 +28,8 @@ use gpui_kit::{
     Render, Styled as _, Window, div, list,
 };
 
+use crate::accounts::Accounts;
+use crate::accounts::inspector::AccountInspector;
 use crate::theme::tokens::{color, size as token_size, spacing};
 use crate::ui::bulk_action_bar::BulkActionBar;
 use crate::ui::button::{Button, ButtonVariant, Chip};
@@ -125,6 +127,9 @@ pub struct TransactionsView {
     focus: FocusHandle,
     search: Entity<InputState>,
     note: Entity<InputState>,
+    /// The accounts panel's state and the account inspector, shown while an
+    /// account is selected and no transaction is. Set by the shell.
+    accounts: Option<(Entity<Accounts>, Entity<AccountInspector>)>,
 }
 
 impl TransactionsView {
@@ -150,7 +155,34 @@ impl TransactionsView {
             focus: cx.focus_handle(),
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search transactions")),
             note: cx.new(|cx| InputState::new(window, cx).placeholder("Add a note")),
+            accounts: None,
         }
+    }
+
+    /// Shows `accounts`' selected account in the inspector while no
+    /// transaction is selected (`DESIGN.md` → "Account inspector").
+    pub fn show_accounts(
+        &mut self,
+        accounts: Entity<Accounts>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let inspector = cx.new(|cx| AccountInspector::new(accounts.clone(), window, cx));
+        self.accounts = Some((accounts, inspector));
+        cx.notify();
+    }
+
+    /// The account inspector to show instead of an empty one: set when an
+    /// account is selected.
+    pub fn account_inspector(&self, cx: &gpui_kit::App) -> Option<Entity<AccountInspector>> {
+        let (accounts, inspector) = self.accounts.as_ref()?;
+        accounts.read(cx).selected().map(|_| inspector.clone())
+    }
+
+    /// Clears the selection, so the inspector shows the selected account.
+    pub fn clear_selection(&mut self, cx: &mut Context<Self>) {
+        self.selection.clear();
+        cx.notify();
     }
 
     /// Selects exactly `ids`, as if clicked in turn with ⌘ held.

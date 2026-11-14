@@ -89,7 +89,10 @@ pub struct ListRow {
     label: SharedString,
     leading: Option<Leading>,
     trailing: Option<SharedString>,
+    /// The trailing value is words ("No balance"), set in UI type.
+    trailing_words: bool,
     trailing_tone: TrailingTone,
+    flagged: bool,
     dimmed: bool,
     nested: bool,
     selected: bool,
@@ -106,7 +109,9 @@ impl ListRow {
             label: label.into(),
             leading: None,
             trailing: None,
+            trailing_words: false,
             trailing_tone: TrailingTone::Muted,
+            flagged: false,
             dimmed: false,
             nested: false,
             selected: false,
@@ -147,6 +152,21 @@ impl ListRow {
     /// a balance or a count, formatted for the user's locale.
     pub fn trailing(mut self, value: impl Into<SharedString>) -> Self {
         self.trailing = Some(value.into());
+        self
+    }
+
+    /// Shows `words` at the end of the row in caption type (Inter 11/14),
+    /// where a value is missing: "No balance".
+    pub fn trailing_words(mut self, words: impl Into<SharedString>) -> Self {
+        self.trailing = Some(words.into());
+        self.trailing_words = true;
+        self
+    }
+
+    /// Puts a 6px `danger` dot before the trailing value: something about
+    /// the row needs attention, such as a failed balance check.
+    pub fn flagged(mut self, flagged: bool) -> Self {
+        self.flagged = flagged;
         self
     }
 
@@ -197,6 +217,10 @@ impl ListRow {
 
     pub fn is_nested(&self) -> bool {
         self.nested
+    }
+
+    pub fn is_flagged(&self) -> bool {
+        self.flagged
     }
 
     fn colors(&self) -> RowColors {
@@ -303,12 +327,30 @@ impl RenderOnce for ListRow {
                     .map(brighten(colors.follows_hover))
                     .child(self.label.clone()),
             )
-            .when_some(self.trailing, |this, value| {
+            .when(self.flagged, |this| {
                 this.child(
                     div()
                         .flex_none()
-                        .text_role(typography::MONO_VALUE)
-                        .text_color(self.trailing_tone.color())
+                        .size(size::DOT)
+                        .rounded(radius::LABEL)
+                        .bg(color::DANGER),
+                )
+            })
+            .when_some(self.trailing, |this, value| {
+                // A selected row lifts its balance a step, as its label.
+                let tone = match self.trailing_tone {
+                    TrailingTone::Muted if self.selected => color::TEXT_SECONDARY,
+                    tone => tone.color(),
+                };
+                this.child(
+                    div()
+                        .flex_none()
+                        .text_role(if self.trailing_words {
+                            typography::CAPTION
+                        } else {
+                            typography::MONO_VALUE
+                        })
+                        .text_color(tone)
                         .child(value),
                 )
             });
