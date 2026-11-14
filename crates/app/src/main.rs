@@ -41,6 +41,7 @@ fn run_command(command: cli::Command) -> ExitCode {
 
 /// Opens the app, or with `--showcase` the component showcase (D2.5).
 fn run_gui(showcase: bool) {
+    cli::mcp::init_logging();
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
@@ -52,10 +53,10 @@ fn run_gui(showcase: bool) {
                 coffer_app::showcase::init(cx);
                 coffer_app::showcase::open(cx).expect("Failed to open the showcase");
             } else {
-                // The Transactions screen on fixture data (D5) until the
-                // app shell arrives (M2).
-                coffer_app::transactions::init(cx);
-                coffer_app::transactions::open(cx).expect("Failed to open the window");
+                // The app shell (M3.1) around its views; Transactions shows
+                // fixture data until the table reads the database (M3.3).
+                coffer_app::shell::init(cx);
+                coffer_app::shell::open(cx).expect("Failed to open the window");
             }
         });
 }

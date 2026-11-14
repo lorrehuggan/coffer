@@ -277,7 +277,8 @@ unsigned (`DESIGN.md` → "Money", "Chart chrome")
   - deleting a rule leaves its values and clears `rule_id`;
   - locked periods guard balances only.
 
-  The tab isn't yet on the artboards drawn before D6.7, or in the GPUI title bar
+  The tab isn't yet on the artboards drawn before D6.7; the GPUI title bar has it since
+  M3.1
 - ✅ D6.8 Settings: AI access (clients, access levels, kill switch, access log), backups
   (list, create, restore), export dialog (M3.15, M3.16). Three 1440×900 artboards from
   the Inbox shell: Settings · AI clients (`AQ2-0`), Settings · access log (`DC6-0`) and
@@ -681,10 +682,25 @@ Every tool call appears in the access log.
 
 ---
 
-## M3 — GUI foundation ⬜
+## M3 — GUI foundation 🚧
 
-- ⬜ M3.1 App shell: sidebar navigation, window state, built on the D2 theme. Every screen in
-  M3–M4 follows its Paper design from the design track; no stock component styling
+- ✅ M3.1 App shell: sidebar navigation, window state, built on the D2 theme. Every screen in
+  M3–M4 follows its Paper design from the design track; no stock component styling.
+  `crates/app/src/shell.rs` (`ShellView`), the window `coffer` opens. Navigation follows
+  Paper, not the sidebar this item first named: the eight view tabs in the title bar
+  (`gpui-base` tabs: role, selected state) and the Settings button (`Glyph::Settings`,
+  active icon-button look; clicked again, it goes back to the previous view (user)),
+  ⌘1–⌘8 and ⌘,; the left panel belongs to the view (the accounts
+  panel on the five money views). Window state (bounds, maximised or full screen, the open
+  view) is saved in the `setting` table (`setting::WindowState`, key `app.window`) after
+  a 500ms pause and on close, and restored on launch, checked against the displays and
+  the minimum size (user, 2026-11-14), so the GUI now opens the database. Views not built
+  yet show the shell and the Empty state component (`ui::empty_state`, Paper `13L-0`)
+  (user). Transactions keeps its selection across switches. Snapshots (`rules`,
+  `settings`) checked against Paper `B8Y-0`, `B08-0` and `13L-0` at 2x: horizontal edges
+  exact; the title bar's 28px controls sit 1 device pixel higher than Paper's, as before
+  M3.1 (the half-pixel centring in "Fidelity findings (D5)"). Decisions:
+  `ARCHITECTURE.md` → "Decision record: the app shell and window state"
 - ⬜ M3.2 Accounts management (create, edit, opening balance; pots shown under their parent)
 - ⬜ M3.3 Transactions view: virtualized `DataTable`, filter/sort/search, inline category edit
 - ⬜ M3.4 Import flow: pick file → detect/choose preset → column-mapping screen with live

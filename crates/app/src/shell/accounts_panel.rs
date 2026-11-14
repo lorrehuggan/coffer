@@ -1,10 +1,12 @@
-//! The left panel (`docs/DESIGN.md` → "Proposed: finance screens" → "Left
-//! panel"; Paper `19T-0`): net worth, the accounts with their pots, and the
-//! categories with this month's counts.
+//! The accounts panel (`docs/DESIGN.md` → "Finance screens" → "Accounts
+//! panel"; Paper `19T-0`, states board `8D8-0`): net worth, the accounts
+//! with their pots, and the categories with this month's counts. The left
+//! panel of every view that filters by account (Overview, Transactions,
+//! Trends, Budgets, Net worth), on the Transactions fixture data.
 //!
 //! No account is selected, which means "All accounts", so the table shows
-//! its Account column. Filtering by account or category arrives with the
-//! database (M1).
+//! its Account column. Selecting and filtering arrive with accounts
+//! management (M3.2) and the database-backed table (M3.3).
 
 use gpui_kit::{
     InteractiveElement as _, IntoElement, ParentElement as _, StatefulInteractiveElement as _,
@@ -20,7 +22,7 @@ use crate::ui::marker::Marker;
 use crate::ui::section_label::SectionLabelRow;
 use crate::ui::text::TextRoleExt as _;
 
-use super::fixture::{self, ACCOUNTS, Category, Sign, gbp};
+use crate::transactions::fixture::{self, ACCOUNTS, Category, Sign, gbp};
 
 /// The net worth figure: Geist Mono 13/16 600.
 const NET_WORTH: TextRole = TextRole {
@@ -41,7 +43,8 @@ fn list_section(label: SectionLabelRow) -> gpui_kit::Div {
         .child(label)
 }
 
-pub(super) fn render() -> impl IntoElement {
+/// The panel, 272px, `chrome` with a `hairline` on its canvas side.
+pub fn render() -> impl IntoElement {
     let net_worth = div()
         .flex()
         .flex_col()

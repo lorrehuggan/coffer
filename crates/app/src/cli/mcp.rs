@@ -37,8 +37,10 @@ pub fn run(database: &Path, args: &McpArgs) -> anyhow::Result<()> {
 }
 
 /// Sends `tracing` output to stderr, `warn` and above unless [`LOG_ENV`]
-/// says otherwise. A subscriber set earlier (a test) is kept.
-fn init_logging() {
+/// says otherwise. A subscriber set earlier (a test) is kept. The GUI uses
+/// it too, for the warnings the app shell logs (a window state it can't
+/// read or save).
+pub fn init_logging() {
     let filter = tracing_subscriber::EnvFilter::try_from_env(LOG_ENV)
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
     let _ = tracing_subscriber::fmt()

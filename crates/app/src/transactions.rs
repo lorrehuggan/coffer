@@ -1,12 +1,13 @@
 //! The Transactions screen (`docs/DESIGN.md` → "Transactions"; Paper
-//! artboards `18E-0` and `1NP-0`), with fixture data until the database
-//! exists (M1). Built in D5 to check that GPUI can deliver the design.
+//! artboards `18E-0` and `1NP-0`), with fixture data until the table reads
+//! the database (M3.3). Built in D5 to check that GPUI can deliver the
+//! design.
 //!
-//! The window: title bar, then the left panel (accounts and categories),
-//! the canvas (toolbar, column header, the day-grouped table, and the
-//! bulk-action bar while several rows are selected) and the inspector (the
-//! selected transaction, or a summary of the selection), then the status
-//! bar.
+//! The view draws the canvas (toolbar, column header, the day-grouped table,
+//! and the bulk-action bar while several rows are selected) and the
+//! inspector (the selected transaction, or a summary of the selection). The
+//! app shell ([`crate::shell`]) puts the title bar, the accounts panel and
+//! the status bar around it.
 //!
 //! The table is a GPUI `list`: virtualised, with rows of their own heights
 //! (day headers carry 4px more than a row when they draw a divider), which
@@ -16,27 +17,21 @@
 
 pub mod fixture;
 mod inspector;
-mod panel;
 pub mod selection;
 
 use gpui_kit::base::actions::{Cancel, SelectDown, SelectFirst, SelectLast, SelectUp};
 use gpui_kit::component::input::InputState;
-use gpui_kit::component::window_border;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, KeyBinding, ListAlignment, ListState, ParentElement as _,
-    Render, SharedString, Styled as _, Window, WindowBounds, WindowOptions, div, list, size,
+    Render, Styled as _, Window, div, list,
 };
 
-use crate::theme::tokens::{color, size as token_size, spacing, typography};
+use crate::theme::tokens::{color, size as token_size, spacing};
 use crate::ui::bulk_action_bar::BulkActionBar;
 use crate::ui::button::{Button, ButtonVariant, Chip};
 use crate::ui::field::search_input;
-use crate::ui::icon::Glyph;
-use crate::ui::status_bar::{StatusBar, StatusItem};
-use crate::ui::text::TextRoleExt as _;
-use crate::ui::title_bar::{self, CommandBar, TitleBar, ViewTab};
 use crate::ui::transaction_row::{CategoryCell, DayHeader, TransactionHeader, TransactionRow};
 
 use fixture::{Categorisation, Sign, Transaction, gbp};
@@ -58,7 +53,7 @@ gpui_kit::actions!(
 /// A transaction's id: the fixture's, until the database's (M1).
 pub type TransactionId = &'static str;
 
-/// Binds the table's keys. Call once, before [`open`].
+/// Binds the table's keys. Call once, before the first view is created.
 pub fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("up", SelectUp, Some(TABLE_CONTEXT)),
@@ -69,24 +64,6 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("end", SelectLast, Some(TABLE_CONTEXT)),
         KeyBinding::new("escape", Cancel, Some(TABLE_CONTEXT)),
     ]);
-}
-
-/// Opens the Transactions window at the size it's designed at (1440×900)
-/// where the screen allows.
-pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
-    let bounds = Bounds::centered(None, size(gpui_kit::px(1440.), gpui_kit::px(900.)), cx);
-    let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(bounds)),
-        window_min_size: Some(size(
-            token_size::WINDOW_MIN_WIDTH,
-            token_size::WINDOW_MIN_HEIGHT,
-        )),
-        ..title_bar::window_options()
-    };
-    gpui_kit::open_window(options, cx, |window, cx| {
-        cx.new(|cx| TransactionsView::new(window, cx))
-    })?;
-    Ok(())
 }
 
 /// One entry of the table's list.
@@ -412,66 +389,15 @@ impl TransactionsView {
     }
 }
 
-fn title_bar() -> TitleBar {
-    let views = [
-        ("view-overview", "Overview"),
-        ("view-transactions", "Transactions"),
-        ("view-trends", "Trends"),
-        ("view-budgets", "Budgets"),
-        ("view-net-worth", "Net worth"),
-        ("view-inbox", "Inbox"),
-        ("view-reviews", "Reviews"),
-    ];
-    views.into_iter().fold(
-        TitleBar::new(CommandBar::new("Search transactions or run a command")),
-        |bar, (id, label)| {
-            let tab = ViewTab::new(id, label)
-                .active(id == "view-transactions")
-                .when(id == "view-inbox", |tab| tab.badge("12"));
-            bar.tab(tab)
-        },
-    )
-}
-
-fn status_bar(transactions: usize) -> StatusBar {
-    StatusBar::new()
-        .start(StatusItem::text("1 agent connected").agent_dot())
-        .start(StatusItem::text("Reconciled").icon(Glyph::Check))
-        .start(StatusItem::text(
-            "Imported 2 min ago from monzo-november.csv",
-        ))
-        .start(StatusItem::mono(SharedString::from(format!(
-            "{transactions} transactions"
-        ))))
-        .end(StatusItem::text("3 new").new_dot())
-        .end(StatusItem::mono("GBP"))
-}
-
 impl Render for TransactionsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // The fixture holds a page of the month; the status bar counts the
-        // whole import, as Paper does.
-        const IMPORTED: usize = 328;
-        window_border().child(
-            div()
-                .size_full()
-                .flex()
-                .flex_col()
-                .bg(color::CHROME)
-                .text_role(typography::BODY)
-                .text_color(color::TEXT)
-                .child(title_bar())
-                .child(
-                    div()
-                        .flex()
-                        .flex_1()
-                        .min_h_0()
-                        .child(panel::render())
-                        .child(self.render_canvas(cx))
-                        .child(inspector::render(self, window, cx)),
-                )
-                .child(status_bar(IMPORTED)),
-        )
+        div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .child(self.render_canvas(cx))
+            .child(inspector::render(self, window, cx))
     }
 }
 

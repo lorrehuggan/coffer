@@ -12,6 +12,9 @@
 //!
 //! - `transactions`: Paper `18E-0`, one AI-suggested transaction selected;
 //! - `transactions-multi`: Paper `1NP-0`, three uncategorised rows selected;
+//! - `rules`: the shell with the Rules tab active and its screen not built
+//!   yet (title bar: Paper `B8Y-0`);
+//! - `settings`: the shell with Settings open (title bar: Paper `B08-0`);
 //! - `showcase`: the component showcase.
 
 use std::path::{Path, PathBuf};
@@ -20,8 +23,8 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result};
 use gpui_kit::{AnyView, AppContext as _, HeadlessAppContext, size};
 
+use coffer_app::shell::{ShellView, View};
 use coffer_app::showcase::Showcase;
-use coffer_app::transactions::TransactionsView;
 
 const WIDTH: f32 = 1440.;
 const HEIGHT: f32 = 900.;
@@ -44,19 +47,29 @@ fn main() -> Result<()> {
         gpui_kit::init(cx);
         coffer_app::theme::install(cx).expect("theme installs");
         coffer_app::showcase::init(cx);
-        coffer_app::transactions::init(cx);
+        coffer_app::shell::init(cx);
     });
 
     snapshot(&mut cx, &out, "transactions", |window, cx| {
-        cx.new(|cx| TransactionsView::new(window, cx)).into()
+        cx.new(|cx| ShellView::new(View::Transactions, window, cx))
+            .into()
     })?;
     snapshot(&mut cx, &out, "transactions-multi", |window, cx| {
         cx.new(|cx| {
-            let mut view = TransactionsView::new(window, cx);
-            view.select(["txn-bluebottle-09", "txn-steam-07", "txn-vinted-06"], cx);
-            view
+            let shell = ShellView::new(View::Transactions, window, cx);
+            shell.transactions().update(cx, |view, cx| {
+                view.select(["txn-bluebottle-09", "txn-steam-07", "txn-vinted-06"], cx)
+            });
+            shell
         })
         .into()
+    })?;
+    snapshot(&mut cx, &out, "rules", |window, cx| {
+        cx.new(|cx| ShellView::new(View::Rules, window, cx)).into()
+    })?;
+    snapshot(&mut cx, &out, "settings", |window, cx| {
+        cx.new(|cx| ShellView::new(View::Settings, window, cx))
+            .into()
     })?;
     snapshot(&mut cx, &out, "showcase", |window, cx| {
         cx.new(|cx| Showcase::new(window, cx)).into()

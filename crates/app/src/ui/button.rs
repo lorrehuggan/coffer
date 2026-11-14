@@ -315,6 +315,19 @@ impl Appearance {
         }
     }
 
+    /// This appearance as an active icon button draws it: `control-active`
+    /// at rest, hovered and pressed, with a `text` icon throughout.
+    fn active(self) -> Self {
+        Self {
+            fill: Some(color::CONTROL_ACTIVE),
+            hover: color::CONTROL_ACTIVE,
+            pressed: color::CONTROL_ACTIVE,
+            foreground: color::TEXT,
+            foreground_active: None,
+            ..self
+        }
+    }
+
     /// This appearance with `foreground_active` replaced, for an agent card's
     /// row actions, which keep `moldavite-text`.
     fn with_foreground(self, foreground: Rgba) -> Self {
@@ -528,6 +541,7 @@ pub struct IconButton {
     size: IconButtonSize,
     /// Replaces the icon colours, for icon buttons on agent surfaces.
     foreground: Option<Rgba>,
+    active: bool,
 }
 
 impl IconButton {
@@ -539,7 +553,16 @@ impl IconButton {
             name: name.into(),
             size: IconButtonSize::default(),
             foreground: None,
+            active: false,
         }
+    }
+
+    /// Marks the button as showing what's open, such as Settings in the
+    /// title bar: `control-active` fill and a `text` icon in every state
+    /// (`DESIGN.md` → "Settings").
+    pub fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
     }
 
     /// Sets how big the button is.
@@ -586,6 +609,10 @@ impl IconButton {
     pub fn is_disabled(&self) -> bool {
         self.control.disabled
     }
+
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
 }
 
 impl Disableable for IconButton {
@@ -598,6 +625,9 @@ impl Disableable for IconButton {
 impl RenderOnce for IconButton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let mut look = self.size.appearance();
+        if self.active {
+            look = look.active();
+        }
         if let Some(foreground) = self.foreground {
             look = look.with_foreground(foreground);
         }
@@ -1056,6 +1086,28 @@ mod tests {
                 "{look:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_active_icon_button_is_control_active_with_a_text_icon() {
+        // Paper `BAJ-0`: the title bar's Settings button while Settings is
+        // open.
+        let resting = IconButtonSize::Standard.appearance();
+        let active = resting.active();
+        assert_eq!(active.fill, Some(color::CONTROL_ACTIVE));
+        assert_eq!(
+            (active.hover, active.pressed),
+            (color::CONTROL_ACTIVE, color::CONTROL_ACTIVE)
+        );
+        assert_eq!(
+            (active.foreground, active.foreground_active),
+            (color::TEXT, None)
+        );
+        assert_eq!(
+            (active.height, active.width, active.radius),
+            (resting.height, resting.width, resting.radius),
+            "only the colours change"
+        );
     }
 
     #[test]

@@ -18,7 +18,8 @@ charts, and exposes the data to AI clients through an MCP server.
 
 M0 and the design track (D1–D6) are done and signed off; every M1 item is done,
 M1.9 checked against a real Monzo export. Every M2 item is done, tested on synthetic
-data and checked with Claude Code against a real Monzo export (2026-11-13). The Cargo
+data and checked with Claude Code against a real Monzo export (2026-11-13). M3 has
+started: M3.1 (the app shell and window state) is done. The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
 (`crates/core/migrations/V1__initial_schema.sql`, M1.4) and the
@@ -61,7 +62,7 @@ importer (`csv`: `CsvImporter` over a `CsvMapping`; M1.7) and the preset loader
 `crates/app/tests/` (M1.19).
 
 M2 added to `crates/core`: settings and AI clients (`setting`: the kill switch and the
-pseudonym key; `mcp_client`: enable, level, revoke, ignore, `requested`; `access_log`:
+pseudonym key, and since M3.1 the window state; `mcp_client`: enable, level, revoke, ignore, `requested`; `access_log`:
 append, list, 12-month retention; `access_log::pending`: calls refused while the
 database can't be opened, moved into the log later; `V11__mcp.sql`,
 `V14__access_log_pending.sql`), the untrusted-text envelope
@@ -79,8 +80,13 @@ call, `tools/list_changed`), `access` (the gate, argument redaction, result hash
 rows, recurring, inbox: 18 tools), `prompts` (`monthly_review`); its tests use the
 harness in `crates/mcp/tests/support/`, with `matrix.rs` (every tool × level) and
 `m2_exit.rs`. Setup for clients: `docs/mcp-setup.md`. The GUI is in `crates/app` (package `coffer-app`, lib
-`coffer_app`, binary `coffer`); the GUI doesn't open the database yet. `coffer` opens the
-Transactions screen on fixture data (`crates/app/src/transactions.rs`), and
+`coffer_app`, binary `coffer`). `coffer` opens the app shell (`crates/app/src/shell.rs`,
+M3.1): the title bar's eight view tabs and Settings button (⌘1–⌘8, ⌘,), the view's left
+panel (`shell::accounts_panel` on the five money views), the status bar, and the window
+state (bounds, mode, open view) saved in the `setting` table (`setting::WindowState`)
+and restored on launch (`shell::window_state`), so the GUI opens the database for it and
+for nothing else yet. Transactions (`crates/app/src/transactions.rs`) is the only screen
+built, on fixture data; the other views show the shell and `ui::empty_state`. And
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
 `import`, `accounts` (`list`, `add`), `undo-import`, `backup` (`--list`) and
 `restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2
