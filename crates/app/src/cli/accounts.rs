@@ -8,7 +8,9 @@ use clap::{Args, Subcommand};
 use coffer_core::account::{self, Account, AccountKind, NewAccount};
 use coffer_core::db::Database;
 use coffer_core::money::Currency;
+use coffer_import::preset::Presets;
 
+use super::import::preset_lines;
 use super::write_table;
 
 #[derive(Debug, Args)]
@@ -50,6 +52,11 @@ pub struct AddAccountArgs {
     /// name).
     #[arg(long, value_name = "ID|NAME")]
     pub parent: Option<String>,
+
+    /// For a current, savings or credit card account: the preset its
+    /// exports are imported with, e.g. uk-monzo.
+    #[arg(long, value_name = "ID")]
+    pub preset: Option<String>,
 }
 
 fn kind_parser() -> impl TypedValueParser<Value = AccountKind> {
@@ -86,6 +93,7 @@ pub fn list(db: &Database, out: &mut dyn Write) -> anyhow::Result<()> {
                 account
                     .parent
                     .map_or_else(|| "-".into(), |parent| parent.to_string()),
+                account.preset.clone().unwrap_or_else(|| "-".into()),
                 account
                     .reconciled_through
                     .map_or_else(|| "-".into(), |date| date.to_string()),
@@ -101,6 +109,7 @@ pub fn list(db: &Database, out: &mut dyn Write) -> anyhow::Result<()> {
             "CURRENCY",
             "INSTITUTION",
             "PARENT",
+            "PRESET",
             "LOCKED THROUGH",
         ],
         &rows,
@@ -109,7 +118,12 @@ pub fn list(db: &Database, out: &mut dyn Write) -> anyhow::Result<()> {
 }
 
 /// `coffer accounts add`.
-pub fn add(db: &mut Database, args: &AddAccountArgs, out: &mut dyn Write) -> anyhow::Result<()> {
+pub fn add(
+    db: &mut Database,
+    presets: &Presets,
+    args: &AddAccountArgs,
+    out: &mut dyn Write,
+) -> anyhow::Result<()> {
     let name = args.name.trim();
     ensure!(!name.is_empty(), "the account's name can't be blank");
     let institution = args
@@ -147,6 +161,21 @@ pub fn add(db: &mut Database, args: &AddAccountArgs, out: &mut dyn Write) -> any
         }
     };
 
+    let preset = match args.preset.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(_) if !args.kind.is_imported() => bail!(
+            "only a current, savings or credit card account is imported, so only they \
+             have a preset; leave out --preset"
+        ),
+        Some(id) => match presets.get(id) {
+            Some(preset) => Some(preset.id().to_owned()),
+            None => bail!(
+                "there is no preset {id:?}; the bundled presets are:\n{}",
+                preset_lines(presets)
+            ),
+        },
+    };
+
     let id = account::create(
         db,
         &NewAccount {
@@ -155,6 +184,7 @@ pub fn add(db: &mut Database, args: &AddAccountArgs, out: &mut dyn Write) -> any
             kind: args.kind,
             currency: args.currency,
             parent,
+            preset,
         },
     )?;
     writeln!(

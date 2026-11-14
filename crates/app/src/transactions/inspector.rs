@@ -2,7 +2,6 @@
 //! transaction, `1O7-0` for a multi-selection): 14px sections divided by
 //! hairlines.
 
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div,
@@ -12,70 +11,12 @@ use crate::theme::tokens::{color, size, spacing, typography};
 use crate::ui::agent_suggestion::AgentSuggestion;
 use crate::ui::button::{Button, ButtonVariant};
 use crate::ui::field::{Field, FieldRow, SelectField, text_input};
+use crate::ui::inspector::{caption, header, section, section_title};
 use crate::ui::marker::Marker;
 use crate::ui::text::TextRoleExt as _;
-use crate::ui::tracked::Tracked;
 
 use super::TransactionsView;
 use super::fixture::{Categorisation, DAYS, Sign, Transaction, gbp};
-
-/// A section: 14px padding; below the first, a `hairline` above it.
-fn section(divided: bool) -> gpui_kit::Div {
-    div()
-        .flex()
-        .flex_col()
-        .flex_none()
-        .p(spacing::S3_5)
-        .when(divided, |this| {
-            this.border_t(size::HAIRLINE).border_color(color::HAIRLINE)
-        })
-}
-
-/// A section's title: section-title type in `text`.
-fn section_title(title: &'static str) -> gpui_kit::Div {
-    div()
-        .text_role(typography::SECTION_TITLE)
-        .text_color(color::TEXT)
-        .child(title)
-}
-
-/// The header: the title (13/16 600), a display figure and a caption.
-///
-/// The title and figure are [`Tracked`] for their roles' tracking, so a
-/// title too long for the inspector is clipped rather than wrapped (D5
-/// finding; `docs/DESIGN.md` → "Letter spacing").
-fn header(
-    title: impl Into<gpui_kit::SharedString>,
-    figure: String,
-    caption: Option<AnyElement>,
-) -> gpui_kit::Div {
-    section(false)
-        .gap(spacing::S1)
-        .child(
-            div()
-                .flex()
-                .min_w_0()
-                .overflow_hidden()
-                .text_color(color::TEXT)
-                .child(Tracked::new(typography::TITLE, title)),
-        )
-        .child(
-            div()
-                .flex()
-                .text_color(color::TEXT)
-                .child(Tracked::new(typography::DISPLAY_FIGURE, figure)),
-        )
-        .children(caption)
-}
-
-fn caption(text: impl IntoElement) -> gpui_kit::Div {
-    div()
-        .flex()
-        .items_center()
-        .text_role(typography::CAPTION)
-        .text_color(color::TEXT_MUTED)
-        .child(text)
-}
 
 /// The category select for one transaction.
 fn category_select(transaction: &Transaction) -> SelectField {
@@ -101,7 +42,7 @@ fn single(
     let mut sections = vec![
         header(
             transaction.merchant,
-            gbp(transaction.amount, Sign::Always),
+            Some(gbp(transaction.amount, Sign::Always)),
             Some(
                 caption(format!("{} · ", transaction.method))
                     .child(
@@ -251,7 +192,7 @@ fn multiple(selected: &[&Transaction]) -> Vec<AnyElement> {
     vec![
         header(
             format!("{} transactions", selected.len()),
-            gbp(total, Sign::Always),
+            Some(gbp(total, Sign::Always)),
             (!shared.is_empty()).then(|| caption(shared.join(" · ")).into_any_element()),
         )
         .into_any_element(),
@@ -292,7 +233,10 @@ pub(super) fn render(
 ) -> impl IntoElement {
     let selected = view.selected();
     let sections = match selected.as_slice() {
-        [] => empty(),
+        [] => match view.account_inspector(cx) {
+            Some(account) => vec![account.into_any_element()],
+            None => empty(),
+        },
         [transaction] => single(view, transaction, cx),
         many => multiple(many),
     };

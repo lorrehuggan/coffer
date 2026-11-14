@@ -701,7 +701,22 @@ Every tool call appears in the access log.
   exact; the title bar's 28px controls sit 1 device pixel higher than Paper's, as before
   M3.1 (the half-pixel centring in "Fidelity findings (D5)"). Decisions:
   `ARCHITECTURE.md` → "Decision record: the app shell and window state"
-- ⬜ M3.2 Accounts management (create, edit, opening balance; pots shown under their parent)
+- ✅ M3.2 Accounts management (create, edit, opening balance; pots shown under their parent).
+  `crates/app/src/accounts/`: the accounts panel reads the database (pots nested under
+  their parent, latest balance, `danger` when overdrawn, the flagged dot for a failed
+  check, "No balance"), and is a Tab stop with the arrow keys; selecting an account shows
+  the account inspector on Transactions (Name, Bank, Kind, Currency locked once it holds
+  money, Preset; Balances with "Add balance…"; Pots; Imports); New account (Name, Bank,
+  Kind, Currency, optional opening Balance with its date) and Add balance (drawn for M3.2
+  on `8D8-0`, `I7C-0`, approved by the user). Core: `account::update`, `usage`,
+  `create_with_balance`, `entered_balances`, `reporting::account_tree`; V15 adds
+  `account.preset_id` (user); `coffer accounts add --preset` and a PRESET column. Coffer's
+  dialog and select are built on the unstyled `gpui-base` roots (`ui::dialog`,
+  `ui::menu`). Undrawn states composed from existing specs (user; `DESIGN.md` →
+  "Accounts panel" → "Built in M3.2"). "Close account…" moved to M3.17 (user). Snapshots
+  (`account`, `account-kind`, `new-account`, `add-balance`) checked by eye against
+  `8D8-0` and `FHZ-0`. Decisions: `ARCHITECTURE.md` → "Decision record: accounts
+  management"
 - ⬜ M3.3 Transactions view: virtualized `DataTable`, filter/sort/search, inline category edit
 - ⬜ M3.4 Import flow: pick file → detect/choose preset → column-mapping screen with live
   preview → dedupe/reconcile summary → commit
@@ -725,7 +740,8 @@ Every tool call appears in the access log.
   access log
 - ⬜ M3.16 Backups (list, create, restore with the M1.28 checks) and the export dialog
 - ⬜ M3.17 Manual asset and liability accounts (house, car, pension, mortgage, loan) with
-  dated valuations
+  dated valuations; closing an account ("Close account…", every kind, with its lock-date
+  guard; moved here from M3.2, user 2026-11-14)
 
 **Exit criteria:** day-to-day use (import, categorize, split, link refunds, review the inbox
 and duplicates) without the CLI.

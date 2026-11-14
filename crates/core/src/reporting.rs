@@ -38,6 +38,7 @@
 //!
 //! Nothing here logs transaction text.
 
+pub mod account_tree;
 pub mod balance;
 pub mod budget_status;
 pub mod catalog;

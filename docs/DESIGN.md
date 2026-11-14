@@ -14,7 +14,7 @@ this file covers how the app looks and feels.
 | Tool | [Paper](https://paper.design), read and written via the Paper MCP server |
 | Coffer file | **Coffer** — <https://app.paper.design/file/01M6YH440YAX6H5H322ZX4JYC9> (file ID `01M6YH440YAX6H5H322ZX4JYC9`, in the team's `Projects` folder). Created in D1.1; all Coffer design work happens here |
 | Coffer page | `Page 1` (`p-1-0`) |
-| Coffer artboards | Foundations (`1-0`), 1920 wide: colour, type scale, spacing, radii (D1.3). Components (`CJ-0`), 1920 wide: every component below in its states (D1.4). Transactions (`18E-0`) and Transactions · multi-select (`1NP-0`), 1440×900: the Transactions screen (D3.1). Overview (`22V-0`), 1440×900: the Overview screen (D4.1). D6.3, Transactions additions: Transactions · split and tags (`2Q3-0`), Transactions · excluded (`3FE-0`), Transactions · rule from an edit (`3WT-0`), Transactions · manual (cash account) (`4D7-0`), 1440×900, and Transactions · D6.3 states (`4X9-0`), 1440 wide. D6.1, remaining screens: Inbox (`564-0`), Import · map columns (`5ZQ-0`), Budgets (`6OE-0`), Trends (`781-0`), Net worth (`7LH-0`), Reviews (`7YM-0`), 1440×900; Import · steps (`6J4-0`) and Accounts panel · states (`8D8-0`), 1440 wide. D6.2: Logo (`8MT-0`), 1440 wide: the mark, its construction, lockups and app icon; Logo · concepts (`8JS-0`): the three directions explored (record only). D6.4, review queues: Review · possible duplicates (`8SE-0`) and Review · balance checks (`98K-0`), 1440×900; Review queues · states (`9MQ-0`), 1440 wide. D6.5, refunds and shared costs: Transactions · refund link (`9WS-0`), Transactions · shared cost (`BAT-0`) and Review · owed to you (`CCF-0`), 1440×900; Links and shares · states (`EB0-0`), 1440 wide. D6.11, safe report rendering: Reviews · safe rendering (`C6D-0`), 1440×900; Reviews · D6.11 states (`E43-0`), 1440 wide. D6.9, accounts you keep yourself: Accounts · asset (valuations) (`BSI-0`), 1440×900; Accounts · D6.9 states (`EPF-0`), 1440 wide. D6.6, Inbox impact preview: Inbox · rule impact (`ABK-0`) and Inbox · merchant name impact (`DL8-0`), 1440×900; Inbox · D6.6 states (`EWZ-0`), 1440 wide. D6.8, Settings: Settings · AI clients (`AQ2-0`), Settings · access log (`DC6-0`) and Settings · backups (`F63-0`), 1440×900; Settings · D6.8 states (`GQA-0`), 1440 wide. D6.7, Rules: Rules (`B1J-0`), Rules · apply to past transactions (`EFT-0`), Rules · merchant names (`G2O-0`) and Rules · change history (`GZT-0`), 1440×900; Rules · states (`HFH-0`), 1440 wide. D6.10, budgets and upcoming: Budgets · groups, rollover and pace (`CXU-0`) and Budgets · upcoming (`GD5-0`), 1440×900; Budgets and upcoming · states (`HNB-0`), 1440 wide |
+| Coffer artboards | Foundations (`1-0`), 1920 wide: colour, type scale, spacing, radii (D1.3). Components (`CJ-0`), 1920 wide: every component below in its states (D1.4). Transactions (`18E-0`) and Transactions · multi-select (`1NP-0`), 1440×900: the Transactions screen (D3.1). Overview (`22V-0`), 1440×900: the Overview screen (D4.1). D6.3, Transactions additions: Transactions · split and tags (`2Q3-0`), Transactions · excluded (`3FE-0`), Transactions · rule from an edit (`3WT-0`), Transactions · manual (cash account) (`4D7-0`), 1440×900, and Transactions · D6.3 states (`4X9-0`), 1440 wide. D6.1, remaining screens: Inbox (`564-0`), Import · map columns (`5ZQ-0`), Budgets (`6OE-0`), Trends (`781-0`), Net worth (`7LH-0`), Reviews (`7YM-0`), 1440×900; Import · steps (`6J4-0`) and Accounts panel · states (`8D8-0`, with M3.2's Add balance dialog `I7C-0`), 1440 wide. D6.2: Logo (`8MT-0`), 1440 wide: the mark, its construction, lockups and app icon; Logo · concepts (`8JS-0`): the three directions explored (record only). D6.4, review queues: Review · possible duplicates (`8SE-0`) and Review · balance checks (`98K-0`), 1440×900; Review queues · states (`9MQ-0`), 1440 wide. D6.5, refunds and shared costs: Transactions · refund link (`9WS-0`), Transactions · shared cost (`BAT-0`) and Review · owed to you (`CCF-0`), 1440×900; Links and shares · states (`EB0-0`), 1440 wide. D6.11, safe report rendering: Reviews · safe rendering (`C6D-0`), 1440×900; Reviews · D6.11 states (`E43-0`), 1440 wide. D6.9, accounts you keep yourself: Accounts · asset (valuations) (`BSI-0`), 1440×900; Accounts · D6.9 states (`EPF-0`), 1440 wide. D6.6, Inbox impact preview: Inbox · rule impact (`ABK-0`) and Inbox · merchant name impact (`DL8-0`), 1440×900; Inbox · D6.6 states (`EWZ-0`), 1440 wide. D6.8, Settings: Settings · AI clients (`AQ2-0`), Settings · access log (`DC6-0`) and Settings · backups (`F63-0`), 1440×900; Settings · D6.8 states (`GQA-0`), 1440 wide. D6.7, Rules: Rules (`B1J-0`), Rules · apply to past transactions (`EFT-0`), Rules · merchant names (`G2O-0`) and Rules · change history (`GZT-0`), 1440×900; Rules · states (`HFH-0`), 1440 wide. D6.10, budgets and upcoming: Budgets · groups, rollover and pace (`CXU-0`) and Budgets · upcoming (`GD5-0`), 1440×900; Budgets and upcoming · states (`HNB-0`), 1440 wide |
 | Coffer tokens | 126: 96 created in D1.2, 24 size tokens and 2 danger-state colours added in D1.4, `--container-search-field` added in D3.1, `--container-dialog` added in D6.3, `--container-dialog-wide` and `--container-reading` added in D6.1; content hash `6a126241` (see "Tokens") |
 | Reference file | **Festive comet** — <https://app.paper.design/file/01M6GNHMB1RVVHY51G5W61H75N/p-1-0>. Not Coffer's file: a design-editor app this system was extracted from. Read it for detail; never edit it |
 | Reference page | `Editor — v1` (`p-1-0`) |
@@ -945,6 +945,50 @@ replace it with their own lists.
   a credit card owes money as a negative balance; skip the balance when the export has
   one; pots come from imports. Cancel / "Add account" (neutral primary).
 - Cash, asset and liability accounts: drawn in D6.9, see "Accounts you keep yourself".
+- **Add balance dialog** (`I7C-0`, under New account on the states board; drawn for M3.2
+  and approved by the user, 2026-11-14), from "Add balance…" on a bank or cash account.
+  D6.9's "Add a balance for Mortgage" with the bank's wording: title "Add a balance for
+  {account}"; Balance (the currency's symbol in mono `text-faint`, the amount in mono,
+  signed: typed with a minus when overdrawn) with its date in a 96px field; Note; caption
+  "Your balance at the end of that day, as your bank shows it. Type a minus if the
+  account is overdrawn. Coffer checks it against the transactions since the last
+  balance."; Cancel / "Add balance" (neutral primary). No new tokens.
+- **Built in M3.2** (`crates/app/src/accounts/`): the panel from the database, the
+  account inspector on Transactions, New account and Add balance. "Close account…" waits
+  for M3.17 (user), so the inspector has no footer yet. The Preset select shows the
+  preset's own name ("Monzo"), where the artboard wrote "Monzo (current account)".
+  **Composed from existing specs, not drawn** (user, 2026-11-14; review):
+  - *Empty panel*: with no accounts, the Accounts section shows one 28px row "No
+    accounts yet" in body type `text-muted`, and net worth reads "—". A database that
+    can't be read puts the reason there in caption type, `danger`.
+  - *Several currencies*: one net worth line per currency, nothing converted (M4.6).
+  - *Assets and liabilities* made with the CLI are listed under ASSETS AND LIABILITIES
+    (D6.9), without that section's `+` until M3.17.
+  - *Menus*: the Currency and Preset menus are the Kind menu (`FHZ-0`): Currency has two
+    groups, "Common" (GBP, EUR, USD) and "Every currency" (by code), and scrolls after 8
+    rows (`control` × 8); Preset lists "No preset · detect it at import" and the
+    presets. The option the arrow keys reach takes the `hover` fill, like the chosen one.
+    An option that can't be chosen is faded to `opacity-disabled` with the reason as its
+    hint ("Asset · has transactions"); in New account, Asset and Liability read "added in
+    a later version" until M3.17.
+  - *Read-only kind*: a pot's Kind is shown like the locked Currency ("Pot" and the
+    lock); a pot has no Bank or Preset, and nor does a cash account (D6.9's cash
+    inspector). A pot's header caption reads "Balance on 9 Nov · in Current account".
+  - *No balance yet*: the header has no figure, and its caption reads "No balance yet:
+    add one below, or import a file that has balances."
+  - *Balances caption*: the artboard's Monzo sentence when the preset is Monzo, otherwise
+    "Coffer counts forward from the balances you enter and the ones in your imports.
+    Each one is checked against the transactions." A row shows the balance's note when
+    it has one, else where it came from ("Entered by you", "Statement", "Opening
+    balance"). Dates from another year use D6.9's 56px lane ("2 Oct 25").
+  - *Errors*: a field that can't be read, or a change core refuses, is said under the
+    form in caption type, `danger` (a sentence: "An account needs a name."), and nothing
+    is saved; in the inspector the field gets its stored value back.
+  - *Dates* are typed into the mono date field ("9 Nov 2026"; also "9 Nov", ISO and
+    day-first numbers): no date picker is drawn.
+  - *Keyboard*: the panel is a Tab stop; the arrow keys move the selected account in
+    panel order and Escape goes back to all accounts, with the inset focus ring on the
+    selected row.
 
 **Inbox** (`564-0`). Transactions shell with the Inbox tab active and the left panel
 replaced by filters:
@@ -2359,7 +2403,9 @@ reference file except the values recorded here.
   | Agent primary, agent ghost | Stock, wrapped; not built | Same `Custom` path; the solid agent primary sets `.bg(moldavite)` per instance. Needs Paper first: the table gives no horizontal padding for either. Agent primary's optional trailing kbd needs the Kbd wrapper; agent ghost needs a leading icon (sparkle) |
   | Input, field, select, command bar | Stock, wrapped | In dark mode the stock fill is the *border* colour (`input`) at 30% alpha, so no theme value gives `field` fill with a `hairline` border; the wrapper sets `.bg(field)`. Height is 28px from the rem base |
   | Data table | Not used for Transactions (D5): a GPUI `list` with Coffer's rows, which interleaves day headers of their own height | Colours map (no stripes, no row dividers, `hover`/`molten-soft` rows, `canvas` sticky header) and row height takes `Size::Size(size::CONTROL)`. These colours apply if a stock data table is used elsewhere. The in-place category select isn't built yet |
-  | Popover, menu, dialog, sheet, notification | Stock; on the showcase's stock board, unwrapped | Fill and text map (`float`, `text`). Popovers use a hard-coded shadcn ring and shadow at `radius`; Coffer's floating spec is a 1px `border`, `radius-lg` and the toolbar shadow, set per instance |
+  | Dialog | **Custom: built**, `coffer_app::ui::dialog` (M3.2), on the unstyled `gpui-base` dialog host | The host keeps the focus trap and Escape; Coffer draws the spec surface (`float`, 1px `border`, `radius-lg`, Dock shadow `shadow::DOCK`, 16px padding and gaps, footer right-aligned) and the provisional backdrop. The stock `gpui-component` dialog sets its own shadow after the caller's style, so it can't carry the Dock shadow. Its owner keeps whether it's open. Cancel is the 30px `ButtonVariant::Secondary` (Paper `8JN-0`) |
+  | Select and its menu | **Custom: built**, `coffer_app::ui::menu` (M3.2), on the unstyled `gpui-base` select root | The root keeps the combobox role, opening with Enter, Space and the arrows, Escape, and moving focus between trigger and menu; Coffer draws the closed field (`ui::field::SelectField`) and the Kind menu (`FHZ-0`): `float`, 1px `border`, `radius-lg`, Toolbar shadow, 4px padding, caps group labels (`typography::MENU_LABEL`), 28px options with a 16px icon slot and the `Glyph::Chosen` tick. Drawn `deferred` below the field so a scrolling inspector or a dialog doesn't clip it. Options are list-box options for assistive technology |
+  | Popover, menu (other than a select's), sheet, notification | Stock; on the showcase's stock board, unwrapped | Fill and text map (`float`, `text`). Popovers use a hard-coded shadcn ring and shadow at `radius`; Coffer's floating spec is a 1px `border`, `radius-lg` and the toolbar shadow, set per instance |
   | Title bar | Stock; on the showcase's stock board, unwrapped | Keeps platform window controls and dragging. Height is a constant 34px; Coffer's is 40px |
   | List row | Stock, wrapped: **built**, `coffer_app::ui::list_row` (`ListRow`) | Wraps the stock `ListItem` (pointer, accessible row). 28px, radius 6, 8px inline padding, 16px icon slot, `text-secondary` label lifting to `text` on hover, `molten-soft` fill with white label when selected, trailing mono count. The owning list holds focus and passes `focus_visible`; the row draws the `Inset` ring on a wrapper, because `ListItem` lays children out in an inner box and scrolling lists clip an outside ring. Nesting is a 20px left indent on the wrapper. No pressed look (rows select on click) |
   | Transaction row, table header, day header | **Custom: built**, `coffer_app::ui::transaction_row` | Columns from `column-category`/`column-account`/`column-amount`; amounts in `mono-amount`, sign never carried by colour. Category cell: assigned (marker), uncategorised (dashed marker), suggested (sparkle, `moldavite-text`), transfer (row dimmed, transfer glyph). Selection and focus as the list row. D5 kept these rows, in a virtualised GPUI `list` (`crates/app/src/transactions.rs`) |

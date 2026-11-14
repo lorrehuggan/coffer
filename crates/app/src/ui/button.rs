@@ -80,6 +80,10 @@ pub enum ButtonVariant {
     /// A compact outline ("Main"): 26px, `hairline` outline, `text-secondary`
     /// label 11/14 500.
     OutlineCompact,
+    /// A dialog's secondary action beside its primary ("Cancel"): 30px,
+    /// `border-strong` outline, radius 7, 12px padding, `text-strong` label
+    /// 12/16 500 (Paper `8JN-0`, D6.1 New account).
+    Secondary,
     /// A destructive action that can be undone or is confirmed later ("Delete
     /// import"): 30px, `danger` outline and label 12/16 500.
     DestructiveOutline,
@@ -159,6 +163,13 @@ impl ButtonVariant {
                 color::HAIRLINE,
                 color::TEXT_SECONDARY,
             ),
+            Self::Secondary => outline(
+                size::CONTROL_LG,
+                spacing::S3,
+                radius::BUTTON,
+                color::BORDER_STRONG,
+                color::TEXT_STRONG,
+            ),
             Self::DestructiveOutline => outline(
                 size::CONTROL_LG,
                 spacing::S3,
@@ -226,12 +237,14 @@ impl ButtonVariant {
                 weight: weight::MEDIUM,
                 ..typography::CAPTION
             },
-            Self::DestructiveOutline | Self::AgentOutline | Self::AgentGhost | Self::Toolbar => {
-                TextRole {
-                    weight: weight::MEDIUM,
-                    ..typography::BUTTON
-                }
-            }
+            Self::Secondary
+            | Self::DestructiveOutline
+            | Self::AgentOutline
+            | Self::AgentGhost
+            | Self::Toolbar => TextRole {
+                weight: weight::MEDIUM,
+                ..typography::BUTTON
+            },
         }
     }
 
@@ -1063,6 +1076,7 @@ mod tests {
             ButtonVariant::Primary,
             ButtonVariant::Outline,
             ButtonVariant::OutlineCompact,
+            ButtonVariant::Secondary,
             ButtonVariant::DestructiveOutline,
             ButtonVariant::DestructiveSolid,
             ButtonVariant::AgentPrimary,
@@ -1076,6 +1090,7 @@ mod tests {
         for look in [
             ButtonVariant::Outline.appearance(),
             ButtonVariant::OutlineCompact.appearance(),
+            ButtonVariant::Secondary.appearance(),
             ButtonVariant::DestructiveOutline.appearance(),
             Chip::appearance(),
         ] {
@@ -1111,6 +1126,18 @@ mod tests {
     }
 
     #[test]
+    fn the_secondary_button_pairs_with_the_primary_in_dialogs() {
+        // Paper `8JN-0` (New account, Cancel): 30px like the neutral primary
+        // beside it, `border-strong`, radius 7, 12px padding.
+        let secondary = ButtonVariant::Secondary.appearance();
+        let primary = ButtonVariant::Primary.appearance();
+        assert_eq!(secondary.height, primary.height);
+        assert_eq!((secondary.padding_x, secondary.radius), (px(12.), px(7.)));
+        assert_eq!(secondary.border, Some(color::BORDER_STRONG));
+        assert_eq!(secondary.foreground, color::TEXT_STRONG);
+    }
+
+    #[test]
     fn labels_use_the_button_type() {
         let text = |variant: ButtonVariant| {
             let role = variant.text();
@@ -1127,6 +1154,10 @@ mod tests {
         assert_eq!(
             text(ButtonVariant::OutlineCompact),
             (px(11.), px(14.), weight::MEDIUM)
+        );
+        assert_eq!(
+            text(ButtonVariant::Secondary),
+            (px(12.), px(16.), weight::MEDIUM)
         );
         assert_eq!(
             text(ButtonVariant::DestructiveOutline),
@@ -1293,6 +1324,7 @@ mod tests {
         for look in [
             ButtonVariant::Outline.appearance(),
             ButtonVariant::OutlineCompact.appearance(),
+            ButtonVariant::Secondary.appearance(),
             ButtonVariant::DestructiveOutline.appearance(),
             ButtonVariant::AgentOutline.appearance(),
             ButtonVariant::Toolbar.appearance(),
@@ -1603,6 +1635,7 @@ mod tests {
             ("primary", ButtonVariant::Primary),
             ("outline", ButtonVariant::Outline),
             ("outline-compact", ButtonVariant::OutlineCompact),
+            ("secondary", ButtonVariant::Secondary),
             ("destructive-outline", ButtonVariant::DestructiveOutline),
             ("destructive-solid", ButtonVariant::DestructiveSolid),
             ("agent-primary", ButtonVariant::AgentPrimary),

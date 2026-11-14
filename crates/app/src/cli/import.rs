@@ -327,7 +327,7 @@ fn detect<'p>(file: &SourceFile, presets: &'p Presets) -> anyhow::Result<Reader<
     }
 }
 
-fn preset_lines(presets: &Presets) -> String {
+pub(super) fn preset_lines(presets: &Presets) -> String {
     if presets.is_empty() {
         return "  (none)".to_owned();
     }

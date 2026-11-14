@@ -49,6 +49,18 @@ pub enum Glyph {
     /// Coffer's mark, the strongbox (`DESIGN.md` → "Logo"). Filled, drawn
     /// in `molten` beside the wordmark. 16px.
     Mark,
+    /// A cash account: a banknote (Paper `FHZ-0`, the Kind menu). 12px.
+    Cash,
+    /// An asset account: an isometric box, something you own (D6.9). 12px.
+    Asset,
+    /// A liability account: a receipt with a minus (D6.9). 12px.
+    Liability,
+    /// A value that can't change here, after it in a read-only field
+    /// (the inspector's Currency, Paper `8GJ-0`). 10px.
+    Lock,
+    /// The chosen item in a menu (Paper `FHZ-0`). Its tick is a little
+    /// shorter than [`Glyph::Check`]'s. 12px.
+    Chosen,
 }
 
 impl Glyph {
@@ -62,8 +74,12 @@ impl Glyph {
             | Self::Transfer
             | Self::Sparkle
             | Self::Check
-            | Self::Search => size::ICON_SM,
-            Self::Close | Self::Minimize | Self::Maximize => size::ICON_XS,
+            | Self::Search
+            | Self::Cash
+            | Self::Asset
+            | Self::Liability
+            | Self::Chosen => size::ICON_SM,
+            Self::Close | Self::Minimize | Self::Maximize | Self::Lock => size::ICON_XS,
             Self::Settings => size::ICON_MD,
             Self::ChevronDown => size::MARKER,
             Self::Panel | Self::Mark => size::ICON_LG,
@@ -130,6 +146,26 @@ impl Glyph {
                 r#"<path d="M2.5 2H13.5A1.5 1.5 0 0 1 15 3.5V6H1V3.5A1.5 1.5 0 0 1 2.5 2Z"/>"#,
                 r#"<path d="M1 7H7V9A1 1 0 0 0 9 9V7H15V12.5A1.5 1.5 0 0 1 13.5 14H2.5A1.5 1.5 0 0 1 1 12.5Z"/></svg>"#
             ),
+            Self::Cash => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M1.5 3.5H10.5V8.5H1.5ZM6 7.25A1.25 1.25 0 1 0 6 4.75A1.25 1.25 0 0 0 6 7.25Z"/></svg>"#
+            ),
+            Self::Asset => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M6 1.5L10.25 3.75V8.25L6 10.5L1.75 8.25V3.75Z"/><path d="M1.75 3.75L6 6L10.25 3.75M6 6V10.5"/></svg>"#
+            ),
+            Self::Liability => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M2.75 1.5H9.25V10.5L7.625 9.5L6 10.5L4.375 9.5L2.75 10.5Z"/><path d="M4.5 5.25H7.5"/></svg>"#
+            ),
+            Self::Lock => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1">"#,
+                r#"<rect x="2" y="4.5" width="6" height="4" rx="1"/><path d="M3.25 4.5V3.25C3.25 2.3 4 1.5 5 1.5C6 1.5 6.75 2.3 6.75 3.25V4.5"/></svg>"#
+            ),
+            Self::Chosen => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M2.5 6.25L4.75 8.5L9.5 3.5"/></svg>"#
+            ),
         }
     }
 
@@ -157,7 +193,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Glyph; 14] = [
+    const ALL: [Glyph; 19] = [
         Glyph::Account,
         Glyph::Pot,
         Glyph::Plus,
@@ -172,6 +208,11 @@ mod tests {
         Glyph::Maximize,
         Glyph::Settings,
         Glyph::Mark,
+        Glyph::Cash,
+        Glyph::Asset,
+        Glyph::Liability,
+        Glyph::Lock,
+        Glyph::Chosen,
     ];
 
     /// The `viewBox` side in the markup, which `size` must match so strokes

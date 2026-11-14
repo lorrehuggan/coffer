@@ -19,7 +19,8 @@ charts, and exposes the data to AI clients through an MCP server.
 M0 and the design track (D1–D6) are done and signed off; every M1 item is done,
 M1.9 checked against a real Monzo export. Every M2 item is done, tested on synthetic
 data and checked with Claude Code against a real Monzo export (2026-11-13). M3 has
-started: M3.1 (the app shell and window state) is done. The Cargo
+started: M3.1 (the app shell and window state) and M3.2 (accounts management) are done.
+The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
 (`crates/core/migrations/V1__initial_schema.sql`, M1.4) and the
@@ -34,7 +35,8 @@ auto-created, rows mirrored and paired as confirmed transfers; M1.17, migration
 `V4__sub_account_key.sql`) and the import commit (`import`: preview → backup → commit →
 undo with dedupe and reconciliation, then preset categories, the pot mirror, merchant
 names, rules and transfer pairing in the same DB transaction; `balance`: balance checks; `account`:
-minimal accounts and entered balances; `id`: row IDs; M1.11–M1.13, migration
+accounts and entered balances, and since M3.2 editing (`update`, `usage`),
+`create_with_balance`, `entered_balances` and the preset (`V15__account_preset.sql`); `id`: row IDs; M1.11–M1.13, migration
 `V3__import_flags.sql`) and local backups (`backup`: `VACUUM INTO` snapshots in
 `<data dir>/backups`, rotation, checked restore; taken before import commits and
 migrations; M1.28) and splits (`split`: lines summing exactly to the parent, the
@@ -69,7 +71,7 @@ database can't be opened, moved into the log later; `V11__mcp.sql`,
 (`envelope`: `sanitize`, `strip_invisible`, `reads_like_instructions`, merchant
 pseudonyms; M2.13), reporting (`reporting`: the `Ledger` over `ledger_line`, `Period`,
 per-currency `Totals`, `Limit`; `summary`, `spending`, `budget_status`, `net_worth`,
-`balance`, `rows`, `catalog`; M2.2) and budgets (`budget`), recurring detection
+`balance`, `rows`, `catalog`; M2.2; `account_tree`, the accounts panel's read model, M3.2) and budgets (`budget`), recurring detection
 (`recurring`, M2.6) and schedules (`schedule`: confirm, match at import, skips, missed and
 late; M2.10; `V12__schedule.sql`), the inbox (`inbox`: typed payloads, filing with dedupe
 and caps, `approve`/`approve_all`/`reject`, `impact`, and `own`, Coffer's own rule
@@ -82,13 +84,21 @@ harness in `crates/mcp/tests/support/`, with `matrix.rs` (every tool × level) a
 `m2_exit.rs`. Setup for clients: `docs/mcp-setup.md`. The GUI is in `crates/app` (package `coffer-app`, lib
 `coffer_app`, binary `coffer`). `coffer` opens the app shell (`crates/app/src/shell.rs`,
 M3.1): the title bar's eight view tabs and Settings button (⌘1–⌘8, ⌘,), the view's left
-panel (`shell::accounts_panel` on the five money views), the status bar, and the window
+panel (the accounts panel on the five money views), the status bar, and the window
 state (bounds, mode, open view) saved in the `setting` table (`setting::WindowState`)
-and restored on launch (`shell::window_state`), so the GUI opens the database for it and
-for nothing else yet. Transactions (`crates/app/src/transactions.rs`) is the only screen
-built, on fixture data; the other views show the shell and `ui::empty_state`. And
+and restored on launch (`shell::window_state`). Accounts management (M3.2) is
+`crates/app/src/accounts/`: `Accounts` (the accounts and the selection; every change goes
+through `store::AccountStore`, which opens the database per call), `panel` (from the
+database: pots nested, balances, flagged and "No balance" rows, arrow keys), `inspector`
+(the account inspector on Transactions while an account and no transaction is selected:
+details, balances, pots, imports), the `new_account` and `add_balance` dialogs, and
+`fixture` (sample accounts for snapshots and tests). Coffer's dialog and select are
+`ui::dialog` and `ui::menu`, on the unstyled `gpui-base` roots; `format` writes and reads
+money and dates. Transactions (`crates/app/src/transactions.rs`) is still on fixture
+data (the table isn't filtered by account until M3.3); the other views show the shell
+and `ui::empty_state`. And
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
-`import`, `accounts` (`list`, `add`), `undo-import`, `backup` (`--list`) and
+`import`, `accounts` (`list`, `add`, `--preset` since M3.2), `undo-import`, `backup` (`--list`) and
 `restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2
 `mcp --client <name>`, `ai-access` (`list`, `enable`, `level`, `revoke`, `ignore`, `off`,
 `on`, `log`), `budgets` (`list`, `set`, `remove`), `schedules` (`detect`, `list`, `show`,

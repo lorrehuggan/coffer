@@ -26,15 +26,23 @@ async fn a_call_refused_with_migrations_pending_is_logged_after_migrating() {
     let client = fixture.connect("codex", AccessLevel::Aggregate).await;
     client.call_ok("list_categories", json!({})).await;
 
-    // As an older Coffer left it: the last migration not applied. (Only its
-    // history row goes; V14 rebuilds `mcp_access_log` from itself.)
-    rusqlite::Connection::open(fixture.path())
-        .unwrap()
-        .execute(
-            "DELETE FROM refinery_schema_history WHERE version = ?1",
-            [Database::supported_schema_version()],
-        )
+    // As an older Coffer left it: the last migration not applied. V15 adds
+    // `account.preset_id`, so undoing it drops the column with its history
+    // row.
+    let conn = rusqlite::Connection::open(fixture.path()).unwrap();
+    assert_eq!(
+        Database::supported_schema_version(),
+        15,
+        "undo the latest migration here"
+    );
+    conn.execute("ALTER TABLE account DROP COLUMN preset_id", [])
         .unwrap();
+    conn.execute(
+        "DELETE FROM refinery_schema_history WHERE version = ?1",
+        [Database::supported_schema_version()],
+    )
+    .unwrap();
+    drop(conn);
     assert!(matches!(
         Database::open_existing(fixture.path()),
         Err(db::Error::SchemaTooOld { .. })
