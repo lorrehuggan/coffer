@@ -1,6 +1,7 @@
 //! The title bar (`docs/DESIGN.md` → "Components" → **Title bar**, Paper
-//! `OU-0`; on the Transactions artboard `18F-0`): Coffer's mark and wordmark,
-//! the view tabs, the command bar and the window controls.
+//! `OU-0`; on the Rules artboard `B8Y-0`, with the Settings button on
+//! Settings · AI clients `B08-0`): Coffer's mark and wordmark, the view
+//! tabs, the command bar, the Settings button and the window controls.
 //!
 //! Custom rather than the stock `TitleBar`, which is a fixed 34px (Coffer's
 //! is 40) and draws its own window controls. The window behaviour is the
@@ -13,7 +14,7 @@
 //! client-decorated. macOS draws its own traffic lights into the bar
 //! (not yet laid out: the mark and wordmark would need to move clear of them).
 
-use gpui_kit::base::InteractiveElementExt as _;
+use gpui_kit::base::{InteractiveElementExt as _, Tab, Tabs};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, ClickEvent, ElementId, InteractiveElement as _, IntoElement, MouseButton,
@@ -59,7 +60,13 @@ pub fn window_options() -> WindowOptions {
 }
 
 /// One of Coffer's views, as a tab in the title bar.
-#[derive(IntoElement)]
+///
+/// Built on the unstyled `gpui-base` [`Tab`]: it owns the click, the
+/// accessible tab role with its selected state and position, and stops the
+/// press from reaching the title bar, so pressing a tab never starts a
+/// window move. Tabs aren't Tab stops; the views have shortcuts instead
+/// (`crate::shell`). Rendered by the [`TitleBar`] it's added to, which
+/// numbers the tabs.
 pub struct ViewTab {
     id: ElementId,
     label: SharedString,
@@ -105,15 +112,14 @@ impl ViewTab {
     pub fn is_active(&self) -> bool {
         self.active
     }
-}
 
-impl RenderOnce for ViewTab {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        div()
-            .id(self.id)
-            .flex()
+    /// The tab as drawn, `position` of `count` in its list (one-based).
+    fn into_tab(self, position: usize, count: usize) -> Tab {
+        Tab::new(self.id)
+            .selected(self.active)
+            .set_position(position, count)
+            .accessibility_label(self.label.clone())
             .flex_none()
-            .items_center()
             .gap(spacing::S1_5)
             .h(size::CONTROL)
             .px(spacing::S2_5)
@@ -207,13 +213,15 @@ struct DragState {
 /// The title bar: 40px, `chrome`, bottom `hairline`.
 ///
 /// Takes the brand-and-tabs group (mark, wordmark, view tabs), the command
-/// bar and the window controls. The tabs group and the controls share the width either side of
-/// the command bar, which is centred when the tabs leave room. At 1440 the
-/// seven tabs don't, so it follows them (`DESIGN.md` → "Transactions").
+/// bar, the Settings button and the window controls. The tabs group and the
+/// controls share the width either side of the command bar, which is centred
+/// when the tabs leave room. At 1440 the eight tabs don't, so it follows them
+/// (`DESIGN.md` → "Transactions").
 #[derive(IntoElement)]
 pub struct TitleBar {
     tabs: Vec<ViewTab>,
     command_bar: CommandBar,
+    settings: Option<IconButton>,
 }
 
 impl TitleBar {
@@ -221,7 +229,16 @@ impl TitleBar {
         Self {
             tabs: Vec::new(),
             command_bar,
+            settings: None,
         }
+    }
+
+    /// Puts `button` at the right, before the window controls and a 1×14
+    /// `hairline` (`DESIGN.md` → "Settings"): the Settings button, active
+    /// while Settings is open.
+    pub fn settings(mut self, button: IconButton) -> Self {
+        self.settings = Some(button);
+        self
     }
 
     /// Adds a view tab after the others; tabs are separated by a 1×14
@@ -258,18 +275,36 @@ impl RenderOnce for TitleBar {
                     ),
             )
             .child(div().flex_none().w(spacing::S3));
+        let count = self.tabs.len();
+        let mut tabs = Tabs::new("view-tabs")
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(spacing::S1);
         for (index, tab) in self.tabs.into_iter().enumerate() {
             if index > 0 {
-                views = views.child(separator(spacing::S3_5, color::HAIRLINE));
+                tabs = tabs.child(separator(spacing::S3_5, color::HAIRLINE));
             }
-            views = views.child(tab);
+            tabs = tabs.child(tab.into_tab(index + 1, count));
         }
+        views = views.child(tabs);
 
+        // Paper spaces the rule by a 4px spacer on each side, inside the
+        // controls' own 2px gap.
+        let spacer = || div().flex_none().w(spacing::S1);
         let controls = div()
             .flex()
             .flex_1()
+            .items_center()
             .justify_end()
             .gap(spacing::S0_5)
+            .when_some(self.settings, |this, settings| {
+                this.child(settings).when(linux, |this| {
+                    this.child(spacer())
+                        .child(separator(spacing::S3_5, color::HAIRLINE))
+                        .child(spacer())
+                })
+            })
             .when(linux, |this| {
                 this.child(
                     IconButton::new("window-minimize", Glyph::Minimize, "Minimise")

@@ -12,6 +12,7 @@ pub mod agent_suggestion;
 pub mod badge;
 pub mod bulk_action_bar;
 pub mod button;
+pub mod empty_state;
 pub mod field;
 pub mod icon;
 pub mod kbd;

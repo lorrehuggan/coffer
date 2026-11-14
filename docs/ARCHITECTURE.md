@@ -1138,6 +1138,55 @@ as built). Everything else follows an earlier decision record or invariant.
    doesn't fail the restore, which is done by then: `coffer restore` says the rows are
    in the pre-restore backup (user).
 
+### Decision record: the app shell and window state (2026-11-14)
+
+M3.1. Marked **(user)**: decided by the user on 2026-11-14 when asked before the build.
+Everything else follows `DESIGN.md` or an earlier record.
+
+1. **Navigation is the title bar's view tabs, not a sidebar.** ROADMAP M3.1 said "sidebar
+   navigation", written before the design track. Paper's shell (Rules `B1J-0`, Settings ·
+   AI clients `AQ2-0`, and `DESIGN.md` → "Finance screens") navigates with eight view tabs
+   in the title bar (Overview, Transactions, Trends, Budgets, Net worth, Inbox, Reviews,
+   Rules) and a Settings icon button before the window controls. The left panel belongs to
+   the view: the five views of the money share the accounts panel, and Inbox, Reviews,
+   Rules and Settings get their own lists with their screens. Paper wins, so the shell
+   (`crates/app/src/shell.rs`) follows it. Keyboard: ⌘1–⌘8 open the views in tab order and
+   ⌘, opens Settings (Ctrl on Linux and Windows). Paper draws no view shortcuts; these are
+   keyboard paths, not visual values. The tabs are `gpui-base` `Tab`s (tab role, selected
+   state, position in the list), not Tab stops. Clicking the Settings button while
+   Settings is open goes back to the view it was opened from (Transactions if the window
+   opened on Settings); ⌘, only opens it, as the platform shortcut does elsewhere (user).
+2. **Window state lives in the `setting` table (user).** Key `app.window`, a JSON
+   `WindowState` (`coffer_core::setting`): mode (windowed, maximised, full screen), the
+   restore bounds in whole logical pixels, and the open view's key. Core checks the range
+   (sides 1–32768, origins within ±32768, a view key of at most 32 `[a-z_]`) and refuses an
+   out-of-range write; a stored value that doesn't parse reads as an error and the app uses
+   its defaults. It isn't exported and no MCP tool reads it. Restoring a backup rolls it
+   back with everything else, which is harmless. The rejected option was a separate
+   `window.json` in the data dir, which would have kept the GUI off the database until M3.2.
+3. **So the GUI opens the database from M3.1 on.** `coffer` (no subcommand) opens it with
+   `Database::open` at startup, creating and migrating it as the CLI does (with the
+   migration backup), and opens it again for each save. Like the MCP server, it holds no
+   connection between reads and writes, and checks the restore lock first: during a
+   restore it reads nothing and skips the save. The window state is a convenience: any
+   failure (no data dir, a database Coffer can't open, a bad value) leaves the window at its
+   defaults with a warning on stderr (`COFFER_LOG`, as `coffer mcp`), and never stops the
+   app.
+4. **When it's saved.** After the window has stayed put for 500ms following a move, resize
+   or view change (one write per drag), on a background thread; and at once, on the main
+   thread, when the window closes or the app quits.
+5. **How it's restored.** A saved window whose title bar wouldn't show at least 40×40px
+   on any display (a display unplugged since) opens centred at 1440×900 instead; one smaller
+   than the 1280×800 minimum grows to it; with no displays reported, the saved bounds are
+   used. An unknown view key (from a newer build) opens the default view, Transactions,
+   the only screen built so far. Maximised and full-screen windows reopen so, with their
+   restore bounds.
+6. **Views not built yet show the shell and an empty state (user).** Every tab works.
+   Until its roadmap item lands, a view shows its shell (the accounts panel on the money
+   views, nothing on the others), with the Empty state component (`13L-0`) centred on the
+   canvas, as `DESIGN.md` → "Review queues" centres an empty canvas: "{View} isn't built
+   yet", a line saying Transactions works on sample data, and the ⌘2 shortcut.
+
 ## Architecture
 
 ```
@@ -1155,7 +1204,8 @@ Packages are named `coffer-core`, `coffer-import`, `coffer-mcp` and `coffer-app`
 binary is built from `coffer-app`, which depends on the other three; shared files stay at the
 repository root (`assets/` for fonts and brand marks, `design/` for the exported tokens).
 
-Single binary: `coffer` (GUI), `coffer mcp` (stdio MCP server),
+Single binary: `coffer` (GUI: the app shell around the views, see "Decision record: the
+app shell and window state"), `coffer mcp` (stdio MCP server),
 `coffer import <file>` (headless import, used from M1), `coffer backup [--list]` /
 `coffer restore <file> [--yes]` (M1.28), `coffer export`.
 

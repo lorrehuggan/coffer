@@ -44,6 +44,8 @@ pub enum Glyph {
     Minimize,
     /// Maximise or restore the window. 10px.
     Maximize,
+    /// Settings (sliders), in the title bar. 14px.
+    Settings,
     /// Coffer's mark, the strongbox (`DESIGN.md` → "Logo"). Filled, drawn
     /// in `molten` beside the wordmark. 16px.
     Mark,
@@ -62,6 +64,7 @@ impl Glyph {
             | Self::Check
             | Self::Search => size::ICON_SM,
             Self::Close | Self::Minimize | Self::Maximize => size::ICON_XS,
+            Self::Settings => size::ICON_MD,
             Self::ChevronDown => size::MARKER,
             Self::Panel | Self::Mark => size::ICON_LG,
         }
@@ -118,6 +121,10 @@ impl Glyph {
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
                 r#"<rect x="2" y="2" width="6" height="6" rx="1"/></svg>"#
             ),
+            Self::Settings => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M2 4H6.5M9.5 4H12M2 10H4.5M7.5 10H12"/><circle cx="8" cy="4" r="1.5"/><circle cx="6" cy="10" r="1.5"/></svg>"#
+            ),
             Self::Mark => concat!(
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">"#,
                 r#"<path d="M2.5 2H13.5A1.5 1.5 0 0 1 15 3.5V6H1V3.5A1.5 1.5 0 0 1 2.5 2Z"/>"#,
@@ -150,7 +157,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Glyph; 13] = [
+    const ALL: [Glyph; 14] = [
         Glyph::Account,
         Glyph::Pot,
         Glyph::Plus,
@@ -163,6 +170,7 @@ mod tests {
         Glyph::Search,
         Glyph::Minimize,
         Glyph::Maximize,
+        Glyph::Settings,
         Glyph::Mark,
     ];
 

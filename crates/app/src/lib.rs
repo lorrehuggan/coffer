@@ -3,6 +3,7 @@
 //! built from this crate.
 
 pub mod cli;
+pub mod shell;
 pub mod showcase;
 pub mod theme;
 pub mod transactions;
