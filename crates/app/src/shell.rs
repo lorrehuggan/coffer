@@ -14,9 +14,9 @@
 //! (Ctrl on Linux and Windows). Clicking the Settings button while Settings
 //! is open goes back to the view it was opened from.
 //!
-//! Transactions is the only screen built so far (D5, fixture data). The
-//! others show the shell around an [`EmptyState`] that says so, until their
-//! roadmap items land.
+//! Transactions is the only screen built so far (D5; on the database since
+//! M3.3). The others show the shell around an [`EmptyState`] that says so,
+//! until their roadmap items land.
 //!
 //! The shell owns which view is open and the window's saved state
 //! ([`window_state`]): [`open`] restores the bounds and the view from the
@@ -48,6 +48,7 @@ use crate::accounts::new_account::NewAccountDialog;
 use crate::accounts::store::AccountStore;
 use crate::accounts::{self, Accounts, AccountsEvent, DialogClosed};
 use crate::theme::tokens::{color, size as token_size, typography};
+use crate::transactions::store::TransactionStore;
 use crate::transactions::{self, TransactionsView};
 use crate::ui::button::IconButton;
 use crate::ui::empty_state::EmptyState;
@@ -238,9 +239,17 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
             None
         }
     };
-    let accounts = match paths::database_path() {
-        Ok(database) => Accounts::from_store(AccountStore::new(database)),
-        Err(error) => Accounts::unavailable(format!("Coffer has no data folder: {error}")),
+    let (accounts, source) = match paths::database_path() {
+        Ok(database) => (
+            Accounts::from_store(AccountStore::new(database.clone())),
+            transactions::Source::Database(TransactionStore::new(database)),
+        ),
+        // Without a data folder there's nothing to read: the panel says why,
+        // and the table shows the sample data.
+        Err(error) => (
+            Accounts::unavailable(format!("Coffer has no data folder: {error}")),
+            transactions::Source::Fixture,
+        ),
     };
     let saved = store.as_ref().and_then(WindowStore::load);
     let fallback = Bounds::centered(None, size(px(1440.), px(900.)), cx);
@@ -265,7 +274,7 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
     gpui_kit::open_window(options, cx, move |window, cx| {
         cx.new(|cx| {
             let accounts = cx.new(|_| accounts);
-            let mut shell = ShellView::with_accounts(view, accounts, window, cx);
+            let mut shell = ShellView::with_sources(view, accounts, source, window, cx);
             if let Some(store) = store {
                 shell.keep_window_state(store, window, cx);
             }
@@ -311,10 +320,23 @@ impl ShellView {
         Self::with_accounts(view, accounts, window, cx)
     }
 
-    /// The shell showing `view` with `accounts` in its panel.
+    /// The shell showing `view` with `accounts` in its panel and the
+    /// sample transactions.
     pub fn with_accounts(
         view: View,
         accounts: Entity<Accounts>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self::with_sources(view, accounts, transactions::Source::Fixture, window, cx)
+    }
+
+    /// The shell showing `view` with `accounts` in its panel and the
+    /// transactions from `source`.
+    pub fn with_sources(
+        view: View,
+        accounts: Entity<Accounts>,
+        source: transactions::Source,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -322,7 +344,7 @@ impl ShellView {
         // Focused from the start, so the shortcuts work before any click.
         focus.focus(window, cx);
         let transactions = cx.new(|cx| {
-            let mut transactions = TransactionsView::new(window, cx);
+            let mut transactions = TransactionsView::new(source, window, cx);
             transactions.show_accounts(accounts.clone(), window, cx);
             transactions
         });
@@ -549,7 +571,7 @@ impl ShellView {
             .bg(color::CANVAS)
             .child(
                 EmptyState::new(format!("{} isn't built yet", view.label()))
-                    .body("It comes in a later version of Coffer. Transactions works now, on sample data.")
+                    .body("It comes in a later version of Coffer. Transactions works now.")
                     .shortcut("⌘2", "Open Transactions"),
             )
     }

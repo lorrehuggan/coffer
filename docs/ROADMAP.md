@@ -717,7 +717,22 @@ Every tool call appears in the access log.
   (`account`, `account-kind`, `new-account`, `add-balance`) checked by eye against
   `8D8-0` and `FHZ-0`. Decisions: `ARCHITECTURE.md` → "Decision record: accounts
   management"
-- ⬜ M3.3 Transactions view: virtualized `DataTable`, filter/sort/search, inline category edit
+- ✅ M3.3 Transactions view: virtualized `DataTable`, filter/sort/search, inline category edit.
+  The table is the D5 virtualised GPUI `list` (not the stock `DataTable`, which can't
+  interleave day headers), now over the database: core's `reporting::register` reads
+  every transaction once (one row per transaction, splits and transfer partners
+  inside), and `Register::select` filters, groups by day and sorts in memory, so search
+  never reads the database. Filtered by the accounts panel (the Account column hides),
+  the Account, Category (a group includes its subcategories) and Date chips,
+  Uncategorised, and search over merchant and raw description; sorting reorders rows
+  within each day (user). Category edits (Enter or a double-click in place, the
+  inspector's select, the bulk-action bar) go through `inbox::own::recategorize`, one
+  undoable change batch, with the undo bar after a change to several rows. Category
+  colours ranked at read time over 12 months (user; stored in M4.1). Undrawn states
+  composed from existing specs (user; `DESIGN.md` → "Transactions" → "Built in M3.3").
+  Snapshots (`transactions`, `transactions-multi`, `-category-menu`, `-date-menu`,
+  `-sorted`, `-no-match`) checked by eye against `18E-0` and `1NP-0`. Decisions:
+  `ARCHITECTURE.md` → "Decision record: the Transactions view"
 - ⬜ M3.4 Import flow: pick file → detect/choose preset → column-mapping screen with live
   preview → dedupe/reconcile summary → commit
 - ⬜ M3.5 Save/export a mapping as a preset

@@ -35,6 +35,7 @@
 //! | [`budget_status`] | `budget_status` |
 //! | [`rows`] | `search_transactions`, `uncategorized_transactions`, `merchant_history` |
 //! | [`catalog`] | `list_accounts`, `list_rules`, `list_reports` |
+//! | [`register`] | the app's Transactions table: every transaction, filtered, grouped by day |
 //!
 //! Nothing here logs transaction text.
 
@@ -45,6 +46,7 @@ pub mod catalog;
 pub mod ledger;
 pub mod net_worth;
 pub mod period;
+pub mod register;
 pub mod rows;
 pub mod spending;
 pub mod summary;

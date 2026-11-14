@@ -784,6 +784,41 @@ and flagged rows.
   tab, Rules (about 60px more); the command bar moves right with it and still fits
   beside D6.8's Settings button. The artboards drawn before D6.7 still show seven tabs.
 
+- **Built in M3.3** (`crates/app/src/transactions.rs`; `ARCHITECTURE.md` → "Decision
+  record: the Transactions view"): the table reads the database and is filtered by the
+  accounts panel; search, the Account, Category and Date chips, the Uncategorised chip
+  and sorting work; categories are set in place. The inspector's Date and Account are
+  read-only with the lock (D6.3's Details). AI suggestions, flagged rows, Note and
+  "Create rule from this" wait for M3.6, a per-row problem record, M3.9 and M3.13.
+  **Composed from existing specs, not drawn** (user, 2026-11-14; review):
+  - *Category select*: the Kind menu (`FHZ-0`) with the category's 8×8 marker centred
+    in the 16px icon slot; each top-level group under its caps label, its own category
+    first, then its subcategories; a filter field at the top (the toolbar's search
+    field at the menu's width, placeholder "Find a category") narrows the options as
+    you type, a group's label matching keeps the whole group, and "No matches" (a 28px
+    row in body `text-muted`) says when nothing is left; scrolls after 8 rows. In
+    place, it opens 4px below the row, left-aligned with the category marker; from
+    the bulk-action bar, 4px above it.
+  - *Filter chip menus*: the same menu below the chip. Account: "All accounts", then
+    the panel's accounts (each pot after its parent). Category: "All categories", then
+    the category menu. Date: This month, Last month, Last 3 months, This year, All
+    time (the default). A chip whose filter is set, and the Uncategorised chip while
+    on, take the Excluded chip's on look (`3TU-0`: `hover` fill, `text` label) and
+    name the choice ("Joint account", "Last month").
+  - *Sorting*: the chevron sits on the column's inner side so no title moves: before
+    the right-aligned Amount (as `XL-0`), after the others. It points down for Z–A or
+    largest first, up (the same glyph turned) otherwise; on hover a sortable title
+    shows it in `icon-faint` before any sort.
+  - *No match*: the Empty state centred in the table: "No transactions match",
+    "Nothing matches the search and filters." and "Esc Clear filters". A database that
+    can't be read says so in the same place.
+  - *Split marker*: the two halves only when both largest lines have one of the six
+    colours; otherwise the largest line's marker.
+
+  The undo bar (`53O-0`) is built as drawn (`ui::undo_bar`), after a category change to
+  several rows; its ✕ is the 24px icon button with the app's 10px Close glyph, where
+  Paper draws a 12px one.
+
 **Transactions additions** — drawn in D6.3. Four 1440×900 artboards duplicated from
 Transactions (`18E-0`), plus a states board. Same shell, fixture data and inspector
 sections as D3. Every value is a bound token; the typed values are as on D3. One new
@@ -2402,9 +2437,9 @@ reference file except the values recorded here.
   | Agent outline | Stock, wrapped: **built**, `ButtonVariant::AgentOutline` | As above: `moldavite-border-strong` border, `moldavite-text` label, hover `moldavite-surface-raised`, pressed `moldavite-well`. It confirms the `Custom` path: its resting fill (20% of its colour) is replaced per instance, and the hover and pressed fills still apply over that |
   | Agent primary, agent ghost | Stock, wrapped; not built | Same `Custom` path; the solid agent primary sets `.bg(moldavite)` per instance. Needs Paper first: the table gives no horizontal padding for either. Agent primary's optional trailing kbd needs the Kbd wrapper; agent ghost needs a leading icon (sparkle) |
   | Input, field, select, command bar | Stock, wrapped | In dark mode the stock fill is the *border* colour (`input`) at 30% alpha, so no theme value gives `field` fill with a `hairline` border; the wrapper sets `.bg(field)`. Height is 28px from the rem base |
-  | Data table | Not used for Transactions (D5): a GPUI `list` with Coffer's rows, which interleaves day headers of their own height | Colours map (no stripes, no row dividers, `hover`/`molten-soft` rows, `canvas` sticky header) and row height takes `Size::Size(size::CONTROL)`. These colours apply if a stock data table is used elsewhere. The in-place category select isn't built yet |
+  | Data table | Not used for Transactions (D5): a GPUI `list` with Coffer's rows, which interleaves day headers of their own height | Colours map (no stripes, no row dividers, `hover`/`molten-soft` rows, `canvas` sticky header) and row height takes `Size::Size(size::CONTROL)`. These colours apply if a stock data table is used elsewhere. The in-place category select is the category menu (M3.3, "Built in M3.3") |
   | Dialog | **Custom: built**, `coffer_app::ui::dialog` (M3.2), on the unstyled `gpui-base` dialog host | The host keeps the focus trap and Escape; Coffer draws the spec surface (`float`, 1px `border`, `radius-lg`, Dock shadow `shadow::DOCK`, 16px padding and gaps, footer right-aligned) and the provisional backdrop. The stock `gpui-component` dialog sets its own shadow after the caller's style, so it can't carry the Dock shadow. Its owner keeps whether it's open. Cancel is the 30px `ButtonVariant::Secondary` (Paper `8JN-0`) |
-  | Select and its menu | **Custom: built**, `coffer_app::ui::menu` (M3.2), on the unstyled `gpui-base` select root | The root keeps the combobox role, opening with Enter, Space and the arrows, Escape, and moving focus between trigger and menu; Coffer draws the closed field (`ui::field::SelectField`) and the Kind menu (`FHZ-0`): `float`, 1px `border`, `radius-lg`, Toolbar shadow, 4px padding, caps group labels (`typography::MENU_LABEL`), 28px options with a 16px icon slot and the `Glyph::Chosen` tick. Drawn `deferred` below the field so a scrolling inspector or a dialog doesn't clip it. Options are list-box options for assistive technology |
+  | Select and its menu | **Custom: built**, `coffer_app::ui::menu` (M3.2), on the unstyled `gpui-base` select root | The root keeps the combobox role, opening with Enter, Space and the arrows, Escape, and moving focus between trigger and menu; Coffer draws the closed field (`ui::field::SelectField`) and the Kind menu (`FHZ-0`): `float`, 1px `border`, `radius-lg`, Toolbar shadow, 4px padding, caps group labels (`typography::MENU_LABEL`), 28px options with a 16px icon slot and the `Glyph::Chosen` tick. Drawn `deferred` below the field so a scrolling inspector or a dialog doesn't clip it. Options are list-box options for assistive technology. M3.3 adds a category marker in the icon slot, the filter field, and `MenuList` for menus opened from a chip, a table row or the bulk-action bar, which handles ↑↓, Enter and Escape itself |
   | Popover, menu (other than a select's), sheet, notification | Stock; on the showcase's stock board, unwrapped | Fill and text map (`float`, `text`). Popovers use a hard-coded shadcn ring and shadow at `radius`; Coffer's floating spec is a 1px `border`, `radius-lg` and the toolbar shadow, set per instance |
   | Title bar | Stock; on the showcase's stock board, unwrapped | Keeps platform window controls and dragging. Height is a constant 34px; Coffer's is 40px |
   | List row | Stock, wrapped: **built**, `coffer_app::ui::list_row` (`ListRow`) | Wraps the stock `ListItem` (pointer, accessible row). 28px, radius 6, 8px inline padding, 16px icon slot, `text-secondary` label lifting to `text` on hover, `molten-soft` fill with white label when selected, trailing mono count. The owning list holds focus and passes `focus_visible`; the row draws the `Inset` ring on a wrapper, because `ListItem` lays children out in an inner box and scrolling lists clip an outside ring. Nesting is a 20px left indent on the wrapper. No pressed look (rows select on click) |
