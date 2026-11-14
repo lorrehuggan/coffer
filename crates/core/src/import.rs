@@ -443,6 +443,9 @@ pub struct CommitSummary {
     pub categorized_by_preset: usize,
     /// New rows a rule categorised (`category_source = 'rule'`).
     pub categorized_by_rules: usize,
+    /// New rows still needing a category after every step: no category
+    /// and not in a confirmed transfer, or a split line without one.
+    pub uncategorized: usize,
     /// Pot-side rows mirrored from the new rows' sub-account transfers
     /// (`origin = 'mirrored'`), each paired with its row as a `confirmed`
     /// transfer. Not counted in `transactions` or the category counts.
@@ -566,6 +569,63 @@ pub fn commit(
         return Err(Error::NotConfirmed(needed));
     }
 
+    let summary = write_batch(&tx, &account, preview, &plan)?;
+    tx.commit()?;
+    tracing::info!(
+        batch = %summary.batch,
+        account = %account.id,
+        transactions = summary.transactions,
+        balances = summary.balances,
+        flags = summary.flags,
+        categorized_by_preset = summary.categorized_by_preset,
+        categorized_by_rules = summary.categorized_by_rules,
+        uncategorized = summary.uncategorized,
+        mirrored = summary.mirrored,
+        pots_created = summary.pots_created,
+        transfer_pairs = summary.transfer_pairs,
+        splits_skipped = summary.splits_skipped,
+        duplicates = summary.duplicates,
+        link_suggestions = summary.link_suggestions,
+        schedule_matches = summary.schedule_matches,
+        "committed an import"
+    );
+    Ok(Committed::Batch(summary))
+}
+
+/// What committing `preview` would do after the rows are stored: the
+/// commit's own steps (categories, pots, names, rules, transfer pairs,
+/// possible duplicates, links, schedules), run in a DB transaction that is
+/// rolled back ([`change::dry_run`]). The Review step's "After import"
+/// figures. Takes no backup and needs no confirmation; `None` when the
+/// preview has nothing new. Fails with [`Error::Stale`] as [`commit`]
+/// would.
+///
+/// The batch ID in the summary is the one the rolled-back insert got, so
+/// it means nothing.
+pub fn rehearse(db: &Database, preview: &ImportPreview) -> Result<Option<CommitSummary>, Error> {
+    if preview.is_nothing_new() {
+        return Ok(None);
+    }
+    change::dry_run(db, |conn| {
+        let account = load_account(conn, preview.account.id)?;
+        check_target(&account, &preview.statement)?;
+        let plan = plan(conn, &account, &preview.statement)?;
+        if account != preview.account || plan != preview.plan {
+            return Err(Error::Stale);
+        }
+        write_batch(conn, &account, preview, &plan).map(Some)
+    })
+}
+
+/// Stores `preview` as a batch through `tx` and runs the post-processing
+/// steps on it; [`commit`] commits the transaction, [`rehearse`] rolls it
+/// back. `plan` is the one just made inside `tx`, equal to the preview's.
+fn write_batch(
+    tx: &Connection,
+    account: &Account,
+    preview: &ImportPreview,
+    plan: &Plan,
+) -> Result<CommitSummary, Error> {
     let statement = &preview.statement;
     tx.execute(
         "INSERT INTO import_batch (account_id, source_file, format, preset_id) \
@@ -591,6 +651,7 @@ pub fn commit(
         flags: 0,
         categorized_by_preset: 0,
         categorized_by_rules: 0,
+        uncategorized: 0,
         mirrored: 0,
         pots_created: 0,
         transfer_pairs: 0,
@@ -602,7 +663,7 @@ pub fn commit(
     // The new rows that are sub-account transfers, for the mirror below.
     let mut pot_rows: Vec<(TransactionId, SubAccountRef)> = Vec::new();
     {
-        let categories = category_ids(&tx)?;
+        let categories = category_ids(tx)?;
         let mut insert_row = tx.prepare(
             "INSERT INTO \"transaction\" (account_id, batch_id, date, time, amount_minor, \
              currency, merchant, description_raw, description_normalized, external_id, \
@@ -701,18 +762,18 @@ pub fn commit(
     // The pot side of sub-account transfers, before rules and transfer
     // detection so both see the mirrored rows (which are then already in a
     // confirmed pair, so detection leaves them alone).
-    let mirrored = sub_account::mirror(&tx, &account, batch, &pot_rows)?;
+    let mirrored = sub_account::mirror(tx, account, batch, &pot_rows)?;
     summary.mirrored = mirrored.mirrored_rows();
     summary.pots_created = mirrored.created_pots.len();
 
     // Display names before rules: a rule's `set_merchant` (M1.24) is the
     // last word on a name. Rules match the cleaned bank text, not these.
-    merchant::apply_to_batch(&tx, batch)?;
+    merchant::apply_to_batch(tx, batch)?;
 
     // Rules override the preset's categories, so they run after the rows
     // are stored with them. The counts are of the imported rows: a mirrored
     // row is the same transfer seen from the pot.
-    summary.splits_skipped = rule::apply_to_batch(&tx, batch)?.splits_skipped;
+    summary.splits_skipped = rule::apply_to_batch(tx, batch)?.splits_skipped;
     let categorized = |source: &str| -> Result<usize, Error> {
         let n: i64 = tx.query_row(
             "SELECT COUNT(*) FROM \"transaction\" \
@@ -724,36 +785,36 @@ pub fn commit(
     };
     summary.categorized_by_preset = categorized("preset_map")?;
     summary.categorized_by_rules = categorized("rule")?;
-    summary.transfer_pairs = transfer::detect_for_batch(&tx, batch, TransferWindow::DEFAULT)?.len();
+    summary.transfer_pairs = transfer::detect_for_batch(tx, batch, TransferWindow::DEFAULT)?.len();
     // Review queues, after pairing: possible duplicates (overlapping
     // exports, a manual row entered ahead of the bank's), and refunds and
     // reimbursements for new money in, which skip rows in a transfer.
-    summary.duplicates = duplicate::detect_for_batch(&tx, batch, DuplicateWindow::DEFAULT)?.len();
-    summary.link_suggestions = link::suggest_for_batch(&tx, batch)?;
+    summary.duplicates = duplicate::detect_for_batch(tx, batch, DuplicateWindow::DEFAULT)?.len();
+    summary.link_suggestions = link::suggest_for_batch(tx, batch)?;
     // Scheduled payments the new rows fulfil (M2.10), last: rules may have
     // excluded a row or named its merchant, and pairing may have made it a
     // transfer.
-    summary.schedule_matches = schedule::match_batch(&tx, batch)?;
+    summary.schedule_matches = schedule::match_batch(tx, batch)?;
+    summary.uncategorized = uncategorized(tx, batch)?;
+    Ok(summary)
+}
 
-    tx.commit()?;
-    tracing::info!(
-        batch = %batch,
-        account = %account.id,
-        transactions = summary.transactions,
-        balances = summary.balances,
-        flags = summary.flags,
-        categorized_by_preset = summary.categorized_by_preset,
-        categorized_by_rules = summary.categorized_by_rules,
-        mirrored = summary.mirrored,
-        pots_created = summary.pots_created,
-        transfer_pairs = summary.transfer_pairs,
-        splits_skipped = summary.splits_skipped,
-        duplicates = summary.duplicates,
-        link_suggestions = summary.link_suggestions,
-        schedule_matches = summary.schedule_matches,
-        "committed an import"
-    );
-    Ok(Committed::Batch(summary))
+/// The batch's imported rows that still need a category once every step
+/// has run: no category and not in a confirmed transfer, or a split line
+/// without one (`RegisterRow::is_uncategorised`).
+fn uncategorized(conn: &Connection, batch: BatchId) -> Result<usize, Error> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM \"transaction\" t \
+         LEFT JOIN transfer_group g ON g.id = t.transfer_group_id \
+         WHERE t.batch_id = ?1 AND t.origin = 'imported' AND ( \
+           (NOT EXISTS (SELECT 1 FROM transaction_split s WHERE s.transaction_id = t.id) \
+            AND t.category_id IS NULL AND (g.status IS NULL OR g.status <> 'confirmed')) \
+           OR EXISTS (SELECT 1 FROM transaction_split s \
+                      WHERE s.transaction_id = t.id AND s.category_id IS NULL))",
+        [batch],
+        |row| row.get(0),
+    )?;
+    Ok(usize::try_from(n).unwrap_or(0))
 }
 
 /// Every category's ID, by key.

@@ -5,7 +5,7 @@ use std::fmt;
 use coffer_core::statement::{RowProblem, SourceFormat, SourceLocation};
 
 use super::encoding::{TextEncoding, decode};
-use super::mapping::{CsvMapping, Delimiter};
+use super::mapping::{Delimiter, FileLayout};
 use crate::ImportError;
 
 /// How many records delimiter detection looks at.
@@ -72,6 +72,13 @@ pub struct CsvFile {
 }
 
 impl CsvFile {
+    /// Reads `file` laid out as `layout` says, before any column is
+    /// mapped: what the mapping screen shows. A
+    /// [`CsvImporter`](super::CsvImporter) reads files the same way.
+    pub fn read(file: &crate::SourceFile, layout: &FileLayout) -> Result<CsvFile, ImportError> {
+        read(file.bytes(), layout)
+    }
+
     /// The encoding the file was decoded with: the stated one, or the one
     /// its byte order mark names. Never [`TextEncoding::Auto`].
     pub fn encoding(&self) -> TextEncoding {
@@ -151,13 +158,13 @@ pub(super) fn fits_width(fields: &[String], width: usize) -> bool {
         || (fields.len() > width && fields[width..].iter().all(|field| field.trim().is_empty()))
 }
 
-/// Reads `bytes` as the CSV file `mapping` describes.
+/// Reads `bytes` as the CSV file `mapping` (its layout) describes.
 ///
 /// A header row with a quote that's never closed, or one over several
 /// lines when the mapping doesn't allow line breaks in fields, fails the
 /// file: its columns can't be trusted. Data rows like that are kept, and
 /// flagged when normalizing.
-pub(super) fn read(bytes: &[u8], mapping: &CsvMapping) -> Result<CsvFile, ImportError> {
+pub(super) fn read(bytes: &[u8], mapping: &FileLayout) -> Result<CsvFile, ImportError> {
     let (text, encoding) = decode(bytes, mapping.encoding)?;
     let body = skip_lines(&text, mapping.skip_rows)?;
     let preamble = &text[..text.len() - body.len()];

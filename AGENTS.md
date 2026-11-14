@@ -20,7 +20,8 @@ M0 and the design track (D1–D6) are done and signed off; every M1 item is done
 M1.9 checked against a real Monzo export. Every M2 item is done, tested on synthetic
 data and checked with Claude Code against a real Monzo export (2026-11-13). M3 has
 started: M3.1 (the app shell and window state), M3.2 (accounts management), M3.3 (the
-Transactions view on the database), M3.6 with M3.14 (the Inbox and its impact preview),
+Transactions view on the database), M3.4 with M3.5 (the import flow and saving a
+mapping as a preset), M3.6 with M3.14 (the Inbox and its impact preview),
 M3.15 (AI access settings) and M3.16 (backups and the export dialog) are done.
 The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
@@ -117,7 +118,20 @@ on a background thread, category changes through `inbox::own::recategorize`, und
 through `change::undo`), is filtered by the accounts panel and its chips, sorts within
 each day, and sets categories in place; `present` turns rows into cells and menu
 options, `fixture` keeps the Paper rows as a `Register` for snapshots and tests, and
-`ui::undo_bar` is the undo notification. The Inbox (M3.6, M3.14) is
+`ui::undo_bar` is the undo notification. Importing (M3.4, M3.5) is
+`crates/app/src/import/`: `Imports` (the notification after an import, with Undo; tells
+the shell to reload the panel and Transactions), `dialog` (`ImportDialog`: File → Map →
+Review, Save as preset… and Save a copy…), `session` (one file in memory: preset,
+account, mapping, statement, preview rows), `store` (`ImportStore`, the database and
+disk on a background thread), `text` and `fixture` (a synthetic Monzo-style export).
+The shell opens it on ⌘I (`shell::ImportStatement`), the Transactions toolbar's Import
+or a file dropped on the window. Core for it: `import::rehearse`,
+`CommitSummary::uncategorized`, `paths::presets_dir`; the import crate's
+`csv::MappingDraft`, `FileLayout`, `CsvFile::read`, `date_formats`,
+`CsvImporter::problem_text`, `Preset::to_toml`/`Preset::new`, `preset::slug`,
+`load_user_presets` and `save_user_preset` (saved presets in `<data dir>/presets/`, also
+used by the CLI and the account inspector). New components: the panel-size
+`ui::segmented`, the wide `ui::dialog`. The Inbox (M3.6, M3.14) is
 `crates/app/src/inbox/`: `Inbox` (status, filters, groups, selection, decisions through
 `store::InboxStore`, which opens the database per call), `panel`, `view` (the grouped
 table, the selected suggestion open in place, A / R / ↑↓) and `inspector` ("If you
@@ -127,7 +141,7 @@ read model is core's `inbox::preview` (`describe`, `preview`, `covered_by`), plu
 `inbox::counts`, `inbox::reject_all` and `reporting::palette` (category colours ranked
 at read time). The other views show the shell and `ui::empty_state`. And
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
-`import`, `accounts` (`list`, `add`, `--preset` since M3.2), `undo-import`, `backup` (`--list`) and
+`import` (bundled and saved presets), `accounts` (`list`, `add`, `--preset` since M3.2), `undo-import`, `backup` (`--list`) and
 `restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2
 `mcp --client <name>`, `ai-access` (`list`, `enable`, `level`, `revoke`, `ignore`, `off`,
 `on`, `log`), `budgets` (`list`, `set`, `remove`), `schedules` (`detect`, `list`, `show`,

@@ -7,6 +7,11 @@
 //! with 8px between them. The backdrop is `chrome` at `opacity-muted`, still
 //! provisional ("Implementing in GPUI").
 //!
+//! The wide dialog (`--container-dialog-wide`, 760px: Import, Paper
+//! `6DY-0`) pairs a form with a preview: its title has a caption under it
+//! (4px apart), the title row's parts sit 12px apart and align at the top,
+//! and the footer sits above a `hairline` with 16px between them.
+//!
 //! Behaviour is the unstyled `gpui-base` dialog host: it traps focus inside,
 //! and Escape asks to cancel. The owner keeps whether the dialog is open
 //! (it renders it only then), so cancelling just calls back; the owner
@@ -38,6 +43,10 @@ fn backdrop_color() -> Rgba {
 #[derive(IntoElement)]
 pub struct Dialog {
     title: AnyElement,
+    /// Under the title, in caption type (the wide dialog's "CSV · UTF-8 ·
+    /// 312 rows").
+    subtitle: Option<AnyElement>,
+    wide: bool,
     /// Shown after the title, on its row (the export dialog's CSV / JSON).
     title_trailing: Option<AnyElement>,
     focus: FocusHandle,
@@ -66,6 +75,8 @@ impl Dialog {
     pub fn with_title(title: impl IntoElement, focus: &FocusHandle) -> Self {
         Self {
             title: title.into_any_element(),
+            subtitle: None,
+            wide: false,
             title_trailing: None,
             focus: focus.clone(),
             body: Vec::new(),
@@ -73,6 +84,18 @@ impl Dialog {
             footer_lead: None,
             on_cancel: None,
         }
+    }
+
+    /// The wide dialog (Import): 760px, its footer above a hairline.
+    pub fn wide(mut self) -> Self {
+        self.wide = true;
+        self
+    }
+
+    /// Puts `element` (a caption) under the title.
+    pub fn subtitle(mut self, element: impl IntoElement) -> Self {
+        self.subtitle = Some(element.into_any_element());
+        self
     }
 
     /// Puts `element` at the end of the title's row, the title taking the
@@ -111,11 +134,31 @@ impl Dialog {
 impl RenderOnce for Dialog {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let on_cancel = self.on_cancel;
+        let wide = self.wide;
+        let title = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .gap(spacing::S1)
+            .child(self.title)
+            .when_some(self.subtitle, |this, subtitle| {
+                this.child(
+                    div()
+                        .text_role(typography::CAPTION)
+                        .text_color(color::TEXT_MUTED)
+                        .child(subtitle),
+                )
+            });
         let surface = div()
             .flex()
             .flex_col()
             .gap(spacing::S4)
-            .w(size::DIALOG)
+            .w(if wide {
+                size::DIALOG_WIDE
+            } else {
+                size::DIALOG
+            })
             .p(spacing::S4)
             .bg(color::FLOAT)
             .border(size::HAIRLINE)
@@ -127,9 +170,14 @@ impl RenderOnce for Dialog {
             .child(
                 div()
                     .flex()
-                    .items_center()
-                    .gap(spacing::S2)
-                    .child(div().flex().flex_1().min_w_0().child(self.title))
+                    .map(|this| {
+                        if wide {
+                            this.items_start().gap(spacing::S3)
+                        } else {
+                            this.items_center().gap(spacing::S2)
+                        }
+                    })
+                    .child(title)
                     .children(self.title_trailing),
             )
             .children(self.body)
@@ -139,6 +187,11 @@ impl RenderOnce for Dialog {
                     .justify_end()
                     .items_center()
                     .gap(spacing::S2)
+                    .when(wide, |this| {
+                        this.pt(spacing::S4)
+                            .border_t(size::HAIRLINE)
+                            .border_color(color::HAIRLINE)
+                    })
                     .when_some(self.footer_lead, |this, lead| {
                         this.child(div().flex_1().min_w_0().child(lead))
                     })

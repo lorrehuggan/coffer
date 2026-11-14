@@ -23,6 +23,7 @@
 //!   the file: a stray quote merges the rows after it into one.
 
 mod dates;
+mod draft;
 mod encoding;
 mod mapping;
 mod normalize;
@@ -31,13 +32,16 @@ mod reader;
 use std::collections::BTreeMap;
 
 use coffer_core::category::CategoryKey;
-use coffer_core::statement::{SourceFormat, Statement};
+use coffer_core::statement::{RowProblem, SourceFormat, SourceLocation, Statement};
 
 pub use dates::{DateFormat, FormatError, TimeFormat};
+pub use draft::{
+    AmountDraft, DraftError, MappingDraft, Needed, columns, date_formats, time_formats, values,
+};
 pub use encoding::TextEncoding;
 pub use mapping::{
-    AmountColumns, Column, CsvMapping, DateColumn, Delimiter, MappingError, OriginalAmountColumns,
-    SplitSigns, SubAccountTransfer, TimeColumn,
+    AmountColumns, Column, CsvMapping, DateColumn, Delimiter, FileLayout, MappingError,
+    OriginalAmountColumns, SplitSigns, SubAccountTransfer, TimeColumn,
 };
 pub use reader::{CsvFile, CsvRecord};
 
@@ -115,6 +119,42 @@ impl CsvImporter {
     pub fn preset_id(&self) -> Option<&str> {
         self.preset_id.as_deref()
     }
+
+    /// The text a row flagged for `problem` has where the problem is (the
+    /// amount cell of "the amount can't be read"), as written: what the
+    /// mapping screen shows beside the row. Several cells (a money-out and
+    /// money-in pair) are joined with " / ", blank ones left out. `None`
+    /// when the problem isn't about one field, or the row or column isn't
+    /// in `file`.
+    ///
+    /// This is the file's own text: show it to the user, never log it.
+    pub fn problem_text(
+        &self,
+        file: &CsvFile,
+        location: SourceLocation,
+        problem: &RowProblem,
+    ) -> Option<String> {
+        let field = match problem {
+            RowProblem::Missing(field)
+            | RowProblem::Unreadable { field, .. }
+            | RowProblem::Amount { field, .. }
+            | RowProblem::CurrencyMismatch { field, .. } => *field,
+            _ => return None,
+        };
+        let SourceLocation::Line(line) = location else {
+            return None;
+        };
+        let record = file.records().iter().find(|record| record.line == line)?;
+        let positions = Positions::find(&self.mapping, file).ok()?;
+        let cells: Vec<&str> = positions
+            .of(field)
+            .into_iter()
+            .filter_map(|index| record.fields.get(index))
+            .map(|cell| cell.trim())
+            .filter(|cell| !cell.is_empty())
+            .collect();
+        (!cells.is_empty()).then(|| cells.join(" / "))
+    }
 }
 
 impl Detect for CsvImporter {
@@ -157,7 +197,7 @@ impl Importer for CsvImporter {
     type Parsed = CsvFile;
 
     fn parse(&self, file: &SourceFile) -> Result<CsvFile, ImportError> {
-        reader::read(file.bytes(), &self.mapping)
+        reader::read(file.bytes(), &self.mapping.layout())
     }
 
     fn normalize(&self, parsed: CsvFile) -> Result<Statement, ImportError> {

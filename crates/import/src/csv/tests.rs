@@ -878,3 +878,34 @@ fn a_sub_account_column_must_exist_in_the_file() {
         Err(ImportError::MissingColumn { column }) if column.contains("Pot")
     ));
 }
+
+#[test]
+fn problem_text_is_the_cell_the_problem_is_in() {
+    let file = SourceFile::from_bytes(
+        "x.csv",
+        "Date,Description,Amount\n23/11/2026,A,-1.00\n24/11/2026,B,\"8,99\"\n25/11/2026,C\n",
+    );
+    let importer = importer(simple_mapping());
+    let parsed = importer.parse(&file).unwrap();
+    let statement = importer.normalize(parsed.clone()).unwrap();
+    let problems: Vec<(SourceLocation, RowProblem)> = statement
+        .rows()
+        .iter()
+        .filter_map(|row| {
+            row.outcome
+                .clone()
+                .err()
+                .map(|problem| (row.location, problem))
+        })
+        .collect();
+    assert_eq!(problems.len(), 2);
+    assert_eq!(
+        importer.problem_text(&parsed, problems[0].0, &problems[0].1),
+        Some("8,99".to_owned())
+    );
+    // A row with too few columns isn't about one field.
+    assert_eq!(
+        importer.problem_text(&parsed, problems[1].0, &problems[1].1),
+        None
+    );
+}

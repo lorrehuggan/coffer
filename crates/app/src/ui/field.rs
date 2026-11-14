@@ -138,6 +138,7 @@ pub struct SelectField {
     lead: Option<SelectLead>,
     hint: Option<SharedString>,
     placeholder: bool,
+    mono: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -149,8 +150,16 @@ impl SelectField {
             lead: None,
             hint: None,
             placeholder: false,
+            mono: false,
             on_click: None,
         }
+    }
+
+    /// Sets the value in Geist Mono at body size: a date format
+    /// (`DD/MM/YYYY`, the Import dialog's Format, Paper `5ZQ-0`).
+    pub fn mono(mut self, mono: bool) -> Self {
+        self.mono = mono;
+        self
     }
 
     /// Leads the value with a category marker.
@@ -228,7 +237,11 @@ impl RenderOnce for SelectField {
                     .min_w_0()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .text_role(typography::BODY)
+                    .text_role(if self.mono {
+                        typography::MONO_AMOUNT
+                    } else {
+                        typography::BODY
+                    })
                     .text_color(value_color)
                     .child(self.value)
                     .when_some(self.hint, |this, hint| {

@@ -1021,7 +1021,11 @@ impl TransactionsView {
             .child(
                 Button::new("import", "Import")
                     .with_variant(ButtonVariant::Outline)
-                    .shortcut("⌘I"),
+                    .shortcut("⌘I")
+                    // The shell opens the Import dialog (M3.4).
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(crate::shell::ImportStatement), cx)
+                    }),
             )
     }
 

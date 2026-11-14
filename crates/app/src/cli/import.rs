@@ -1,8 +1,9 @@
 //! `coffer import <file>`: read a bank export, preview the import into an
 //! account, and commit it.
 //!
-//! Choosing the importer: `--preset` names a bundled CSV preset; otherwise
-//! detection runs over the OFX importer and every bundled preset, and only
+//! Choosing the importer: `--preset` names a CSV preset (bundled, or saved
+//! from the import screen in `<data dir>/presets`); otherwise
+//! detection runs over the OFX importer and every preset, and only
 //! a confident, unique match is used: OFX by its format, a preset by its
 //! own header row. Anything else (no match, a tie, a CSV that merely
 //! parses) is an error that lists the presets to choose from, never a
@@ -44,7 +45,8 @@ pub struct ImportArgs {
     #[arg(long, value_name = "ID|NAME")]
     pub account: Option<String>,
 
-    /// The bundled preset to read a CSV file with, e.g. uk-monzo. Detected
+    /// The preset to read a CSV file with, e.g. uk-monzo (bundled, or one
+    /// saved from the import screen). Detected
     /// from the file when left out.
     #[arg(long, value_name = "ID")]
     pub preset: Option<String>,
@@ -232,7 +234,7 @@ fn read_statement(
         Some(id) => match presets.get(id) {
             Some(preset) => Reader::Preset(preset),
             None => bail!(
-                "there is no preset {id:?}; the bundled presets are:\n{}",
+                "there is no preset {id:?}; the presets are:\n{}",
                 preset_lines(presets)
             ),
         },
@@ -302,8 +304,8 @@ fn detect<'p>(file: &SourceFile, presets: &'p Presets) -> anyhow::Result<Reader<
     match found.as_slice() {
         [] => bail!(
             "couldn't tell what kind of file {} is: it isn't OFX or QFX, and it doesn't have \
-             the columns of any bundled preset. If it's a CSV export from one of these banks, \
-             choose its preset with --preset:\n{}\nOther CSV layouts can't be imported yet.",
+             the columns of any preset. If it's a CSV export from one of these banks, \
+             choose its preset with --preset:\n{}\nFor another layout, map its columns in Coffer's Import window and save them as a preset.",
             file.name(),
             preset_lines(presets)
         ),

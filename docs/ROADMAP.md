@@ -734,9 +734,33 @@ Every tool call appears in the access log.
   Snapshots (`transactions`, `transactions-multi`, `-category-menu`, `-date-menu`,
   `-sorted`, `-no-match`) checked by eye against `18E-0` and `1NP-0`. Decisions:
   `ARCHITECTURE.md` → "Decision record: the Transactions view"
-- ⬜ M3.4 Import flow: pick file → detect/choose preset → column-mapping screen with live
-  preview → dedupe/reconcile summary → commit
-- ⬜ M3.5 Save/export a mapping as a preset
+- ✅ M3.4 Import flow: pick file → detect/choose preset → column-mapping screen with live
+  preview → dedupe/reconcile summary → commit.
+  `crates/app/src/import/`: the Import dialog (⌘I, the Transactions toolbar's Import, or
+  a file dropped on the window), File (drop zone, Choose file…, RECENT IMPORTS) → Map
+  (Preset and Account, COLUMNS, a FILE section for a mapping of your own, the live
+  preview of the first 10 rows with flagged rows and their notes) → Review (New, Already
+  imported, Flagged, AFTER IMPORT, the reconciliation and locked-period blocks) → the
+  commit on a background thread, then the notification with Undo; the accounts panel
+  and Transactions read the database again. `import::session` chooses as `coffer
+  import` does (OFX; a preset by its header; the account's preset; else suggested
+  columns, never a guessed date order) and `import::store` (`ImportStore`) opens the
+  database per call. Import crate: `csv::MappingDraft` (suggest, build), `FileLayout`,
+  `CsvFile::read`, `date_formats`, `CsvImporter::problem_text`. Core:
+  `import::rehearse` (the commit's steps, rolled back, for AFTER IMPORT) and
+  `CommitSummary::uncategorized`. No migration. Undrawn states composed from existing
+  specs (user; `DESIGN.md` → "Import" → "Built in M3.4"); Unlock… inert until M3.12
+  (user). Snapshots (`import-*`) checked by eye against `5ZQ-0` and `6J4-0`; UI
+  integration tests drive ⌘I, a dropped file, Review, Import and Undo against a scratch
+  database. Decisions: `ARCHITECTURE.md` → "Decision record: the import flow"
+- ✅ M3.5 Save/export a mapping as a preset. "Save as preset…" on the Map step: name and
+  region give the ID (`preset::slug`), `Preset::to_toml` writes TOML that
+  `Preset::from_toml` reads back to the same preset (tested on every bundled preset),
+  saved in `<data dir>/presets/<region>/<bank>.toml` (user; `preset::save_user_preset`,
+  0600) and set as the account's preset; "Save a copy…" writes it where you choose
+  (user). Saved presets load next to the bundled ones in the app, the account
+  inspector and the CLI (`preset::load_user_presets`); a broken one is reported and
+  skipped. `presets/README.md` → "Presets saved from the app"
 - ✅ M3.6 Inbox: bulk approve/reject AI suggestions. `crates/app/src/inbox/`: the panel
   (INBOX Pending/Approved/Rejected, KIND, SOURCE as filters), the groups (one per kind and
   source, widest reach first) with Approve all (n) / Reject all, all or none

@@ -170,7 +170,7 @@ pub fn add(
         Some(id) => match presets.get(id) {
             Some(preset) => Some(preset.id().to_owned()),
             None => bail!(
-                "there is no preset {id:?}; the bundled presets are:\n{}",
+                "there is no preset {id:?}; the presets are:\n{}",
                 preset_lines(presets)
             ),
         },
