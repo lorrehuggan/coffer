@@ -1371,6 +1371,31 @@ by −£42.50, and a possible duplicate of −£42.50 on the same account explai
   - **Empty queue**: centred in the canvas, a 36px `field` icon well with the 16px
     `duplicate` icon, "No possible duplicates" (title type) and a caption: Coffer checks
     every import, and a pair marked "Not duplicates" isn't flagged again.
+- **Built in M3.12** (`crates/app/src/checks/`; `ARCHITECTURE.md` → "Decision record:
+  review queues (built)"): both queues, the states board's dialogs, undo bar, locked
+  block and empty queue, the status bar's failing count and the flagged dot. Left out
+  until their items (user, 2026-11-14): "Show in Transactions", "Show N transactions",
+  "Edit balance…". **Composed from existing specs, not drawn** (user, 2026-11-14):
+  - *Selection*: opening a queue opens its first pair or first failing check; nothing
+    selected: one caption in the inspector.
+  - *A passed check or a starting point selected*: the same header and "This check"
+    (Balance, Coffer, Matched, Window) without "What could explain it"; a starting
+    point's section is "This balance" with a caption that Coffer counts from it.
+  - *Lock section* on every check's inspector: "Locked through …" with Unlock…, or
+    "Not locked" with the `lock` "Lock through …" outline when a date is lockable.
+  - *Moves*: a read-only field row in "If you merge" naming the values that move to
+    the kept row ("Category to Ocado"), only when something moves.
+  - *Dismissal undo*: the merge's undo bar, "Ocado and OCADO.COM marked as not
+    duplicates", whose Undo reopens the pair.
+  - *A merge that breaks a check*: Check "`alert` 30 Sep fails" in `danger`, and a
+    caption that the balance counts both rows.
+  - *Refusals*: under the toolbar, a 12px `alert` and the reason in caption type,
+    `danger`.
+  - *Empty Balance checks*: the empty Possible duplicates layout with the 16px scales,
+    "No balances to check".
+  - Two 16px icons drawn from the 12px ones at a 1.2px stroke (`DuplicateLarge`,
+    `BalanceLarge`), and the locked block's 14px lock (`LockedPeriod`), all from Paper's
+    paths.
 - **Data-model questions: decided** (user, 2026-11-10; `ARCHITECTURE.md` → "Decision
   record: review queues"). Each went with the recommendation below, which the designs
   already assume.

@@ -126,12 +126,16 @@ fn account_row(
     let id = node.account.id;
     let accounts = accounts.clone();
     let focus = focus.clone();
+    let flagged = accounts.clone();
     let row = ListRow::new(row_id(node), node.account.name.clone())
         .icon(glyph(node.account.kind))
         .nested(nested)
         .selected(selected)
         .focus_visible(selected && ring)
         .flagged(node.status == coffer_core::reconciliation::Status::Mismatch)
+        .on_flag_click(move |_, _, cx| {
+            flagged.update(cx, |accounts, cx| accounts.request_checks(id, cx))
+        })
         .on_click(move |_, window, cx| {
             // The panel takes focus, so the arrow keys go on from here.
             focus.focus(window, cx);

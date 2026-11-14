@@ -1413,6 +1413,61 @@ the build. Everything else follows `DESIGN.md` → "Settings" or the records abo
    `refused` icon while it's off, else the fixture's "1 agent connected"; either opens
    Settings → AI clients. The rest of the status bar is still fixture data.
 
+### Decision record: review queues (built) (2026-11-14)
+
+M3.12. Marked **(user)**: decided by the user on 2026-11-14 when asked before the build.
+Everything else follows `DESIGN.md` → "Review queues", the "Decision record: review
+queues" above and "Decision record: M1 wave 4" (C and D). No migration.
+
+1. **The queues live under CHECKS in the Inbox (user).** As D6.4 draws them
+   (`8SE-0`, `98K-0`): the Inbox's left panel gains CHECKS between INBOX and KIND, and
+   selecting a row there shows that queue in the Inbox's canvas and inspector. The
+   Reviews tab stays for saved AI reports (M4.7). `crate::checks` (the state,
+   `ChecksStore` opening the database per call, the two queues, the lock and unlock
+   dialogs); the shell swaps the Inbox's canvas while a queue is open.
+2. **Core reads, core decides (`coffer_core::checks`).** A read model over
+   `duplicate` and `reconciliation`, with no writes of its own: each pending pair with
+   both rows, why it was flagged and its default keep; each account's checks with the
+   balance counted from, the transactions in the window and the pair that explains a
+   failure; the dates an account can be locked through; and the accounts not checked.
+   Merging is still `duplicate::merge_preview` then `merge` (one `duplicate_merge` batch
+   per pair; a stale or locked plan is refused), dismissing `duplicate::dismiss`,
+   locking `reconciliation::lock`/`unlock`.
+3. **"If you merge" is the merge rolled back.** `checks::merge_effect` runs the merge's
+   own plan (`duplicate::plan`, now `pub(crate)`) in a rolled-back transaction and
+   reads, before and after, the pair's `ledger_line` spending and the account's balance
+   checks: the row excluded, the values moved, the spending each category gains or
+   loses, Coffer's count on the next check's day, and every check whose result changes.
+   A pair "explains" a failing check when this merge makes it pass. A duplicate in a
+   locked period is planned with the lock lifted inside the rolled-back transaction, so
+   the inspector shows what an unlock would allow; `MergeEffect::locked` says so, and
+   the commit still refuses (M1 wave 4, point 3).
+4. **The values a merge moves are shown (user).** "If you merge" has a Moves row when
+   the duplicate's category, split, share, name, note, tags or claim move to the kept
+   row (M1 wave 4, point 18), so nothing changes that the preview didn't name.
+5. **Dismissing can be undone from the bar (user).** "Not duplicates" shows the D6.3 bar
+   with Undo, which reopens the pair (`duplicate::reopen`). A merge's Undo is
+   `change::undo` of its batch, which puts the pair back to pending. Both reopen the pair.
+6. **Selection (user).** Opening Possible duplicates opens its first pair; opening
+   Balance checks selects the first failing check. A passed check's inspector shows
+   "This check" without the explanation; a starting point says Coffer counts from it;
+   with nothing selected, one caption. Every check's inspector ends with the account's
+   lock (Unlock…, or Lock through … when a later date is lockable).
+7. **Left out until their items (user).** "Show in Transactions", "Show N transactions"
+   (Transactions has date presets, not a window) and "Edit balance…" (core can't edit a
+   balance yet) aren't drawn; their captions stay.
+8. **Hooks outside the queues (user).** The status bar's "Reconciled" becomes "N
+   balance checks failing" with a `danger` dot while one fails, and opens Balance
+   checks; the Accounts panel's flagged dot opens Balance checks on that account's
+   failing check. The account inspector is unchanged.
+9. **Composed, not drawn.** Pots with nothing to check join "Not checked" ("Pots follow
+   their transfers"), as do accounts with no balance and asset/liability accounts.
+   A refusal from core is said under the toolbar in caption type, `danger`. The
+   wording for flags and sources the artboards don't show: "one added by hand", "bank
+   IDs differ", "Different bank IDs", "Imported from {file}", "From a pot transfer in an
+   import", "Statement (CSV)", "Opening balance". The empty Balance checks queue uses
+   the empty Possible duplicates layout with the 16px scales.
+
 ## Architecture
 
 ```

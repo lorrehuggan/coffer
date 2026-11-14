@@ -138,6 +138,7 @@ pub struct SelectField {
     lead: Option<SelectLead>,
     hint: Option<SharedString>,
     placeholder: bool,
+    mono: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -149,8 +150,17 @@ impl SelectField {
             lead: None,
             hint: None,
             placeholder: false,
+            mono: false,
             on_click: None,
         }
+    }
+
+    /// Sets the value in Geist Mono, the hint staying in UI type: a date
+    /// ("31 Oct 2026 · latest passing check", the lock dialog, Paper
+    /// `9MQ-0`).
+    pub fn mono(mut self) -> Self {
+        self.mono = true;
+        self
     }
 
     /// Leads the value with a category marker.
@@ -230,7 +240,14 @@ impl RenderOnce for SelectField {
                     .text_ellipsis()
                     .text_role(typography::BODY)
                     .text_color(value_color)
-                    .child(self.value)
+                    .map(|this| {
+                        if self.mono {
+                            this.flex()
+                                .child(div().text_role(typography::MONO_AMOUNT).child(self.value))
+                        } else {
+                            this.child(self.value)
+                        }
+                    })
                     .when_some(self.hint, |this, hint| {
                         this.flex().child(
                             div()

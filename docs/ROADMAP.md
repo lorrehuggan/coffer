@@ -755,8 +755,16 @@ Every tool call appears in the access log.
   "excluded" filter so nothing disappears
 - ⬜ M3.11 Link refunds, reimbursements and settlements; outstanding-claims and owed-to-me
   lists
-- ⬜ M3.12 Duplicates review queue (merge or dismiss, showing why each pair was flagged) and
-  reconciliation: assertion results per account, lock and unlock
+- ✅ M3.12 Duplicates review queue (merge or dismiss, showing why each pair was flagged) and
+  reconciliation: assertion results per account, lock and unlock. Under CHECKS in the
+  Inbox's panel, as D6.4 draws them (user): `crates/app/src/checks/` (Possible
+  duplicates with the pair open side by side, why it was flagged, "If you merge", M / N /
+  ←→ / ↑↓, the undo bar for merges and dismissals; Balance checks per account with the
+  failing window, the pair that explains it, lock and unlock dialogs). Core's read model
+  is `coffer_core::checks` (the merge's own plan rolled back). The status bar counts
+  failing checks and the flagged dot opens them. No migration. Snapshots (`review-*`)
+  checked by eye against `8SE-0`, `98K-0`, `9MQ-0`; the window itself only
+  build-verified. Decisions: `ARCHITECTURE.md` → "Decision record: review queues (built)"
 - ⬜ M3.13 Rules: "Create a rule from this edit?", apply-to-history preview, merchant alias
   editor
 - ✅ M3.14 Inbox impact preview: what approving each suggestion would change (e.g. "changes

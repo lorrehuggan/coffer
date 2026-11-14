@@ -40,9 +40,16 @@
 //! - `inbox-approved`: after approving the DELIVEROO rule (`EWZ-0`'s bar,
 //!   without Undo);
 //! - `inbox-empty`: no suggestions;
+//! - `review-duplicates`: Possible duplicates with the Ocado pair open
+//!   (Paper `8SE-0`); `review-balances`: Balance checks with the joint
+//!   account's failing check selected (`98K-0`); `review-locked`: a pair in
+//!   a locked period (`9MQ-0`); `review-merged`: the undo bar after a merge
+//!   (`9MQ-0`); `review-lock` and `review-unlock`: the dialogs (`9MQ-0`);
+//!   `review-empty`: no possible duplicates (`9MQ-0`);
 //! - `showcase`: the component showcase.
 //!
-//! The Inbox reads a scratch database seeded with `inbox::fixture`.
+//! The Inbox reads a scratch database seeded with `inbox::fixture`, the
+//! review queues one seeded with `checks::fixture`.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -53,6 +60,8 @@ use anyhow::{Context as _, Result};
 use gpui_kit::{AnyView, App, AppContext as _, Entity, HeadlessAppContext, Window, size};
 
 use coffer_app::accounts::{Accounts, fixture as accounts_fixture};
+use coffer_app::checks::store::ChecksStore;
+use coffer_app::checks::{Checks, Queue, fixture as checks_fixture};
 use coffer_app::inbox::store::{Entry, InboxStore};
 use coffer_app::inbox::{Inbox, fixture as inbox_fixture};
 use coffer_app::settings::restore::{RestoreDialog, Stage};
@@ -286,6 +295,7 @@ fn main() -> Result<()> {
         snapshot_then(&mut cx, &out, name, build, then)?;
     }
     inbox_snapshots(&mut cx, &out)?;
+    review_snapshots(&mut cx, &out)?;
     snapshot(&mut cx, &out, "showcase", |window, cx| {
         cx.new(|cx| Showcase::new(window, cx)).into()
     })?;
@@ -394,6 +404,99 @@ fn inbox_snapshots(cx: &mut HeadlessAppContext, out: &Path) -> Result<()> {
             cx.new(|cx| ShellView::with_data(View::Inbox, accounts, inbox, window, cx))
                 .into()
         })?;
+        drop(dir);
+    }
+    Ok(())
+}
+
+/// What a review-queue snapshot shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReviewShot {
+    Duplicates,
+    Balances,
+    Locked,
+    Merged,
+    Lock,
+    Unlock,
+    Empty,
+}
+
+/// The review-queue snapshots: each on a fresh scratch database.
+fn review_snapshots(cx: &mut HeadlessAppContext, out: &Path) -> Result<()> {
+    let shots = [
+        ("review-duplicates", ReviewShot::Duplicates),
+        ("review-balances", ReviewShot::Balances),
+        ("review-locked", ReviewShot::Locked),
+        ("review-merged", ReviewShot::Merged),
+        ("review-lock", ReviewShot::Lock),
+        ("review-unlock", ReviewShot::Unlock),
+        ("review-empty", ReviewShot::Empty),
+    ];
+    for (name, shot) in shots {
+        let dir = tempfile::TempDir::new()?;
+        let database = dir.path().join("coffer.db");
+        let seeded = {
+            let mut db = Database::open(&database)?;
+            (shot != ReviewShot::Empty).then(|| {
+                let seeded = checks_fixture::seed(&mut db);
+                if shot == ReviewShot::Locked {
+                    checks_fixture::seed_locked_pair(&mut db, &seeded);
+                }
+                seeded
+            })
+        };
+        let accounts_ids = seeded.as_ref().map(|s| (s.joint, s.savings));
+        let checks_slot: Rc<RefCell<Option<Entity<Checks>>>> = Rc::new(RefCell::new(None));
+        let slot = checks_slot.clone();
+        let build = move |window: &mut Window, cx: &mut App| -> AnyView {
+            let accounts = cx.new(|_| Accounts::fixture(accounts_fixture::accounts()));
+            let inbox = cx.new(|_| Inbox::empty());
+            let checks = cx.new(|_| Checks::from_store(ChecksStore::new(database)));
+            *slot.borrow_mut() = Some(checks.clone());
+            cx.new(|cx| {
+                let mut shell = ShellView::with_data(View::Inbox, accounts, inbox, window, cx);
+                shell.install_checks(checks.clone(), window, cx);
+                checks.update(cx, |checks, cx| {
+                    let queue = match shot {
+                        ReviewShot::Balances | ReviewShot::Lock | ReviewShot::Unlock => {
+                            Queue::Balances
+                        }
+                        _ => Queue::Duplicates,
+                    };
+                    checks.show(queue, cx);
+                    if shot == ReviewShot::Locked
+                        && let Some((_, savings)) = accounts_ids
+                        && let Some(pair) = checks
+                            .pairs()
+                            .iter()
+                            .find(|pair| pair.account == savings)
+                            .map(|pair| pair.candidate)
+                    {
+                        checks.select_pair(Some(pair), cx);
+                    }
+                    if shot == ReviewShot::Merged {
+                        checks.merge(cx);
+                    }
+                });
+                shell
+            })
+            .into()
+        };
+        let then = move |_: &mut Window, cx: &mut App| {
+            let Some(checks) = checks_slot.borrow().clone() else {
+                return;
+            };
+            match (shot, accounts_ids) {
+                (ReviewShot::Lock, Some((_, savings))) => {
+                    checks.update(cx, |checks, cx| checks.request_lock(savings, cx))
+                }
+                (ReviewShot::Unlock, Some((joint, _))) => {
+                    checks.update(cx, |checks, cx| checks.request_unlock(joint, cx))
+                }
+                _ => {}
+            }
+        };
+        snapshot_then(cx, out, name, build, then)?;
         drop(dir);
     }
     Ok(())

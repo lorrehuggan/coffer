@@ -97,6 +97,29 @@ pub enum Glyph {
     Alert,
     /// Dismiss a notification (Paper `HF9-0`). 12px.
     Dismiss,
+    /// A possible duplicate: two overlapping rectangles (D6.4, Paper
+    /// `93Y-0`). 12px; the empty queue draws it at 16px.
+    Duplicate,
+    /// Balance checks: a pair of scales (D6.4, Paper `945-0`). 12px.
+    Balance,
+    /// What stopped the exact dedupe: a not-equal sign (D6.4, Paper
+    /// `97Y-0`). 12px.
+    Differs,
+    /// The row a merge excludes: a circle with a slash (D6.4, Paper
+    /// `951-0`). 12px.
+    Excluded,
+    /// A locked period, at the size of the text it leads (D6.4's
+    /// inspector, Paper `9MG-0`). 12px; [`Glyph::Lock`] is the 10px one.
+    Locked,
+    /// The locked-period block's lock (D6.4 states board, Paper `9VU-0`;
+    /// the import's locked period). 14px.
+    LockedPeriod,
+    /// The empty Possible duplicates queue's icon: [`Glyph::Duplicate`]
+    /// drawn at 16px with a 1.2px stroke (Paper `9WH-0`). 16px.
+    DuplicateLarge,
+    /// The empty Balance checks queue's icon: [`Glyph::Balance`] at 16px,
+    /// as [`Glyph::DuplicateLarge`]. 16px.
+    BalanceLarge,
 }
 
 impl Glyph {
@@ -127,13 +150,18 @@ impl Glyph {
             | Self::Refused
             | Self::Copy
             | Self::Alert
-            | Self::Dismiss => size::ICON_SM,
+            | Self::Dismiss
+            | Self::Duplicate
+            | Self::Balance
+            | Self::Differs
+            | Self::Excluded
+            | Self::Locked => size::ICON_SM,
             Self::Close | Self::Minimize | Self::Maximize | Self::Lock | Self::YouSet => {
                 size::ICON_XS
             }
-            Self::Settings | Self::Warning => size::ICON_MD,
+            Self::Settings | Self::Warning | Self::LockedPeriod => size::ICON_MD,
             Self::ChevronDown => size::MARKER,
-            Self::Panel | Self::Mark => size::ICON_LG,
+            Self::Panel | Self::Mark | Self::DuplicateLarge | Self::BalanceLarge => size::ICON_LG,
         }
     }
 
@@ -280,6 +308,38 @@ impl Glyph {
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
                 r#"<path d="M3 3L9 9M9 3L3 9"/></svg>"#
             ),
+            Self::Duplicate => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<rect x="1.75" y="3.75" width="6.5" height="6.5" rx="1.25"/><path d="M3.75 1.75H9C9.69 1.75 10.25 2.31 10.25 3V8.25"/></svg>"#
+            ),
+            Self::Balance => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M6 2V10.25M4 10.25H8M2.25 3.25H9.75M2.25 3.25L1 7H3.5L2.25 3.25ZM9.75 3.25L8.5 7H11L9.75 3.25Z"/></svg>"#
+            ),
+            Self::Differs => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M2.5 4.5H9.5M2.5 7.5H9.5M7.5 2.25L4.5 9.75"/></svg>"#
+            ),
+            Self::Excluded => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M6 10.5A4.5 4.5 0 1 0 6 1.5A4.5 4.5 0 0 0 6 10.5ZM2.8 9.2L9.2 2.8"/></svg>"#
+            ),
+            Self::Locked => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">"#,
+                r#"<rect x="2.5" y="5.25" width="7" height="4.75" rx="1.1"/><path d="M4 5.25V3.9C4 2.8 4.9 2 6 2C7.1 2 8 2.8 8 3.9V5.25"/></svg>"#
+            ),
+            Self::DuplicateLarge => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<rect x="2.333" y="5" width="8.667" height="8.667" rx="1.667"/><path d="M5 2.333H12C12.92 2.333 13.667 3.08 13.667 4V11"/></svg>"#
+            ),
+            Self::BalanceLarge => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M8 2.667V13.667M5.333 13.667H10.667M3 4.333H13M3 4.333L1.333 9.333H4.667L3 4.333ZM13 4.333L11.333 9.333H14.667L13 4.333Z"/></svg>"#
+            ),
+            Self::LockedPeriod => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">"#,
+                r#"<rect x="3" y="6.25" width="8" height="5.25" rx="1.25"/><path d="M4.75 6.25V4.75C4.75 3.5 5.75 2.5 7 2.5C8.25 2.5 9.25 3.5 9.25 4.75V6.25"/></svg>"#
+            ),
         }
     }
 
@@ -307,7 +367,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Glyph; 34] = [
+    const ALL: [Glyph; 42] = [
         Glyph::Account,
         Glyph::Pot,
         Glyph::Plus,
@@ -342,6 +402,14 @@ mod tests {
         Glyph::Copy,
         Glyph::Alert,
         Glyph::Dismiss,
+        Glyph::Duplicate,
+        Glyph::Balance,
+        Glyph::Differs,
+        Glyph::Excluded,
+        Glyph::Locked,
+        Glyph::LockedPeriod,
+        Glyph::DuplicateLarge,
+        Glyph::BalanceLarge,
     ];
 
     /// The `viewBox` side in the markup, which `size` must match so strokes
