@@ -41,6 +41,7 @@ use crate::db::{Database, Reader};
 use crate::mcp_client::{AccessLevel, ClientName};
 use crate::rule::{UnknownKey, key_enum};
 
+pub mod activity;
 pub mod pending;
 
 /// The longest `purpose` stored, in characters. A longer one is cut:

@@ -13,8 +13,14 @@
 //!   ([`record_requested`], the one write the server makes here). Not
 //!   enabled; every call is refused.
 //! - **known**: the user answered by enabling it ([`enable`], which starts
-//!   at `aggregate`). [`revoke`] keeps it known but not enabled.
+//!   at `aggregate`, or [`enable_at`], the app's Enable dialog, at the level
+//!   chosen). [`revoke`] keeps it known but not enabled, its level back at
+//!   `aggregate`; [`turn_off`] and [`turn_on`] (the app's per-client switch,
+//!   M3.15) keep its level.
 //! - **ignored**: the user hid the request ([`ignore`]). Not enabled.
+//!
+//! [`remove`] deletes a client's row: its level is forgotten, its log,
+//! suggestions and reports stay, and a later call is a new request.
 //!
 //! Only the app and the CLI, which hold `&mut Database`, enable a client or
 //! change its level; the server holds a [`Reader`] for everything but
@@ -135,6 +141,11 @@ pub enum Error {
     /// The client isn't enabled, so it has no level to change.
     #[error("the AI client `{0}` isn't enabled; enable it first")]
     NotEnabled(ClientName),
+
+    /// The client only asked for access (or was ignored): it's enabled by
+    /// choosing a level, not turned back on.
+    #[error("the AI client `{0}` hasn't been enabled yet; enable it and choose its level")]
+    NeverEnabled(ClientName),
 
     #[error(transparent)]
     Setting(#[from] crate::setting::Error),
@@ -350,6 +361,77 @@ pub fn ignore(db: &mut Database, name: &ClientName) -> Result<(), Error> {
     Ok(())
 }
 
+/// Enables `name` at `level`: the app's Enable dialog, which chooses the
+/// level as it enables (starting from `aggregate`, the least shared). As
+/// [`enable`] followed by [`set_level`], in one transaction.
+pub fn enable_at(
+    db: &mut Database,
+    name: &ClientName,
+    level: AccessLevel,
+) -> Result<ClientInfo, Error> {
+    let tx = db.conn_mut().transaction()?;
+    tx.execute(
+        "INSERT INTO mcp_client (name, status, enabled, access_level) \
+         VALUES (?1, 'known', 1, ?2) \
+         ON CONFLICT (name) DO UPDATE SET \
+             access_level = excluded.access_level, status = 'known', enabled = 1",
+        params![name.as_str(), level],
+    )?;
+    crate::setting::ensure_pseudonym_key_on(&tx)?;
+    let info = get_on(&tx, name)?.ok_or_else(|| Error::NotFound(name.clone()))?;
+    tx.commit()?;
+    Ok(info)
+}
+
+/// Turns an enabled client off (the app's per-client switch): its next call
+/// is refused, and its level is kept for [`turn_on`]. Unlike [`revoke`],
+/// which sets the level back to `aggregate`.
+pub fn turn_off(db: &mut Database, name: &ClientName) -> Result<(), Error> {
+    let changed = db.conn().execute(
+        "UPDATE mcp_client SET enabled = 0 WHERE name = ?1 AND enabled = 1",
+        [name.as_str()],
+    )?;
+    if changed == 0 {
+        return Err(missing_or_disabled(db, name));
+    }
+    Ok(())
+}
+
+/// Turns a client the user enabled before back on, at the level it had.
+/// A client that has only asked (`requested`) or was ignored is refused:
+/// it's enabled through [`enable_at`], where the user chooses its level.
+/// Turning on an enabled client changes nothing.
+pub fn turn_on(db: &mut Database, name: &ClientName) -> Result<(), Error> {
+    let tx = db.conn_mut().transaction()?;
+    let changed = tx.execute(
+        "UPDATE mcp_client SET enabled = 1 WHERE name = ?1 AND status = 'known'",
+        [name.as_str()],
+    )?;
+    if changed == 0 {
+        return Err(match get_on(&tx, name)? {
+            Some(_) => Error::NeverEnabled(name.clone()),
+            None => Error::NotFound(name.clone()),
+        });
+    }
+    crate::setting::ensure_pseudonym_key_on(&tx)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Removes `name`'s row: it isn't enabled any more and its level is
+/// forgotten. Its access-log rows, suggestions and reports stay (they name
+/// the client as text, not by a key). If it calls again, the server records
+/// it as `requested`, as for any name it hasn't seen.
+pub fn remove(db: &mut Database, name: &ClientName) -> Result<(), Error> {
+    let removed = db
+        .conn()
+        .execute("DELETE FROM mcp_client WHERE name = ?1", [name.as_str()])?;
+    if removed == 0 {
+        return Err(Error::NotFound(name.clone()));
+    }
+    Ok(())
+}
+
 fn missing_or_disabled(db: &Database, name: &ClientName) -> Error {
     match get_on(db.conn(), name) {
         Ok(Some(_)) => Error::NotEnabled(name.clone()),
@@ -480,6 +562,97 @@ mod tests {
             set_level(&mut db, &ghost, AccessLevel::Standard),
             Err(Error::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn enable_at_chooses_the_level() {
+        let (_dir, mut db) = db();
+        let reader = db.reader().unwrap();
+        let agent = name("my-agent");
+        record_requested(&mut db, &agent).unwrap();
+        let info = enable_at(&mut db, &agent, AccessLevel::Pseudonymous).unwrap();
+        assert_eq!(
+            (info.status, info.enabled, info.level),
+            (ClientStatus::Known, true, AccessLevel::Pseudonymous)
+        );
+        assert!(crate::setting::pseudonym_key(&reader).unwrap().is_some());
+        // An ignored client can be enabled again, at the level chosen.
+        ignore(&mut db, &agent).unwrap();
+        assert_eq!(
+            enable_at(&mut db, &agent, AccessLevel::Aggregate)
+                .unwrap()
+                .level,
+            AccessLevel::Aggregate
+        );
+    }
+
+    #[test]
+    fn turning_off_keeps_the_level() {
+        let (_dir, mut db) = db();
+        let reader = db.reader().unwrap();
+        let codex = name("codex");
+        enable_at(&mut db, &codex, AccessLevel::Standard).unwrap();
+        turn_off(&mut db, &codex).unwrap();
+        assert_eq!(access(&reader, &codex).unwrap(), ClientAccess::Revoked);
+        assert_eq!(
+            stored_level(&reader, &codex).unwrap(),
+            Some(AccessLevel::Standard)
+        );
+        assert!(matches!(
+            turn_off(&mut db, &codex),
+            Err(Error::NotEnabled(_))
+        ));
+        turn_on(&mut db, &codex).unwrap();
+        assert_eq!(
+            access(&reader, &codex).unwrap(),
+            ClientAccess::Enabled(AccessLevel::Standard)
+        );
+        // Idempotent.
+        turn_on(&mut db, &codex).unwrap();
+
+        // A request is answered by enabling it, not by turning it on.
+        let agent = name("my-agent");
+        record_requested(&mut db, &agent).unwrap();
+        assert!(matches!(
+            turn_on(&mut db, &agent),
+            Err(Error::NeverEnabled(_))
+        ));
+        assert_eq!(access(&reader, &agent).unwrap(), ClientAccess::Requested);
+        assert!(matches!(
+            turn_on(&mut db, &name("ghost")),
+            Err(Error::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn removing_forgets_the_client_but_not_its_log() {
+        let (_dir, mut db) = db();
+        let reader = db.reader().unwrap();
+        let codex = name("codex");
+        enable_at(&mut db, &codex, AccessLevel::Standard).unwrap();
+        crate::access_log::append(
+            &mut db,
+            &crate::access_log::NewEntry {
+                client: codex.clone(),
+                tool: "list_accounts".into(),
+                access_level: Some(AccessLevel::Standard),
+                outcome: crate::access_log::Outcome::Ok,
+                purpose: None,
+                args_redacted_json: "{}".into(),
+                row_count: 2,
+                result_hash: Some("ab".into()),
+                withheld_count: 0,
+            },
+        )
+        .unwrap();
+        remove(&mut db, &codex).unwrap();
+        assert_eq!(access(&reader, &codex).unwrap(), ClientAccess::Unknown);
+        assert_eq!(get(&reader, &codex).unwrap(), None);
+        assert_eq!(crate::access_log::recent(&reader, 10).unwrap().len(), 1);
+        assert!(matches!(remove(&mut db, &codex), Err(Error::NotFound(_))));
+        // Calling again, it is a new request.
+        assert!(record_requested(&mut db, &codex).unwrap());
+        assert_eq!(access(&reader, &codex).unwrap(), ClientAccess::Requested);
     }
 
     #[test]

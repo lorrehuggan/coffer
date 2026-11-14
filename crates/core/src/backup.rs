@@ -71,6 +71,7 @@
 //! Nothing here reads or logs transaction contents; errors name files,
 //! versions and SQLite's own messages only.
 
+pub mod detail;
 #[cfg(test)]
 mod tests;
 

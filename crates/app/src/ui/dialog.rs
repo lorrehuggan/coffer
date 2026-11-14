@@ -14,6 +14,7 @@
 
 use std::rc::Rc;
 
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, FocusHandle, IntoElement, ParentElement as _, RenderOnce, Rgba, SharedString,
     Styled as _, Window, div,
@@ -36,10 +37,14 @@ fn backdrop_color() -> Rgba {
 /// A modal dialog with a title, a body and footer actions.
 #[derive(IntoElement)]
 pub struct Dialog {
-    title: SharedString,
+    title: AnyElement,
+    /// Shown after the title, on its row (the export dialog's CSV / JSON).
+    title_trailing: Option<AnyElement>,
     focus: FocusHandle,
     body: Vec<AnyElement>,
     footer: Vec<AnyElement>,
+    /// Before the actions, taking the footer's free width (Paper `HDF-0`).
+    footer_lead: Option<AnyElement>,
     on_cancel: Option<Cancel>,
 }
 
@@ -47,18 +52,46 @@ impl Dialog {
     /// A dialog titled `title`. `focus` is the dialog's own handle: focus
     /// stays inside while it's open.
     pub fn new(title: impl Into<SharedString>, focus: &FocusHandle) -> Self {
+        Self::with_title(
+            div()
+                .flex()
+                .text_color(color::TEXT)
+                .child(Tracked::new(typography::TITLE, title.into())),
+            focus,
+        )
+    }
+
+    /// A dialog with `title` drawn by the caller in title type, for a title
+    /// with a part in mono ("Enable `my-agent`?", Paper `GYP-0`).
+    pub fn with_title(title: impl IntoElement, focus: &FocusHandle) -> Self {
         Self {
-            title: title.into(),
+            title: title.into_any_element(),
+            title_trailing: None,
             focus: focus.clone(),
             body: Vec::new(),
             footer: Vec::new(),
+            footer_lead: None,
             on_cancel: None,
         }
+    }
+
+    /// Puts `element` at the end of the title's row, the title taking the
+    /// rest (Paper `HAH-0`).
+    pub fn title_trailing(mut self, element: impl IntoElement) -> Self {
+        self.title_trailing = Some(element.into_any_element());
+        self
     }
 
     /// Adds `element` to the body, below the title: field rows, a caption.
     pub fn body(mut self, element: impl IntoElement) -> Self {
         self.body.push(element.into_any_element());
+        self
+    }
+
+    /// Puts `element` (a caption) at the start of the footer, before the
+    /// actions (the export dialog's "Saved where you choose.").
+    pub fn footer_lead(mut self, element: impl IntoElement) -> Self {
+        self.footer_lead = Some(element.into_any_element());
         self
     }
 
@@ -94,15 +127,21 @@ impl RenderOnce for Dialog {
             .child(
                 div()
                     .flex()
-                    .text_color(color::TEXT)
-                    .child(Tracked::new(typography::TITLE, self.title)),
+                    .items_center()
+                    .gap(spacing::S2)
+                    .child(div().flex().flex_1().min_w_0().child(self.title))
+                    .children(self.title_trailing),
             )
             .children(self.body)
             .child(
                 div()
                     .flex()
                     .justify_end()
+                    .items_center()
                     .gap(spacing::S2)
+                    .when_some(self.footer_lead, |this, lead| {
+                        this.child(div().flex_1().min_w_0().child(lead))
+                    })
                     .children(self.footer),
             );
         gpui_kit::base::Dialog::new(cx)

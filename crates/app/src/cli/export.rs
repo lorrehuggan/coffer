@@ -156,6 +156,7 @@ fn options(db: &Database, args: &ExportArgs) -> anyhow::Result<Options> {
         },
         include_notes: args.include_notes,
         include_private_tags: args.include_private_tags,
+        include_excluded: true,
     })
 }
 

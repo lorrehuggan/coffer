@@ -136,6 +136,7 @@ pub struct SelectField {
     id: ElementId,
     value: SharedString,
     lead: Option<SelectLead>,
+    hint: Option<SharedString>,
     placeholder: bool,
     on_click: Option<ClickHandler>,
 }
@@ -146,6 +147,7 @@ impl SelectField {
             id: id.into(),
             value: value.into(),
             lead: None,
+            hint: None,
             placeholder: false,
             on_click: None,
         }
@@ -160,6 +162,13 @@ impl SelectField {
     /// Marks the value as the agent's suggestion, not yet approved.
     pub fn suggested(mut self) -> Self {
         self.lead = Some(SelectLead::Suggested);
+        self
+    }
+
+    /// Follows the value with `hint` after a `·`, in `text-muted`
+    /// ("Aggregate · totals only", Paper `GZI-0`).
+    pub fn hint(mut self, hint: impl Into<SharedString>) -> Self {
+        self.hint = Some(hint.into());
         self
     }
 
@@ -221,7 +230,14 @@ impl RenderOnce for SelectField {
                     .text_ellipsis()
                     .text_role(typography::BODY)
                     .text_color(value_color)
-                    .child(self.value),
+                    .child(self.value)
+                    .when_some(self.hint, |this, hint| {
+                        this.flex().child(
+                            div()
+                                .text_color(color::TEXT_MUTED)
+                                .child(format!("\u{a0}· {hint}")),
+                        )
+                    }),
             );
         surface()
             .id(self.id)

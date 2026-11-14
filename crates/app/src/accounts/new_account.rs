@@ -39,7 +39,7 @@ use super::{Accounts, DialogClosed};
 const CAPTION: &str = "Owed money on a credit card is a negative balance. Skip the balance if your bank’s export includes one: the first import fills it in. Pots are added from imports, not here.";
 
 /// `message` as a sentence: a capital first letter and a full stop.
-pub(super) fn sentence(message: &str) -> SharedString {
+pub(crate) fn sentence(message: &str) -> SharedString {
     let mut chars = message.chars();
     let mut text: String = match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),

@@ -1,4 +1,6 @@
-//! Exporting transactions as CSV or JSON (M1.29, `coffer export`).
+//! Exporting transactions as CSV or JSON (M1.29, `coffer export`; the app's
+//! export dialog, M3.16). `docs/EXPORT.md` is a copy of these docs for
+//! readers of an export: keep the two in step.
 //!
 //! An export is one row per line of the ledger (the `ledger_line` view): a
 //! transaction that isn't split is one row, and a split transaction is one
@@ -11,9 +13,10 @@
 //! description, …) repeat on each line of a split; the amount, my amount
 //! and category are the line's.
 //!
-//! The export doesn't filter by status: excluded rows and transfers are
-//! included, with `excluded_reason` and `transfer_status` to filter by, as
-//! in `ledger_line`. Rows are ordered by date, then transaction ID, then
+//! The export doesn't filter by status unless asked: excluded rows and
+//! transfers are included, with `excluded_reason` and `transfer_status` to
+//! filter by, as in `ledger_line`. [`Options::include_excluded`] off leaves
+//! the excluded rows out (the app's export dialog, M3.16). Rows are ordered by date, then transaction ID, then
 //! line number, then link.
 //!
 //! # Filters ([`Filter`])
@@ -177,15 +180,39 @@ pub struct Filter {
     pub tags: Vec<TagName>,
 }
 
-/// What to export. The default exports every row, with neither notes nor
-/// private tags.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// What to export. The default exports every row, excluded ones included,
+/// with neither notes nor private tags.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Options {
     pub filter: Filter,
     /// Adds `user_note`, `line_note`, `excluded_note` and `bank_note`.
     pub include_notes: bool,
     /// Adds `private_tags`, and allows filtering by a private tag.
     pub include_private_tags: bool,
+    /// Keeps the rows of excluded transactions, with their
+    /// `excluded_reason`. On by default (and always for `coffer export`);
+    /// the app's export dialog starts with it off (M3.16).
+    pub include_excluded: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            filter: Filter::default(),
+            include_notes: false,
+            include_private_tags: false,
+            include_excluded: true,
+        }
+    }
+}
+
+/// How much an export holds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Counts {
+    /// Distinct transactions.
+    pub transactions: usize,
+    /// Rows: a split transaction has one per line, a linked one per part.
+    pub rows: usize,
 }
 
 /// One exported row: a transaction, or one line of a split one.
@@ -268,6 +295,9 @@ pub enum Error {
     #[error("couldn't write {}: {source}", path.display())]
     File { path: PathBuf, source: io::Error },
 
+    #[error("{} is Coffer's database (or one of its files); choose another file for the export", .0.display())]
+    IsDatabase(PathBuf),
+
     #[error("couldn't write the export: {0}")]
     Write(#[source] io::Error),
 
@@ -345,6 +375,9 @@ pub fn rows(db: &Database, options: &Options) -> Result<Vec<ExportRow>, Error> {
          WHERE tt.transaction_id = l.transaction_id AND tt.tag_id IN ({}))",
         &filter.tags,
     );
+    if !options.include_excluded {
+        sql.push_str(" AND l.excluded_reason IS NULL");
+    }
     sql.push_str(" ORDER BY l.date, l.transaction_id, l.line_no, l.link_id, l.target_split_id");
 
     let mut statement = conn.prepare(&sql)?;
@@ -366,6 +399,36 @@ fn any_of(sql: &mut String, values: &mut Vec<SqlValue>, condition: &str, ids: &[
     sql.push_str(" AND ");
     sql.push_str(&condition.replace("{}", &marks));
     values.extend(ids.iter().map(|&id| SqlValue::Integer(id)));
+}
+
+/// The first and last dates of the ledger, `None` when it's empty: the
+/// export dialog's dates start there, so it exports everything unless
+/// narrowed.
+pub fn date_span(db: &Database) -> Result<Option<(NaiveDate, NaiveDate)>, Error> {
+    let span: (Option<String>, Option<String>) =
+        db.conn()
+            .query_row("SELECT min(date), max(date) FROM ledger_line", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?;
+    let parse = |text: Option<String>| {
+        text.and_then(|text| NaiveDate::parse_from_str(&text, "%Y-%m-%d").ok())
+    };
+    Ok(parse(span.0).zip(parse(span.1)))
+}
+
+/// How many transactions and rows `options` selects: the app's export
+/// dialog says so before writing anything.
+pub fn count(db: &Database, options: &Options) -> Result<Counts, Error> {
+    let rows = rows(db, options)?;
+    let transactions = rows
+        .iter()
+        .map(|row| row.transaction_id)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    Ok(Counts {
+        transactions,
+        rows: rows.len(),
+    })
 }
 
 /// Exports the rows `options` selects to `out` and returns how many there
@@ -394,6 +457,9 @@ pub fn to_file(
     path: &Path,
     overwrite: bool,
 ) -> Result<usize, Error> {
+    if is_database_file(db.path(), path) {
+        return Err(Error::IsDatabase(path.to_path_buf()));
+    }
     let rows = rows(db, options)?;
     let file_error = |path: &Path| {
         let path = path.to_path_buf();
@@ -433,6 +499,28 @@ pub fn to_file(
         return Err(file_error(path)(error));
     }
     Ok(rows.len())
+}
+
+/// Whether `path` is the database at `database` or one of its `-wal`,
+/// `-shm` or `-journal` files: an export must never replace them. Compared
+/// by their directory's canonical path, so a link to the data directory
+/// is caught too.
+fn is_database_file(database: &Path, path: &Path) -> bool {
+    let canonical = |path: &Path| -> Option<PathBuf> {
+        let dir = match path.parent() {
+            Some(dir) if !dir.as_os_str().is_empty() => dir,
+            _ => Path::new("."),
+        };
+        Some(dir.canonicalize().ok()?.join(path.file_name()?))
+    };
+    let (Some(database), Some(path)) = (canonical(database), canonical(path)) else {
+        return false;
+    };
+    ["", "-wal", "-shm", "-journal"].iter().any(|suffix| {
+        let mut name = database.clone().into_os_string();
+        name.push(suffix);
+        name == path.as_os_str()
+    })
 }
 
 fn create_private(path: &Path) -> io::Result<File> {

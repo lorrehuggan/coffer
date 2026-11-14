@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod cli;
 pub mod format;
 pub mod inbox;
+pub mod settings;
 pub mod shell;
 pub mod showcase;
 pub mod theme;
