@@ -19,7 +19,9 @@ charts, and exposes the data to AI clients through an MCP server.
 M0 and the design track (D1–D6) are done and signed off; every M1 item is done,
 M1.9 checked against a real Monzo export. Every M2 item is done, tested on synthetic
 data and checked with Claude Code against a real Monzo export (2026-11-13). M3 has
-started: M3.1 (the app shell and window state) and M3.2 (accounts management) are done.
+started: M3.1 (the app shell and window state), M3.2 (accounts management), M3.3 (the
+Transactions view on the database), and M3.6 with M3.14 (the Inbox and its impact
+preview) are done.
 The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
@@ -103,8 +105,15 @@ on a background thread, category changes through `inbox::own::recategorize`, und
 through `change::undo`), is filtered by the accounts panel and its chips, sorts within
 each day, and sets categories in place; `present` turns rows into cells and menu
 options, `fixture` keeps the Paper rows as a `Register` for snapshots and tests, and
-`ui::undo_bar` is the undo notification. The other views show the shell and
-`ui::empty_state`. And
+`ui::undo_bar` is the undo notification. The Inbox (M3.6, M3.14) is
+`crates/app/src/inbox/`: `Inbox` (status, filters, groups, selection, decisions through
+`store::InboxStore`, which opens the database per call), `panel`, `view` (the grouped
+table, the selected suggestion open in place, A / R / ↑↓) and `inspector` ("If you
+approve"), `text` (labels, untrusted text made plain with `envelope::shown`) and
+`fixture` (D6.6's sample suggestions, seeded through core into a scratch database). Its
+read model is core's `inbox::preview` (`describe`, `preview`, `covered_by`), plus
+`inbox::counts`, `inbox::reject_all` and `reporting::palette` (category colours ranked
+at read time). The other views show the shell and `ui::empty_state`. And
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
 `import`, `accounts` (`list`, `add`, `--preset` since M3.2), `undo-import`, `backup` (`--list`) and
 `restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2

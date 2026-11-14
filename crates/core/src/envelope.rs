@@ -115,6 +115,52 @@ pub fn strip_invisible(text: &str) -> String {
     text.chars().filter(|&c| !is_invisible(c)).collect()
 }
 
+/// Untrusted text made fit to show on one line in Coffer's own UI or the
+/// CLI: what [`shown`] returns.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shown {
+    /// The text: one line, whitespace runs as single spaces, trimmed.
+    pub text: String,
+    /// Characters [`is_invisible`] removed.
+    pub hidden: usize,
+    /// Characters cut off the end.
+    pub cut: usize,
+}
+
+/// Strips `raw` (an AI client's rationale, pattern or name, read back) to
+/// show it as plain text on one line: line breaks, tabs and other
+/// whitespace become single spaces (trimmed at the ends); the characters
+/// [`strip_invisible`] removes are removed and counted; the rest is cut to
+/// `max` characters. Whitespace is tested first, as [`sanitize`] does, so
+/// a line separator between two words is a space. Unlike [`sanitize`]
+/// (for text going to an AI client) nothing is withheld or rewritten: the
+/// user reads what the client wrote. Coffer's UI and the CLI show the
+/// result as plain text, never as markup or a link.
+pub fn shown(raw: &str, max: usize) -> Shown {
+    let mut text = String::new();
+    let mut hidden = 0;
+    let mut space = false;
+    for c in raw.chars() {
+        if c.is_whitespace() {
+            space = !text.is_empty();
+        } else if is_invisible(c) {
+            hidden += 1;
+        } else {
+            if space {
+                text.push(' ');
+                space = false;
+            }
+            text.push(c);
+        }
+    }
+    let length = text.chars().count();
+    let cut = length.saturating_sub(max);
+    if cut > 0 {
+        text = text.chars().take(max).collect();
+    }
+    Shown { text, hidden, cut }
+}
+
 /// Whether [`strip_invisible`] removes `c`.
 pub fn is_invisible(c: char) -> bool {
     matches!(c,
@@ -369,6 +415,24 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
+
+    #[test]
+    fn shown_is_one_stripped_line_cut_to_length() {
+        // A line separator is whitespace; a zero-width space and a bidi
+        // override are hidden and counted.
+        let text = shown("  Uber\u{2028}Eats\u{200B} is\u{202E} food  ", 12);
+        assert_eq!(
+            text,
+            Shown {
+                text: "Uber Eats is".to_owned(),
+                hidden: 2,
+                cut: 5,
+            }
+        );
+        // Characters, not bytes.
+        assert_eq!(shown(&"é".repeat(3), 3).cut, 0);
+        assert_eq!(shown("a\r\nb", 10).text, "a b");
+    }
 
     /// Real-looking bank lines: they pass, unchanged but for inert domains.
     const BENIGN: &[(&str, &str)] = &[

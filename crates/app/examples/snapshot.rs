@@ -26,7 +26,17 @@
 //! - `account-kind`: the same with the Kind menu open (Paper `FHZ-0`);
 //! - `new-account`: the New account dialog (Paper `8IR-0`);
 //! - `add-balance`: Add balance for Current account (Paper `I7C-0`);
+//! - `inbox-rule`: the Inbox with the UBER *EATS rule open (Paper `ABK-0`);
+//! - `inbox-name`: the LIME*RIDE merchant name open (Paper `DL8-0`);
+//! - `inbox-categorisation`, `inbox-transfer`, `inbox-refund`,
+//!   `inbox-coffer`: the other kinds' inspectors (Paper `564-0`, `EWZ-0`);
+//! - `inbox-wide`: a wide rule summed by merchant (Paper `EWZ-0`);
+//! - `inbox-approved`: after approving the DELIVEROO rule (`EWZ-0`'s bar,
+//!   without Undo);
+//! - `inbox-empty`: no suggestions;
 //! - `showcase`: the component showcase.
+//!
+//! The Inbox reads a scratch database seeded with `inbox::fixture`.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -37,9 +47,13 @@ use anyhow::{Context as _, Result};
 use gpui_kit::{AnyView, App, AppContext as _, Entity, HeadlessAppContext, Window, size};
 
 use coffer_app::accounts::{Accounts, fixture as accounts_fixture};
+use coffer_app::inbox::store::{Entry, InboxStore};
+use coffer_app::inbox::{Inbox, fixture as inbox_fixture};
 use coffer_app::shell::{ShellView, View};
 use coffer_app::showcase::Showcase;
 use coffer_app::transactions::{Menu, fixture};
+use coffer_core::db::Database;
+use coffer_core::inbox::{COFFER_SOURCE, Payload};
 use coffer_core::reporting::register::{Sort, SortColumn};
 
 const WIDTH: f32 = 1440.;
@@ -164,6 +178,7 @@ fn main() -> Result<()> {
         };
         snapshot_then(&mut cx, &out, name, build, then)?;
     }
+    inbox_snapshots(&mut cx, &out)?;
     snapshot(&mut cx, &out, "showcase", |window, cx| {
         cx.new(|cx| Showcase::new(window, cx)).into()
     })?;
@@ -177,6 +192,104 @@ enum TableStep {
     DateMenu,
     Sorted,
     NoMatch,
+}
+
+/// Which suggestion an Inbox snapshot opens.
+type Pick = fn(&Entry) -> bool;
+
+fn is_pattern(entry: &Entry, pattern: &str) -> bool {
+    matches!(&entry.suggestion.payload, Payload::Rule(rule) if rule.pattern().as_str() == pattern)
+}
+
+/// The Inbox snapshots: each on a fresh scratch database.
+fn inbox_snapshots(cx: &mut HeadlessAppContext, out: &Path) -> Result<()> {
+    let shots: [(&str, Option<Pick>, bool, bool); 9] = [
+        (
+            "inbox-rule",
+            Some(|e| is_pattern(e, "UBER *EATS")),
+            false,
+            false,
+        ),
+        (
+            "inbox-name",
+            Some(|e| matches!(e.suggestion.payload, Payload::MerchantAlias(_))),
+            false,
+            false,
+        ),
+        (
+            "inbox-categorisation",
+            Some(|e| {
+                matches!(&e.subject, coffer_core::inbox::preview::Subject::Categorization(items)
+                    if items.first().and_then(|i| i.transaction.as_ref()).is_some_and(|t| t.name() == "UBER *EATS"))
+            }),
+            false,
+            false,
+        ),
+        (
+            "inbox-transfer",
+            Some(|e| matches!(e.suggestion.payload, Payload::TransferPair(_))),
+            false,
+            false,
+        ),
+        (
+            "inbox-refund",
+            Some(|e| matches!(e.suggestion.payload, Payload::RefundLink(_))),
+            false,
+            false,
+        ),
+        (
+            "inbox-coffer",
+            Some(|e| e.suggestion.source_client == COFFER_SOURCE),
+            false,
+            false,
+        ),
+        ("inbox-wide", Some(|e| is_pattern(e, "PAY")), true, false),
+        (
+            "inbox-approved",
+            Some(|e| is_pattern(e, "DELIVEROO")),
+            false,
+            true,
+        ),
+        ("inbox-empty", None, false, false),
+    ];
+    for (name, pick, wide, approve) in shots {
+        let dir = tempfile::TempDir::new()?;
+        let database = dir.path().join("coffer.db");
+        {
+            let mut db = Database::open(&database)?;
+            if name != "inbox-empty" {
+                inbox_fixture::seed(&mut db);
+            }
+            if wide {
+                inbox_fixture::seed_wide_rule(&mut db);
+            }
+        }
+        snapshot(cx, out, name, move |window, cx| {
+            let accounts = cx.new(|_| Accounts::fixture(accounts_fixture::accounts()));
+            let inbox = cx.new(|_| Inbox::from_store(InboxStore::new(database)));
+            inbox.update(cx, |inbox, cx| {
+                let id = pick.and_then(|pick| {
+                    inbox
+                        .data()
+                        .entries
+                        .iter()
+                        .find(|entry| pick(entry))
+                        .map(Entry::id)
+                });
+                if approve {
+                    if let Some(id) = id {
+                        inbox.approve(id, cx);
+                    }
+                } else {
+                    inbox.select(id, cx);
+                }
+            });
+            cx.new(|cx| ShellView::with_data(View::Inbox, accounts, inbox, window, cx))
+                .into()
+        })?;
+        drop(dir);
+    }
+    Ok(())
 }
 
 /// What the account snapshots do after selecting Current account.

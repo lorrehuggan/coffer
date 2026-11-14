@@ -45,6 +45,7 @@ pub mod budget_status;
 pub mod catalog;
 pub mod ledger;
 pub mod net_worth;
+pub mod palette;
 pub mod period;
 pub mod register;
 pub mod rows;

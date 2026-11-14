@@ -263,7 +263,7 @@ pub fn delete(db: &mut Database, id: RuleId) -> Result<(), StoreError> {
 }
 
 /// Every rule in evaluation order, validated.
-pub(super) fn load_all(conn: &Connection) -> Result<Vec<StoredRule>, StoreError> {
+pub(crate) fn load_all(conn: &Connection) -> Result<Vec<StoredRule>, StoreError> {
     let mut statement =
         conn.prepare(&format!("SELECT {COLUMNS} FROM rule ORDER BY priority, id"))?;
     let raw = statement

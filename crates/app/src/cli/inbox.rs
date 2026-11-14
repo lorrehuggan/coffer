@@ -888,27 +888,7 @@ fn labelled(label: &str, from: &str, raw: &str, max: usize) -> String {
 /// going to an AI client) nothing is withheld or rewritten: the user reads
 /// what the client wrote.
 fn untrusted(raw: &str, max: usize) -> Shown {
-    let mut text = String::new();
-    let mut hidden = 0;
-    let mut space = false;
-    for c in raw.chars() {
-        if c.is_whitespace() {
-            space = !text.is_empty();
-        } else if envelope::is_invisible(c) {
-            hidden += 1;
-        } else {
-            if space {
-                text.push(' ');
-                space = false;
-            }
-            text.push(c);
-        }
-    }
-    let length = text.chars().count();
-    let cut = length.saturating_sub(max);
-    if cut > 0 {
-        text = text.chars().take(max).collect();
-    }
+    let envelope::Shown { text, hidden, cut } = envelope::shown(raw, max);
     Shown { text, hidden, cut }
 }
 

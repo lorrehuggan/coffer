@@ -568,14 +568,7 @@ fn load_accounts(conn: &Connection) -> Result<Vec<RegisterAccount>, Error> {
 /// months to `today`.
 fn load_categories(reader: &Reader, today: NaiveDate) -> Result<Vec<RegisterCategory>, Error> {
     let tree = CategoryTree::load(reader.conn())?;
-    let ranked = rank_groups(reader, today, |id| {
-        tree.groups()
-            .iter()
-            .find(|group| {
-                group.category().id() == id || group.children().iter().any(|child| child.id() == id)
-            })
-            .map(|group| group.category().id())
-    })?;
+    let ranked = ranked_groups(reader, &tree, today)?;
     let colour_of = |group: i64| {
         ranked
             .iter()
@@ -606,6 +599,24 @@ fn load_categories(reader: &Reader, today: NaiveDate) -> Result<Vec<RegisterCate
         }
     }
     Ok(categories)
+}
+
+/// The IDs of `tree`'s groups that take the six colours, most spending
+/// first (module docs). The Inbox's [`super::palette`] uses the same
+/// ranking, so a category has one colour everywhere.
+pub(crate) fn ranked_groups(
+    reader: &Reader,
+    tree: &CategoryTree,
+    today: NaiveDate,
+) -> Result<Vec<i64>, Error> {
+    rank_groups(reader, today, |id| {
+        tree.groups()
+            .iter()
+            .find(|group| {
+                group.category().id() == id || group.children().iter().any(|child| child.id() == id)
+            })
+            .map(|group| group.category().id())
+    })
 }
 
 /// The IDs of the groups that take the six colours, most spending first:

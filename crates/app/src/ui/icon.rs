@@ -58,6 +58,23 @@ pub enum Glyph {
     /// A value that can't change here, after it in a read-only field
     /// (the inspector's Currency, Paper `8GJ-0`). 10px.
     Lock,
+    /// The Inbox: a tray (Paper `564-0`, the Pending row). 12px.
+    Inbox,
+    /// Rejected, in the Inbox's status list: a 12px cross, where
+    /// [`Glyph::Close`] is the 10px dismiss. 12px.
+    Reject,
+    /// A merchant name (an alias): a name tag (D6.7). 12px.
+    NameTag,
+    /// A refund, reimbursement or settlement link (D6.5). 12px.
+    Link,
+    /// A categorisation: an arrow to the category (Paper `564-0`). 12px.
+    Arrow,
+    /// A value the user set, which a suggestion leaves alone ("Stays, you
+    /// set it", D6.6): a person. 10px.
+    YouSet,
+    /// A warning: a triangle with an exclamation mark (D6.4, D6.6's wide
+    /// rule). 14px.
+    Warning,
     /// The chosen item in a menu (Paper `FHZ-0`). Its tick is a little
     /// shorter than [`Glyph::Check`]'s. 12px.
     Chosen,
@@ -78,9 +95,16 @@ impl Glyph {
             | Self::Cash
             | Self::Asset
             | Self::Liability
-            | Self::Chosen => size::ICON_SM,
-            Self::Close | Self::Minimize | Self::Maximize | Self::Lock => size::ICON_XS,
-            Self::Settings => size::ICON_MD,
+            | Self::Chosen
+            | Self::Inbox
+            | Self::Reject
+            | Self::NameTag
+            | Self::Link
+            | Self::Arrow => size::ICON_SM,
+            Self::Close | Self::Minimize | Self::Maximize | Self::Lock | Self::YouSet => {
+                size::ICON_XS
+            }
+            Self::Settings | Self::Warning => size::ICON_MD,
             Self::ChevronDown => size::MARKER,
             Self::Panel | Self::Mark => size::ICON_LG,
         }
@@ -162,6 +186,37 @@ impl Glyph {
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1">"#,
                 r#"<rect x="2" y="4.5" width="6" height="4" rx="1"/><path d="M3.25 4.5V3.25C3.25 2.3 4 1.5 5 1.5C6 1.5 6.75 2.3 6.75 3.25V4.5"/></svg>"#
             ),
+            Self::Inbox => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M1.5 6.75H4L4.75 8H7.25L8 6.75H10.5M1.5 6.75L3 2.75H9L10.5 6.75V9.25H1.5Z"/></svg>"#
+            ),
+            Self::Reject => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M3 3L9 9M9 3L3 9"/></svg>"#
+            ),
+            Self::NameTag => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">"#,
+                r#"<path d="M1.75 2.75H6.5L10.25 6L6.5 9.25H1.75Z"/></svg>"#
+            ),
+            Self::Link => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M5 6.5A2.5 2.5 0 0 0 8.77 6.77L10.27 5.27A2.5 2.5 0 0 0 6.73 1.73L5.87 2.59M7 5.5A2.5 2.5 0 0 0 3.23 5.23L1.73 6.73A2.5 2.5 0 0 0 5.27 10.27L6.12 9.42"/></svg>"#
+            ),
+            Self::Arrow => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M2 6H9.5M7 3.5L9.5 6L7 8.5"/></svg>"#
+            ),
+            Self::YouSet => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round">"#,
+                r#"<circle cx="5" cy="3.25" r="1.75"/><path d="M1.75 9C1.75 7.2 3.2 6.25 5 6.25C6.8 6.25 8.25 7.2 8.25 9"/></svg>"#
+            ),
+            // Paper fills the exclamation's dot (r 0.65); a round cap 1.3
+            // wide on a zero-length stroke draws the same dot and keeps
+            // the icon an outline.
+            Self::Warning => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M7 2.25L12.25 11.25H1.75Z"/><path d="M7 5.75V8"/><path d="M7 9.6L7 9.6" stroke-width="1.3"/></svg>"#
+            ),
             Self::Chosen => concat!(
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">"#,
                 r#"<path d="M2.5 6.25L4.75 8.5L9.5 3.5"/></svg>"#
@@ -193,7 +248,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Glyph; 19] = [
+    const ALL: [Glyph; 26] = [
         Glyph::Account,
         Glyph::Pot,
         Glyph::Plus,
@@ -213,6 +268,13 @@ mod tests {
         Glyph::Liability,
         Glyph::Lock,
         Glyph::Chosen,
+        Glyph::Inbox,
+        Glyph::Reject,
+        Glyph::NameTag,
+        Glyph::Link,
+        Glyph::Arrow,
+        Glyph::YouSet,
+        Glyph::Warning,
     ];
 
     /// The `viewBox` side in the markup, which `size` must match so strokes

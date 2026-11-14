@@ -15,8 +15,8 @@
 use gpui_kit::component::list::ListItem;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, ClickEvent, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
-    RenderOnce, Rgba, SharedString, Styled as _, Window, div,
+    App, ClickEvent, ElementId, HighlightStyle, InteractiveElement as _, IntoElement,
+    ParentElement as _, RenderOnce, Rgba, SharedString, Styled as _, StyledText, Window, div,
 };
 
 use crate::theme::focus::{FocusRingExt as _, FocusRingPlacement};
@@ -43,6 +43,11 @@ const LABEL: TextRole = TextRole {
 enum Leading {
     Icon(Glyph),
     Marker(Marker),
+    /// A 6px dot: a connected agent (`moldavite`).
+    Dot(Rgba),
+    /// Nothing, but the slot is kept so the label lines up with its
+    /// neighbours'.
+    Blank,
 }
 
 /// The colour of a row's trailing value.
@@ -88,6 +93,9 @@ pub struct ListRow {
     id: ElementId,
     label: SharedString,
     leading: Option<Leading>,
+    /// Words after the label at regular weight in `text-muted`: "Coffer
+    /// from your edits".
+    label_suffix: Option<SharedString>,
     trailing: Option<SharedString>,
     /// The trailing value is words ("No balance"), set in UI type.
     trailing_words: bool,
@@ -108,6 +116,7 @@ impl ListRow {
             id: id.into(),
             label: label.into(),
             leading: None,
+            label_suffix: None,
             trailing: None,
             trailing_words: false,
             trailing_tone: TrailingTone::Muted,
@@ -131,6 +140,27 @@ impl ListRow {
     /// Shows a category marker before the label, in the icon's slot.
     pub fn marker(mut self, marker: Marker) -> Self {
         self.leading = Some(Leading::Marker(marker));
+        self
+    }
+
+    /// Shows a 6px dot of `color` in the icon's slot: the source list's
+    /// connected agent (Paper `564-0`).
+    pub fn dot(mut self, color: Rgba) -> Self {
+        self.leading = Some(Leading::Dot(color));
+        self
+    }
+
+    /// Keeps the icon's slot empty, so the label lines up with rows that
+    /// have one.
+    pub fn blank_slot(mut self) -> Self {
+        self.leading = Some(Leading::Blank);
+        self
+    }
+
+    /// Adds `words` after the label at regular weight in `text-muted`
+    /// ("Coffer" + "from your edits").
+    pub fn label_suffix(mut self, words: impl Into<SharedString>) -> Self {
+        self.label_suffix = Some(words.into());
         self
     }
 
@@ -276,6 +306,23 @@ impl RowColors {
     }
 }
 
+/// The label, with its suffix (if any) at regular weight in `text-muted`.
+fn label_text(label: &SharedString, suffix: Option<&SharedString>) -> StyledText {
+    let Some(suffix) = suffix else {
+        return StyledText::new(label.clone());
+    };
+    let text = format!("{label} {suffix}");
+    let range = label.len() + 1..text.len();
+    StyledText::new(text).with_highlights([(
+        range,
+        HighlightStyle {
+            color: Some(color::TEXT_MUTED.into()),
+            font_weight: Some(weight::REGULAR),
+            ..HighlightStyle::default()
+        },
+    )])
+}
+
 impl RenderOnce for ListRow {
     fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
         let colors = self.colors();
@@ -314,6 +361,14 @@ impl RenderOnce for ListRow {
                             }),
                     ),
                     Leading::Marker(marker) => slot.child(marker.render()),
+                    Leading::Dot(fill) => slot.child(
+                        div()
+                            .flex_none()
+                            .size(size::DOT)
+                            .rounded(radius::LABEL)
+                            .bg(fill),
+                    ),
+                    Leading::Blank => slot,
                 })
             })
             .child(
@@ -325,7 +380,7 @@ impl RenderOnce for ListRow {
                     .text_role(LABEL)
                     .text_color(colors.label)
                     .map(brighten(colors.follows_hover))
-                    .child(self.label.clone()),
+                    .child(label_text(&self.label, self.label_suffix.as_ref())),
             )
             .when(self.flagged, |this| {
                 this.child(
