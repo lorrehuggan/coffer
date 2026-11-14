@@ -471,3 +471,333 @@ fn the_panels_account_filters_the_table(cx: &mut TestAppContext) {
     let accounts = cx.update(|_, cx| shell.read(cx).accounts().clone());
     assert_eq!(cx.update(|_, cx| accounts.read(cx).selected()), None);
 }
+
+// The inspector's edits (M3.9) ----------------------------------------------
+
+/// The split lines stored for `id`: (amount, category key).
+fn stored_split(scratch: &Scratch, id: TransactionId) -> Vec<(i64, Option<String>)> {
+    let db = Database::open(&scratch.path).unwrap();
+    coffer_core::split::lines(&db, id)
+        .unwrap()
+        .into_iter()
+        .map(|line| {
+            (
+                line.amount.minor(),
+                line.category.map(|key| key.to_string()),
+            )
+        })
+        .collect()
+}
+
+/// Types `text` into split line `index`'s amount field, replacing it.
+fn set_line_amount(
+    view: &Entity<TransactionsView>,
+    index: usize,
+    text: &str,
+    cx: &mut VisualTestContext,
+) {
+    cx.update(|window, cx| {
+        let input = view.read(cx).editor.split.as_ref().unwrap().lines[index]
+            .amount
+            .clone();
+        input.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+            input.focus(window, cx);
+        });
+    });
+    redraw(cx);
+    type_text(text, cx);
+}
+
+fn line_key(view: &Entity<TransactionsView>, index: usize, cx: &mut VisualTestContext) -> u64 {
+    cx.update(|_, cx| view.read(cx).editor.split.as_ref().unwrap().lines[index].key)
+}
+
+fn draft_status(
+    view: &Entity<TransactionsView>,
+    cx: &mut VisualTestContext,
+) -> Option<coffer_core::split::draft::DraftStatus> {
+    cx.update(|_, cx| {
+        view.read(cx)
+            .editor
+            .split
+            .as_ref()
+            .map(|split| split.draft.status())
+    })
+}
+
+#[gpui_kit::test]
+fn a_two_way_split_is_one_edit_and_add_line(cx: &mut TestAppContext) {
+    let scratch = Scratch::new();
+    let (view, cx) = open_database(cx, &scratch);
+    let amazon = scratch.rows[3];
+    click(row_id(amazon), cx);
+    assert!(shows("split", cx), "an unsplit row offers Split");
+
+    click("split", cx);
+    assert_eq!(
+        draft_status(&view, cx),
+        Some(coffer_core::split::draft::DraftStatus::OneLine)
+    );
+    // The sign is never typed: 20.00 is −£20.00 on a payment.
+    set_line_amount(&view, 0, "20.00", cx);
+    assert!(stored_split(&scratch, amazon).is_empty(), "not saved yet");
+
+    click("split-add-line", cx);
+    assert_eq!(
+        stored_split(&scratch, amazon),
+        [(-2000, None), (-399, None)],
+        "the new line took the remainder and the split saved"
+    );
+    // The table's row is split now, and the editor kept its fields.
+    assert!(cx.update(|_, cx| matches!(
+        view.read(cx).register().row(amazon).unwrap().category,
+        RowCategory::Split(_)
+    )));
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).editor.split.as_ref().unwrap().lines.len()),
+        2
+    );
+
+    // A line's category is chosen from the category menu.
+    let key = line_key(&view, 0, cx);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.show_menu(Menu::SplitLine(key), window, cx)
+        })
+    });
+    redraw(cx);
+    type_text("clothing", cx);
+    press("enter", cx);
+    assert_eq!(
+        stored_split(&scratch, amazon),
+        [(-2000, Some("shopping.clothing".into())), (-399, None)]
+    );
+}
+
+#[gpui_kit::test]
+fn an_unbalanced_split_isnt_saved_and_leaving_the_row_drops_it(cx: &mut TestAppContext) {
+    let scratch = Scratch::new();
+    let amazon = scratch.rows[3];
+    {
+        let mut db = Database::open(&scratch.path).unwrap();
+        let gbp = |minor| Money::new(minor, Currency::GBP);
+        coffer_core::edit::set_split(
+            &mut db,
+            amazon,
+            &[
+                coffer_core::split::SplitLine::new(gbp(-2000), None),
+                coffer_core::split::SplitLine::new(gbp(-399), None),
+            ],
+        )
+        .unwrap();
+    }
+    let (view, cx) = open_database(cx, &scratch);
+    click(row_id(amazon), cx);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).editor.split.as_ref().unwrap().lines.len()),
+        2
+    );
+
+    set_line_amount(&view, 1, "5.00", cx);
+    assert!(matches!(
+        draft_status(&view, cx),
+        Some(coffer_core::split::draft::DraftStatus::Unbalanced { over: true, .. })
+    ));
+    assert_eq!(
+        stored_split(&scratch, amazon),
+        [(-2000, None), (-399, None)]
+    );
+
+    // Away and back: the stored split is shown again.
+    click(row_id(scratch.rows[0]), cx);
+    click(row_id(amazon), cx);
+    assert_eq!(
+        draft_status(&view, cx),
+        Some(coffer_core::split::draft::DraftStatus::Balanced)
+    );
+    let amount = cx.update(|_, cx| {
+        view.read(cx).editor.split.as_ref().unwrap().lines[1]
+            .amount
+            .read(cx)
+            .value()
+    });
+    assert_eq!(amount.as_ref(), "−£3.99");
+
+    // Remove split leaves the row uncategorised, and offers Split again.
+    click("remove-split", cx);
+    assert!(stored_split(&scratch, amazon).is_empty());
+    assert_eq!(scratch.category(amazon), None);
+    assert!(shows("split", cx));
+}
+
+#[gpui_kit::test]
+fn tags_are_created_from_the_menu_and_toggled(cx: &mut TestAppContext) {
+    let scratch = Scratch::new();
+    let (view, cx) = open_database(cx, &scratch);
+    let amazon = scratch.rows[3];
+    click(row_id(amazon), cx);
+
+    click("add-tag", cx);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).open_menu()),
+        Some(Menu::Tags)
+    );
+    type_text("Mum's birthday", cx);
+    // "Create “…”", then "Create “…” as private".
+    press("down", cx);
+    press("enter", cx);
+    let tags = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            let register = view.register();
+            register
+                .row(amazon)
+                .unwrap()
+                .tags
+                .iter()
+                .map(|id| {
+                    let tag = register.tag(*id).unwrap();
+                    (tag.name.clone(), tag.private)
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    assert_eq!(tags(cx), [("Mum's birthday".to_owned(), true)]);
+    assert!(shows("tag-1", cx));
+
+    // The menu ticks it; choosing it again takes it off.
+    click("add-tag", cx);
+    press("down", cx);
+    press("enter", cx);
+    assert!(tags(cx).is_empty());
+
+    // Back on, then off with the pill's ✕.
+    click("add-tag", cx);
+    press("down", cx);
+    press("enter", cx);
+    assert_eq!(tags(cx).len(), 1);
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.remove_tag(coffer_core::id::TagId::new(1), cx)
+        })
+    });
+    redraw(cx);
+    assert!(tags(cx).is_empty());
+}
+
+#[gpui_kit::test]
+fn the_note_and_the_name_are_kept_when_the_row_is_left(cx: &mut TestAppContext) {
+    let scratch = Scratch::new();
+    let (view, cx) = open_database(cx, &scratch);
+    let vinted = scratch.rows[2];
+    let derived = cx.update(|_, cx| {
+        view.read(cx)
+            .register()
+            .row(vinted)
+            .unwrap()
+            .merchant
+            .clone()
+    });
+    click(row_id(vinted), cx);
+    cx.update(|window, cx| {
+        let (note, merchant) = {
+            let editor = &view.read(cx).editor;
+            (editor.note.clone(), editor.merchant.clone())
+        };
+        note.update(cx, |input, cx| {
+            input.set_value("  Jumper for Sam ", window, cx)
+        });
+        merchant.update(cx, |input, cx| input.set_value("Vinted", window, cx));
+    });
+    redraw(cx);
+    click(row_id(scratch.rows[0]), cx);
+
+    let row = cx.update(|_, cx| view.read(cx).register().row(vinted).unwrap().clone());
+    assert_eq!(row.note.as_deref(), Some("Jumper for Sam"));
+    assert_eq!(row.merchant, "Vinted");
+    assert!(row.merchant_set);
+
+    // Back on the row, a blank name goes back to the derived one.
+    click(row_id(vinted), cx);
+    cx.update(|window, cx| {
+        let merchant = view.read(cx).editor.merchant.clone();
+        merchant.update(cx, |input, cx| input.set_value("", window, cx));
+    });
+    redraw(cx);
+    click(row_id(scratch.rows[0]), cx);
+    let row = cx.update(|_, cx| view.read(cx).register().row(vinted).unwrap().clone());
+    assert!(!row.merchant_set);
+    assert_eq!(row.merchant, derived);
+}
+
+#[gpui_kit::test]
+fn a_transfer_has_no_split_section_and_the_fixture_cant_split(cx: &mut TestAppContext) {
+    let (view, cx) = open_fixture(cx);
+    click(row_id(fixture::id("txn-rainy-day-09")), cx);
+    assert!(!shows("split", cx));
+
+    click(row_id(fixture::id("txn-amazon-09")), cx);
+    click("split", cx);
+    set_line_amount(&view, 0, "20.00", cx);
+    click("split-add-line", cx);
+    assert_eq!(
+        draft_status(&view, cx),
+        Some(coffer_core::split::draft::DraftStatus::Balanced)
+    );
+    assert!(cx.update(|_, cx| {
+        view.read(cx)
+            .editor
+            .error_at(editor::EditPlace::Split)
+            .is_some()
+    }));
+}
+
+#[gpui_kit::test]
+fn a_note_the_field_cant_hold_isnt_rewritten_unless_edited(cx: &mut TestAppContext) {
+    let scratch = Scratch::new();
+    let coffee = scratch.rows[0];
+    {
+        let mut db = Database::open(&scratch.path).unwrap();
+        coffer_core::note::set(&mut db, coffee, "first line\nsecond line").unwrap();
+    }
+    let (view, cx) = open_database(cx, &scratch);
+    click(row_id(coffee), cx);
+    click(row_id(scratch.rows[1]), cx);
+    let db = Database::open(&scratch.path).unwrap();
+    assert_eq!(
+        coffer_core::note::get(&db, coffee).unwrap().as_deref(),
+        Some("first line\nsecond line"),
+        "selecting and leaving the row changes nothing"
+    );
+    assert!(coffer_core::change::list(&db).unwrap().is_empty());
+    drop(view);
+}
+
+#[gpui_kit::test]
+fn a_balanced_split_typed_but_not_left_is_saved_when_the_row_is(cx: &mut TestAppContext) {
+    let scratch = Scratch::new();
+    let (view, cx) = open_database(cx, &scratch);
+    let amazon = scratch.rows[3];
+    click(row_id(amazon), cx);
+    click("split", cx);
+    set_line_amount(&view, 0, "20.00", cx);
+    click("split-add-line", cx);
+    assert_eq!(
+        stored_split(&scratch, amazon),
+        [(-2000, None), (-399, None)]
+    );
+
+    // Rebalance by typing, then go straight to another row.
+    set_line_amount(&view, 0, "13.99", cx);
+    set_line_amount(&view, 1, "10.00", cx);
+    assert_eq!(
+        draft_status(&view, cx),
+        Some(coffer_core::split::draft::DraftStatus::Balanced)
+    );
+    click(row_id(scratch.rows[0]), cx);
+    assert_eq!(
+        stored_split(&scratch, amazon),
+        [(-1399, None), (-1000, None)]
+    );
+}

@@ -40,7 +40,7 @@ use crate::account::{self, AccountKind};
 use crate::category::{CategoryKey, CategoryKind, CategoryTree};
 use crate::db::Reader;
 use crate::exclusion::ExclusionReason;
-use crate::id::{AccountId, RuleId, TransactionId};
+use crate::id::{AccountId, RuleId, TagId, TransactionId};
 use crate::money::{Currency, Money};
 
 use super::{DateRange, Error, Ledger};
@@ -82,12 +82,41 @@ pub struct RegisterAccount {
     pub kind: AccountKind,
 }
 
+/// A tag as the inspector shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegisterTag {
+    pub id: TagId,
+    pub name: String,
+    /// Never leaves the app (`tag` module docs): drawn with a lock.
+    pub private: bool,
+}
+
 /// One line of a split transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SplitPart {
     pub amount: Money,
     /// `category.id`; `None` while the line is uncategorised.
     pub category: Option<i64>,
+    /// The user's part of the line; `None` means all of it. Kept so an edit
+    /// in the split editor doesn't drop it.
+    pub my_share: Option<Money>,
+    /// Who shares the line's cost: user text, never leaves the app.
+    pub share_label: Option<String>,
+    /// The user's note on the line: user text, never leaves the app.
+    pub user_note: Option<String>,
+}
+
+impl SplitPart {
+    /// A line of `amount` in `category`, all of it the user's, no note.
+    pub fn new(amount: Money, category: Option<i64>) -> SplitPart {
+        SplitPart {
+            amount,
+            category,
+            my_share: None,
+            share_label: None,
+            user_note: None,
+        }
+    }
 }
 
 /// A row's category.
@@ -129,6 +158,16 @@ pub struct RegisterRow {
     pub excluded: Option<ExclusionReason>,
     /// The user's own note.
     pub note: Option<String>,
+    /// The bank's note, as imported: read-only.
+    pub bank_note: Option<String>,
+    /// Whether the user named the merchant (`merchant_display_source =
+    /// user`); otherwise the name is derived or a rule's.
+    pub merchant_set: bool,
+    /// The row's tags, by name ignoring case.
+    pub tags: Vec<TagId>,
+    /// Whether it can be split: not in a suggested or confirmed transfer
+    /// and not the money in of a confirmed link (`split` module docs).
+    pub splittable: bool,
 }
 
 impl RegisterRow {
@@ -300,6 +339,8 @@ pub struct Register {
     accounts: Vec<RegisterAccount>,
     categories: Vec<RegisterCategory>,
     category_index: HashMap<i64, usize>,
+    /// Every tag, by name ignoring case.
+    tags: Vec<RegisterTag>,
 }
 
 impl Register {
@@ -330,7 +371,16 @@ impl Register {
             accounts,
             categories,
             category_index,
+            tags: Vec::new(),
         }
+    }
+
+    /// The register with `tags` (any order: kept by name ignoring case,
+    /// then ID), which its rows' [`RegisterRow::tags`] name.
+    pub fn with_tags(mut self, mut tags: Vec<RegisterTag>) -> Register {
+        tags.sort_by(|a, b| compare_text(&a.name, &b.name).then(a.id.cmp(&b.id)));
+        self.tags = tags;
+        self
     }
 
     /// Reads every transaction, account and category, with the colours
@@ -340,7 +390,15 @@ impl Register {
         let categories = load_categories(reader, today)?;
         let accounts = load_accounts(conn)?;
         let rows = load_rows(conn)?;
-        Ok(Register::new(rows, accounts, categories))
+        let tags = crate::tag::list_in(conn)?
+            .into_iter()
+            .map(|tag| RegisterTag {
+                id: tag.id,
+                name: tag.name.as_str().to_owned(),
+                private: tag.private,
+            })
+            .collect();
+        Ok(Register::new(rows, accounts, categories).with_tags(tags))
     }
 
     /// Every row, newest first.
@@ -358,6 +416,15 @@ impl Register {
 
     pub fn account(&self, id: AccountId) -> Option<&RegisterAccount> {
         self.accounts.iter().find(|account| account.id == id)
+    }
+
+    /// Every tag, by name ignoring case.
+    pub fn tags(&self) -> &[RegisterTag] {
+        &self.tags
+    }
+
+    pub fn tag(&self, id: TagId) -> Option<&RegisterTag> {
+        self.tags.iter().find(|tag| tag.id == id)
     }
 
     /// Every category in menu order: each group, then its subcategories.
@@ -680,7 +747,8 @@ fn load_rows(conn: &Connection) -> Result<Vec<RegisterRow>, Error> {
     let mut splits: HashMap<TransactionId, Vec<SplitPart>> = HashMap::new();
     {
         let mut statement = conn.prepare(
-            "SELECT s.transaction_id, s.amount_minor, s.category_id, t.currency \
+            "SELECT s.transaction_id, s.amount_minor, s.category_id, t.currency, \
+                    s.my_share_minor, s.share_label, s.user_note \
                FROM transaction_split s JOIN \"transaction\" t ON t.id = s.transaction_id \
               ORDER BY s.transaction_id, s.line_no",
         )?;
@@ -691,6 +759,11 @@ fn load_rows(conn: &Connection) -> Result<Vec<RegisterRow>, Error> {
                 SplitPart {
                     amount: Money::new(row.get(1)?, currency),
                     category: row.get(2)?,
+                    my_share: row
+                        .get::<_, Option<i64>>(4)?
+                        .map(|minor| Money::new(minor, currency)),
+                    share_label: row.get(5)?,
+                    user_note: row.get(6)?,
                 },
             ))
         })?;
@@ -717,11 +790,31 @@ fn load_rows(conn: &Connection) -> Result<Vec<RegisterRow>, Error> {
         }
     }
 
+    // Tags by name ignoring case, as the inspector lists them.
+    let mut tags: HashMap<TransactionId, Vec<TagId>> = HashMap::new();
+    {
+        let mut statement = conn.prepare(
+            "SELECT l.transaction_id, l.tag_id FROM transaction_tag l \
+               JOIN tag ON tag.id = l.tag_id \
+              ORDER BY l.transaction_id, tag.name, tag.id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, TransactionId>(0)?, row.get::<_, TagId>(1)?))
+        })?;
+        for row in rows {
+            let (transaction, tag) = row?;
+            tags.entry(transaction).or_default().push(tag);
+        }
+    }
+
     let mut statement = conn.prepare(
         "SELECT t.id, t.account_id, t.date, t.time, t.amount_minor, t.currency, \
                 t.original_amount_minor, t.original_currency, t.merchant, \
-                t.merchant_display, t.description_raw, t.source_type, t.category_id, \
-                t.rule_id, t.excluded_reason, t.user_note, g.status AS transfer_status \
+                t.merchant_display, t.merchant_display_source, t.description_raw, \
+                t.source_type, t.category_id, t.rule_id, t.excluded_reason, t.user_note, \
+                t.note, g.status AS transfer_status, \
+                EXISTS (SELECT 1 FROM transaction_link k \
+                         WHERE k.inflow_id = t.id AND k.status = 'confirmed') AS linked_in \
            FROM \"transaction\" t \
            LEFT JOIN transfer_group g ON g.id = t.transfer_group_id \
           ORDER BY t.date DESC, t.id DESC",
@@ -760,8 +853,10 @@ fn load_rows(conn: &Connection) -> Result<Vec<RegisterRow>, Error> {
             .find(|name| !name.is_empty())
             .unwrap_or_else(|| description.trim())
             .to_owned();
-        let confirmed =
-            row.get::<_, Option<String>>("transfer_status")?.as_deref() == Some("confirmed");
+        let transfer_status: Option<String> = row.get("transfer_status")?;
+        let confirmed = transfer_status.as_deref() == Some("confirmed");
+        let in_transfer = matches!(transfer_status.as_deref(), Some("suggested" | "confirmed"));
+        let linked_in: bool = row.get("linked_in")?;
         let category = match row.get::<_, Option<i64>>("category_id")? {
             Some(category) => RowCategory::Category(category),
             None => RowCategory::Uncategorised,
@@ -782,6 +877,13 @@ fn load_rows(conn: &Connection) -> Result<Vec<RegisterRow>, Error> {
             transfer: confirmed.then(Vec::new),
             excluded,
             note: row.get("user_note")?,
+            bank_note: row.get("note")?,
+            merchant_set: row
+                .get::<_, Option<String>>("merchant_display_source")?
+                .as_deref()
+                == Some("user"),
+            tags: Vec::new(),
+            splittable: !in_transfer && !linked_in,
         })
     })?;
     let mut out = Vec::new();
@@ -789,6 +891,9 @@ fn load_rows(conn: &Connection) -> Result<Vec<RegisterRow>, Error> {
         let mut row = row?;
         if let Some(parts) = splits.remove(&row.id) {
             row.category = RowCategory::Split(parts);
+        }
+        if let Some(row_tags) = tags.remove(&row.id) {
+            row.tags = row_tags;
         }
         if let Some(transfer) = &mut row.transfer {
             *transfer = partners.remove(&row.id).unwrap_or_default();

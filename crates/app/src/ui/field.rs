@@ -346,7 +346,12 @@ impl RenderOnce for LockedValue {
             .gap(spacing::S1_5)
             .px(spacing::S2)
             .child(
+                // A long value (the bank's note, M3.9) truncates before the
+                // lock rather than pushing it out.
                 div()
+                    .min_w_0()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
                     .text_role(if self.mono {
                         typography::MONO_AMOUNT
                     } else {

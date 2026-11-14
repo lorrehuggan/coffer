@@ -18,6 +18,15 @@
 //! - `transactions-sorted`: sorted by amount, largest out first, with the
 //!   Uncategorised chip on;
 //! - `transactions-no-match`: a search that matches nothing;
+//! - `transactions-split`: Paper `2Q3-0`, the Waitrose payment split, with
+//!   tags, the bank's note and the user's;
+//! - `transactions-split-short` and `-over`: the split editor not balanced
+//!   (Paper `4XF-0`);
+//! - `transactions-details`: an unsplit row's Details and Split button
+//!   (Paper `3WT-0`, without the rule prompt of M3.13);
+//! - `transactions-split-start`: just after "Split" (composed for M3.9);
+//! - `transactions-tag-menu`: the tag menu with a new name typed (composed
+//!   for M3.9);
 //! - `rules`: the shell with the Rules tab active and its screen not built
 //!   yet (title bar: Paper `B8Y-0`);
 //! - `settings`: Settings · AI clients on sample data (Paper `AQ2-0`, title
@@ -112,6 +121,12 @@ fn main() -> Result<()> {
         ("transactions-date-menu", TableStep::DateMenu),
         ("transactions-sorted", TableStep::Sorted),
         ("transactions-no-match", TableStep::NoMatch),
+        ("transactions-split", TableStep::Split),
+        ("transactions-split-short", TableStep::SplitShort),
+        ("transactions-split-over", TableStep::SplitOver),
+        ("transactions-details", TableStep::Details),
+        ("transactions-split-start", TableStep::SplitStart),
+        ("transactions-tag-menu", TableStep::TagMenu),
     ] {
         let built: Rc<RefCell<Option<Entity<ShellView>>>> = Rc::default();
         let keep = built.clone();
@@ -135,6 +150,30 @@ fn main() -> Result<()> {
                     view.set_uncategorised(true, cx);
                 }
                 TableStep::NoMatch => view.set_search("zzz", window, cx),
+                TableStep::Split | TableStep::SplitShort | TableStep::SplitOver => {
+                    view.show_fixture(fixture::split_register(), cx);
+                    view.select([fixture::id("txn-waitrose-07")], cx);
+                    match step {
+                        // Paper's states board: the third line removed.
+                        TableStep::SplitShort => view.remove_split_line_at(2, window, cx),
+                        TableStep::SplitOver => {
+                            view.remove_split_line_at(2, window, cx);
+                            view.type_split_amount(1, "17.10", window, cx);
+                        }
+                        _ => {}
+                    }
+                }
+                TableStep::Details => view.select([fixture::id("txn-vinted-06")], cx),
+                TableStep::SplitStart => {
+                    view.select([fixture::id("txn-vinted-06")], cx);
+                    view.split_selected(window, cx);
+                }
+                TableStep::TagMenu => {
+                    view.show_fixture(fixture::split_register(), cx);
+                    view.select([fixture::id("txn-waitrose-07")], cx);
+                    view.show_menu(Menu::Tags, window, cx);
+                    view.type_in_menu("Gift", window, cx);
+                }
             });
         };
         snapshot_then(&mut cx, &out, name, build, then)?;
@@ -299,6 +338,12 @@ enum TableStep {
     DateMenu,
     Sorted,
     NoMatch,
+    Split,
+    SplitShort,
+    SplitOver,
+    Details,
+    SplitStart,
+    TagMenu,
 }
 
 /// Which suggestion an Inbox snapshot opens.

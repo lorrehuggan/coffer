@@ -458,3 +458,58 @@ fn date_presets_cover_whole_periods() {
         Some((day("2026-12-01"), day("2026-12-31")))
     );
 }
+
+#[test]
+fn rows_carry_tags_notes_the_users_name_and_whether_they_can_be_split() {
+    let mut ledger = TestLedger::new();
+    let current = ledger.account("Current account", Currency::GBP);
+    let savings = ledger.account("Savings", Currency::GBP);
+    let shop = ledger.row(current, "2026-11-07", -5216, None);
+    ledger.tag(shop, "weekly shop", false);
+    ledger.tag(shop, "Mum's birthday", true);
+    ledger
+        .db
+        .conn()
+        .execute(
+            "UPDATE \"transaction\" SET note = 'Flowers + weekly shop', user_note = 'Card', \
+             merchant_display = 'Waitrose', merchant_display_source = 'user' WHERE id = ?1",
+            [shop],
+        )
+        .unwrap();
+    let out = ledger.row(current, "2026-11-08", -25_000, None);
+    let into = ledger.row(savings, "2026-11-08", 25_000, None);
+    ledger.transfer(out, into);
+    let purchase = ledger.row(current, "2026-11-01", -3400, Some("shopping"));
+    let refund = ledger.row(current, "2026-11-06", 3400, None);
+    ledger.refund(refund, purchase, 3400);
+
+    let register = load(&ledger);
+    let names: Vec<_> = register
+        .tags()
+        .iter()
+        .map(|tag| tag.name.as_str())
+        .collect();
+    assert_eq!(names, ["Mum's birthday", "weekly shop"]);
+    assert!(register.tags()[0].private);
+
+    let row = register.row(shop).unwrap();
+    let on_row: Vec<_> = row
+        .tags
+        .iter()
+        .map(|id| register.tag(*id).unwrap().name.as_str())
+        .collect();
+    assert_eq!(on_row, ["Mum's birthday", "weekly shop"]);
+    assert_eq!(row.bank_note.as_deref(), Some("Flowers + weekly shop"));
+    assert_eq!(row.note.as_deref(), Some("Card"));
+    assert!(row.merchant_set);
+    assert_eq!(row.merchant, "Waitrose");
+    assert!(row.splittable);
+
+    // A transfer and the money in of a confirmed refund can't be split.
+    assert!(!register.row(out).unwrap().splittable);
+    assert!(!register.row(refund).unwrap().splittable);
+    let purchase_row = register.row(purchase).unwrap();
+    assert!(purchase_row.splittable);
+    assert!(purchase_row.tags.is_empty());
+    assert!(!purchase_row.merchant_set);
+}

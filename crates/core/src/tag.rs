@@ -169,6 +169,30 @@ pub fn create(db: &mut Database, name: &TagName, private: bool) -> Result<TagId,
     Ok(id)
 }
 
+/// The tag named `name` ignoring case, or a new one with `private` when
+/// there is none; `true` with a new tag. An existing tag keeps its own
+/// privacy. Opens no transaction of its own: for the inspector's "Create"
+/// (`crate::edit::add_new_tag`), which links it in the same transaction.
+pub(crate) fn find_or_create_in(
+    conn: &Connection,
+    name: &TagName,
+    private: bool,
+) -> Result<(TagId, bool), Error> {
+    if let Some(existing) = find_in(conn, name)? {
+        return Ok((existing.id, false));
+    }
+    conn.execute(
+        "INSERT INTO tag (name, private) VALUES (?1, ?2)",
+        params![name.as_str(), private],
+    )?;
+    Ok((TagId::new(conn.last_insert_rowid()), true))
+}
+
+/// Every tag, as [`list`], through any connection (the register's reader).
+pub(crate) fn list_in(conn: &Connection) -> rusqlite::Result<Vec<Tag>> {
+    all(conn)
+}
+
 /// The tag with this ID.
 pub fn get(db: &Database, id: TagId) -> Result<Tag, Error> {
     load(db.conn(), id)

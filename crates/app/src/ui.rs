@@ -25,6 +25,7 @@ pub mod notification;
 pub mod section_label;
 pub mod segmented;
 pub mod status_bar;
+pub mod tag;
 pub mod text;
 pub mod title_bar;
 pub mod toggle;

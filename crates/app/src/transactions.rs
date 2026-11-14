@@ -25,12 +25,16 @@
 //!   bulk-action bar's Categorise set it for every selected row. Each goes
 //!   through core as one undoable change batch; after a change to several
 //!   rows the undo bar offers to revert it.
+//! - **Splits, tags, notes and names** (M3.9) are edited in the inspector
+//!   (`transactions::editor`): each change is one undoable change batch too, and the
+//!   register is read again so the table shows it.
 //!
 //! The table is a GPUI `list`: virtualised, with rows of their own heights
 //! (day headers carry 4px more than a row when they draw a divider). The
 //! view owns the selection (by transaction id, so it survives filtering)
 //! and the list's scroll state; rows only present (`ui::transaction_row`).
 
+mod editor;
 pub mod fixture;
 mod inspector;
 pub mod present;
@@ -123,12 +127,21 @@ pub enum Menu {
     Inspector,
     /// The bulk-action bar's Categorise.
     Bulk,
+    /// The inspector's tag menu, from "+ Tag".
+    Tags,
+    /// A split line's category select, by the line's key.
+    SplitLine(u64),
 }
 
 impl Menu {
-    /// Whether it lists the categories, and so has the filter field.
+    /// Whether it has the filter field: the category and tag menus.
     fn has_filter(self) -> bool {
         !matches!(self, Menu::Account | Menu::Date)
+    }
+
+    /// Whether it's a select field's menu, with a state of its own.
+    fn is_field_select(self) -> bool {
+        matches!(self, Menu::Inspector | Menu::SplitLine(_))
     }
 }
 
@@ -194,6 +207,9 @@ pub struct TransactionsView {
     load_error: Option<SharedString>,
     /// The read in flight; replacing it drops a stale one.
     loading: Option<Task<()>>,
+    /// How many times the register has been read: the editor refreshes
+    /// its fields when it moves.
+    generation: u64,
     today: NaiveDate,
     filter: Filter,
     date: DatePreset,
@@ -215,6 +231,8 @@ pub struct TransactionsView {
     chip_focus: [FocusHandle; 3],
     /// Why the last change wasn't saved, said under the inspector's Category.
     edit_error: Option<SharedString>,
+    /// The inspector's fields for the selected transaction (M3.9).
+    editor: editor::Editor,
     undo: Option<Undo>,
     /// The accounts panel's state and the account inspector, shown while an
     /// account is selected and no transaction is. Set by the shell.
@@ -230,7 +248,8 @@ impl TransactionsView {
         let focus = cx.focus_handle();
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search transactions"));
         let menu_filter = cx.new(|cx| InputState::new(window, cx).placeholder("Find a category"));
-        let subscriptions = vec![
+        let (editor, editor_subscriptions) = editor::Editor::new(window, cx);
+        let mut subscriptions = vec![
             cx.subscribe_in(&search, window, |this, input, event, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.filter.text = input.read(cx).value().to_string();
@@ -240,15 +259,16 @@ impl TransactionsView {
             cx.subscribe_in(&menu_filter, window, |this, _, event, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     let groups = this.visible_groups(cx);
-                    match this.menu {
-                        Some(Menu::Inspector) => this.inspector_select.highlight_first(&groups),
-                        Some(_) => this.menu_state.highlight_first(&groups),
-                        None => {}
+                    if let Some(menu) = this.menu
+                        && let Some(state) = this.select_state(menu)
+                    {
+                        state.highlight_first(&groups);
                     }
                     cx.notify();
                 }
             }),
         ];
+        subscriptions.extend(editor_subscriptions);
         let fixture = matches!(source, Source::Fixture);
         let today = if fixture {
             crate::accounts::fixture::today()
@@ -262,6 +282,7 @@ impl TransactionsView {
             loaded: false,
             load_error: None,
             loading: None,
+            generation: 0,
             today,
             filter: Filter::default(),
             date: DatePreset::AllTime,
@@ -280,6 +301,7 @@ impl TransactionsView {
             menu: None,
             menu_filter,
             edit_error: None,
+            editor,
             undo: None,
             accounts: None,
             _subscriptions: subscriptions,
@@ -390,6 +412,7 @@ impl TransactionsView {
     fn apply(&mut self, result: Result<Register, SharedString>, cx: &mut Context<Self>) {
         self.loading = None;
         self.loaded = true;
+        self.generation += 1;
         match result {
             Ok(register) => {
                 self.register = register;
@@ -470,7 +493,24 @@ impl TransactionsView {
             Menu::Account => present::account_groups(&self.account_choices(cx)),
             Menu::Category => present::category_filter_groups(&self.register),
             Menu::Date => present::date_groups(),
-            Menu::Row(_) | Menu::Inspector | Menu::Bulk => present::category_groups(&self.register),
+            Menu::Row(_) | Menu::Inspector | Menu::Bulk | Menu::SplitLine(_) => {
+                present::category_groups(&self.register)
+            }
+            Menu::Tags => present::tag_groups(&self.register, self.row_tags(), ""),
+        }
+    }
+
+    /// The tags of the inspector's transaction.
+    fn row_tags(&self) -> &[coffer_core::id::TagId] {
+        self.single_row().map_or(&[], |row| row.tags.as_slice())
+    }
+
+    /// The state of `menu`: its select field's, or the popup menus'.
+    fn select_state(&mut self, menu: Menu) -> Option<&mut SelectState> {
+        match menu {
+            Menu::Inspector => Some(&mut self.inspector_select),
+            Menu::SplitLine(key) => self.editor.line_select(key),
+            _ => Some(&mut self.menu_state),
         }
     }
 
@@ -479,6 +519,10 @@ impl TransactionsView {
         let Some(menu) = self.menu else {
             return Vec::new();
         };
+        if menu == Menu::Tags {
+            let query = self.menu_filter.read(cx).value();
+            return present::tag_groups(&self.register, self.row_tags(), &query);
+        }
         let groups = self.menu_groups(menu, cx);
         if menu.has_filter() {
             filter_groups(&groups, &self.menu_filter.read(cx).value())
@@ -534,14 +578,91 @@ impl TransactionsView {
                     .then(|| category(first))
                     .flatten()
             }
+            Menu::SplitLine(key) => category(self.line_category(key)),
+            Menu::Tags => None,
         }
     }
 
     /// Opens `menu`, as its chip, row or button would (snapshots).
     pub fn show_menu(&mut self, menu: Menu, window: &mut Window, cx: &mut Context<Self>) {
+        // The inspector's fields follow a selection made just before.
+        self.sync_editor(window, cx);
         if self.menu != Some(menu) {
             self.open(menu, window, cx);
         }
+    }
+
+    /// Shows `register` instead of the Paper fixture: another artboard's
+    /// rows (snapshots). Does nothing over the database.
+    pub fn show_fixture(&mut self, register: Register, cx: &mut Context<Self>) {
+        if matches!(self.source, Source::Fixture) {
+            self.apply(Ok(register), cx);
+        }
+    }
+
+    /// Splits the selected row as its Split button does (snapshots).
+    pub fn split_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_editor(window, cx);
+        self.start_split(window, cx);
+    }
+
+    /// Types `text` into split line `line`'s amount field, as the user
+    /// would (snapshots).
+    pub fn type_split_amount(
+        &mut self,
+        line: usize,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.sync_editor(window, cx);
+        let Some(fields) = self
+            .editor
+            .split
+            .as_ref()
+            .and_then(|split| split.lines.get(line))
+        else {
+            return;
+        };
+        let (key, input) = (fields.key, fields.amount.clone());
+        input.update(cx, |input, cx| {
+            input.set_value(SharedString::from(text.to_owned()), window, cx);
+            input.focus(window, cx);
+        });
+        self.line_amount_event(key, &input, &InputEvent::Change, window, cx);
+    }
+
+    /// Removes split line `line` as its ✕ does (snapshots).
+    pub fn remove_split_line_at(
+        &mut self,
+        line: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.sync_editor(window, cx);
+        let key = self
+            .editor
+            .split
+            .as_ref()
+            .and_then(|split| split.lines.get(line))
+            .map(|fields| fields.key);
+        if let Some(key) = key {
+            self.remove_split_line(key, cx);
+        }
+    }
+
+    /// Types `text` into the open menu's filter field (snapshots).
+    pub fn type_in_menu(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_filter.update(cx, |filter, cx| {
+            filter.set_value(SharedString::from(text.to_owned()), window, cx)
+        });
+        let groups = self.visible_groups(cx);
+        if let Some(menu) = self.menu
+            && let Some(state) = self.select_state(menu)
+        {
+            state.highlight_first(&groups);
+        }
+        cx.notify();
     }
 
     /// Sorts each day's rows (snapshots; the header's clicks in the app).
@@ -574,13 +695,19 @@ impl TransactionsView {
             self.close(window, cx);
         }
         self.menu = Some(menu);
-        self.menu_filter
-            .update(cx, |filter, cx| filter.set_value("", window, cx));
-        let chosen = self.chosen_key(menu);
-        let state = if menu == Menu::Inspector {
-            &mut self.inspector_select
+        let placeholder = if menu == Menu::Tags {
+            "Find or create a tag"
         } else {
-            &mut self.menu_state
+            "Find a category"
+        };
+        self.menu_filter.update(cx, |filter, cx| {
+            filter.set_placeholder(placeholder, window, cx);
+            filter.set_value("", window, cx);
+        });
+        let chosen = self.chosen_key(menu);
+        let Some(state) = self.select_state(menu) else {
+            self.menu = None;
+            return;
         };
         state.set_open(true, chosen.as_ref(), window, cx);
         if menu.has_filter() {
@@ -595,28 +722,31 @@ impl TransactionsView {
         let Some(menu) = self.menu.take() else {
             return;
         };
-        match menu {
-            Menu::Inspector => self.inspector_select.set_open(false, None, window, cx),
-            _ => {
-                self.menu_state.dismiss();
-                let back = match menu {
-                    Menu::Account => &self.chip_focus[0],
-                    Menu::Category => &self.chip_focus[1],
-                    Menu::Date => &self.chip_focus[2],
-                    _ => &self.focus,
-                };
-                back.focus(window, cx);
+        if menu.is_field_select() {
+            if let Some(state) = self.select_state(menu) {
+                state.set_open(false, None, window, cx);
             }
+        } else {
+            self.menu_state.dismiss();
+            let back = match menu {
+                Menu::Account => &self.chip_focus[0],
+                Menu::Category => &self.chip_focus[1],
+                Menu::Date => &self.chip_focus[2],
+                Menu::Tags => &self.editor.tag_focus,
+                _ => &self.focus,
+            };
+            back.focus(window, cx);
         }
         cx.notify();
     }
 
     fn move_highlight(&mut self, step: isize, cx: &mut Context<Self>) {
         let groups = self.visible_groups(cx);
-        match self.menu {
-            Some(Menu::Inspector) => self.inspector_select.move_highlight(&groups, step),
-            Some(_) => self.menu_state.move_highlight(&groups, step),
-            None => return,
+        let Some(menu) = self.menu else {
+            return;
+        };
+        if let Some(state) = self.select_state(menu) {
+            state.move_highlight(&groups, step);
         }
         cx.notify();
     }
@@ -625,6 +755,8 @@ impl TransactionsView {
         let Some(menu) = self.menu else {
             return;
         };
+        // What was typed into the tag menu names a new tag.
+        let typed = self.menu_filter.read(cx).value().to_string();
         self.close(window, cx);
         match menu {
             Menu::Account => {
@@ -659,6 +791,20 @@ impl TransactionsView {
                     self.categorise(ids, category, cx);
                 }
             }
+            Menu::SplitLine(line) => {
+                if let Ok(category) = key.parse() {
+                    self.set_line_category(line, category, cx);
+                }
+            }
+            Menu::Tags => match key.as_ref() {
+                present::NEW_TAG => self.create_tag(&typed, false, cx),
+                present::NEW_PRIVATE_TAG => self.create_tag(&typed, true, cx),
+                key => {
+                    if let Some(tag) = present::tag_from_key(key) {
+                        self.toggle_tag(tag, cx);
+                    }
+                }
+            },
         }
     }
 
@@ -673,6 +819,7 @@ impl TransactionsView {
         let label = match menu {
             Menu::Account => "Account",
             Menu::Date => "Date",
+            Menu::Tags => "Tags",
             _ => "Category",
         };
         let rows = groups
@@ -923,6 +1070,11 @@ impl TransactionsView {
                         this.close(window, cx);
                     } else if this.menu != Some(menu) {
                         this.open(menu, window, cx);
+                        // The "+ Tag" pill is a focusable div: its own mouse
+                        // down would take focus back from the menu's filter.
+                        if menu == Menu::Tags {
+                            window.prevent_default();
+                        }
                     }
                 }),
             )
@@ -1175,6 +1327,7 @@ impl TransactionsView {
 
 impl Render for TransactionsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_editor(window, cx);
         div()
             .flex()
             .flex_1()

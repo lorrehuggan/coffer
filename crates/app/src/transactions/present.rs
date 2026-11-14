@@ -1,19 +1,23 @@
 //! How the register's rows read in the table, the inspector and the menus
 //! (`docs/DESIGN.md` → "Data table (Transactions)"): category cells and
 //! markers, transfer labels, day headings and nets, and the options of the
-//! category, account and date menus. Pure, so it's tested without a window.
+//! category, account and date menus; the tag menu and the split editor's
+//! footer (M3.9). Pure, so it's tested without a window.
 
 use chrono::{Datelike as _, NaiveDate};
 use coffer_core::account::AccountKind;
-use coffer_core::id::AccountId;
+use coffer_core::id::{AccountId, TagId};
 use coffer_core::money::Money;
 use coffer_core::reporting::register::{
     Colour, DatePreset, Register, RegisterCategory, RegisterRow, RowCategory,
 };
+use coffer_core::split::draft::{DraftStatus, SplitDraft};
+use coffer_core::tag::{TagName, TagNameError};
 use gpui_kit::SharedString;
 
 use crate::format::{self, Sign};
 use crate::theme::tokens::color;
+use crate::ui::icon::Glyph;
 use crate::ui::marker::Marker;
 use crate::ui::menu::{MenuGroup, MenuOption};
 use crate::ui::transaction_row::CategoryCell;
@@ -74,11 +78,23 @@ pub fn transfer_label(register: &Register, partners: &[AccountId]) -> String {
     }
 }
 
-/// A row's category as one label: its category, its lines' categories, the
+/// A row's category as one label: its category, every line's category
+/// ("Uncategorised" for a line without one, as Paper `2Q3-0` draws it), the
 /// transfer, or "Uncategorised".
 pub fn category_label(register: &Register, row: &RegisterRow) -> String {
     if let Some(partners) = &row.transfer {
         return transfer_label(register, partners);
+    }
+    if let RowCategory::Split(parts) = &row.category {
+        return parts
+            .iter()
+            .map(|part| {
+                part.category
+                    .and_then(|id| register.category(id))
+                    .map_or("Uncategorised", |category| category.label.as_str())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
     }
     let labels: Vec<&str> = register
         .row_categories(row)
@@ -251,9 +267,162 @@ pub fn categorised_message(count: usize, label: &str) -> SharedString {
     format!("Categorised {what} as {label}").into()
 }
 
+/// The tag menu's "Create “…”" option: a public tag named as typed.
+pub const NEW_TAG: &str = "new-tag";
+/// The tag menu's "Create “…” as private" option.
+pub const NEW_PRIVATE_TAG: &str = "new-private-tag";
+
+/// A tag's key in the tag menu.
+pub fn tag_key(id: TagId) -> String {
+    format!("tag-{id}")
+}
+
+/// The tag a tag-menu key names, if it names one.
+pub fn tag_from_key(key: &str) -> Option<TagId> {
+    key.strip_prefix("tag-")?.parse().ok().map(TagId::new)
+}
+
+/// The tag menu (composed for M3.9, user, 2026-11-14): every tag A–Z,
+/// ticked when it's in `on_row`, a private one with the lock in the icon
+/// slot, narrowed by `query` as the category menu is. When `query` isn't a
+/// tag's name (ignoring case, as tag names are compared), two last options
+/// create one: "Create “…”" and "Create “…” as private".
+pub fn tag_groups(register: &Register, on_row: &[TagId], query: &str) -> Vec<MenuGroup> {
+    let options: Vec<MenuOption> = register
+        .tags()
+        .iter()
+        .map(|tag| {
+            let option = MenuOption::new(tag_key(tag.id), tag.name.clone())
+                .checked(on_row.contains(&tag.id));
+            if tag.private {
+                option.icon(Glyph::Lock)
+            } else {
+                option
+            }
+        })
+        .collect();
+    let mut groups = crate::ui::menu::filter_groups(&[MenuGroup::new(None, options)], query);
+    let typed = query.trim();
+    if typed.is_empty() {
+        return groups;
+    }
+    let creates = match TagName::new(typed) {
+        Ok(name) => {
+            let taken = register
+                .tags()
+                .iter()
+                .any(|tag| TagName::new(&tag.name).is_ok_and(|existing| existing.same_name(&name)));
+            if taken {
+                return groups;
+            }
+            vec![
+                MenuOption::new(NEW_TAG, format!("Create “{}”", name.as_str())).icon(Glyph::Plus),
+                MenuOption::new(
+                    NEW_PRIVATE_TAG,
+                    format!("Create “{}” as private", name.as_str()),
+                )
+                .icon(Glyph::Lock),
+            ]
+        }
+        Err(error) => vec![
+            MenuOption::new(NEW_TAG, "Create a tag")
+                .icon(Glyph::Plus)
+                .hint(tag_name_problem(&error))
+                .disabled(true),
+        ],
+    };
+    groups.push(MenuGroup::new(None, creates));
+    groups
+}
+
+/// Why a typed tag name can't be used, as the menu's hint says it.
+fn tag_name_problem(error: &TagNameError) -> String {
+    match error {
+        TagNameError::Blank => "type a name".to_owned(),
+        TagNameError::TooLong { max } => format!("at most {max} characters"),
+        TagNameError::ControlCharacter => "no line breaks or tabs".to_owned(),
+    }
+}
+
+/// How the split editor's footer looks (`DESIGN.md` → "Split states").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SplitTone {
+    /// Saved: "Remaining" in `text-muted`, the amount in `text`, a `check`.
+    Balanced,
+    /// Not saved, nothing wrong yet (one line): as balanced, no icon.
+    Pending,
+    /// Not balanced: "Remaining" and the amount in `warning`, an `alert`.
+    Unbalanced,
+}
+
+/// The split editor's footer and the caption under it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SplitFooter {
+    /// The signed remainder: "−£4.00", "+£3.60", "£0.00".
+    pub remaining: String,
+    pub tone: SplitTone,
+    pub caption: Option<String>,
+}
+
+/// What the split editor's footer says about `draft` (the states board,
+/// `4XF-0`; the missing, zero and share cases are composed for M3.9).
+pub fn split_footer(draft: &SplitDraft) -> SplitFooter {
+    const SAVED_WHEN: &str = "Saved when Remaining is £0.00.";
+    let currency = draft.parent().currency();
+    let zero = format::money(Money::new(0, currency), Sign::Always);
+    let saved_when = SAVED_WHEN.replace("£0.00", &zero);
+    let remaining = draft
+        .remaining()
+        .map_or_else(|| zero.clone(), |rest| format::money(rest, Sign::Always));
+    let short = format!("{saved_when} A new line starts with the remaining amount.");
+    let (tone, caption) = match draft.status() {
+        DraftStatus::Balanced => (SplitTone::Balanced, None),
+        DraftStatus::OneLine => (SplitTone::Pending, Some(short)),
+        DraftStatus::Unbalanced {
+            remaining: rest,
+            over: true,
+        } => {
+            let over = rest.checked_abs().unwrap_or(rest);
+            (
+                SplitTone::Unbalanced,
+                Some(format!(
+                    "The lines are {} more than the transaction. {saved_when}",
+                    format::money(over, Sign::Negative)
+                )),
+            )
+        }
+        DraftStatus::Unbalanced { over: false, .. } => (SplitTone::Unbalanced, Some(short)),
+        DraftStatus::MissingAmount { line } => (
+            SplitTone::Unbalanced,
+            Some(format!("Line {line} has no amount. {saved_when}")),
+        ),
+        DraftStatus::ZeroLine { line } => (
+            SplitTone::Unbalanced,
+            Some(format!(
+                "Line {line} is {zero}: give it an amount or remove it."
+            )),
+        ),
+        DraftStatus::ShareOutsideLine { line } => (
+            SplitTone::Unbalanced,
+            Some(format!("Line {line} is less than the share you set on it.")),
+        ),
+        DraftStatus::Overflow => (
+            SplitTone::Unbalanced,
+            Some("The lines add up to more than Coffer can hold.".to_owned()),
+        ),
+    };
+    SplitFooter {
+        remaining,
+        tone,
+        caption,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use coffer_core::category::CategoryKey;
     use coffer_core::money::Currency;
+    use coffer_core::split::SplitLine;
 
     use super::*;
     use crate::transactions::fixture;
@@ -264,6 +433,17 @@ mod tests {
         let row = register.row(fixture::id("txn-rainy-day-09")).unwrap();
         assert_eq!(category_label(&register, row), "Transfer · Rainy day pot");
         assert!(cell(&register, row).is_transfer());
+        assert!(!can_recategorise(row));
+    }
+
+    #[test]
+    fn a_split_row_names_every_line() {
+        let register = fixture::split_register();
+        let row = register.row(fixture::id("txn-waitrose-07")).unwrap();
+        assert_eq!(
+            category_label(&register, row),
+            "Groceries, Shopping, Uncategorised"
+        );
         assert!(!can_recategorise(row));
     }
 
@@ -328,6 +508,102 @@ mod tests {
         assert_eq!(
             categorised_message(1, "Bills").as_ref(),
             "Categorised 1 transaction as Bills"
+        );
+    }
+
+    #[test]
+    fn the_tag_menu_ticks_the_rows_tags_and_offers_to_create() {
+        let register = fixture::split_register();
+        let on_row = [fixture::WEEKLY_SHOP_TAG];
+        let groups = tag_groups(&register, &on_row, "");
+        assert_eq!(groups.len(), 1);
+        let labels: Vec<_> = groups[0]
+            .options
+            .iter()
+            .map(|option| (option.label.to_string(), option.checked, option.icon))
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                ("Mum's birthday".to_owned(), false, Some(Glyph::Lock)),
+                ("Weekly shop".to_owned(), true, None),
+            ]
+        );
+        assert_eq!(
+            tag_from_key(&groups[0].options[1].key),
+            Some(fixture::WEEKLY_SHOP_TAG)
+        );
+
+        // A new name: the matches, then the two ways to create it.
+        let groups = tag_groups(&register, &on_row, " shop");
+        assert_eq!(groups[0].options.len(), 1);
+        let creates = &groups[1].options;
+        assert_eq!(creates[0].key.as_ref(), NEW_TAG);
+        assert_eq!(creates[0].label.as_ref(), "Create “shop”");
+        assert_eq!(creates[1].key.as_ref(), NEW_PRIVATE_TAG);
+        assert_eq!(creates[1].label.as_ref(), "Create “shop” as private");
+
+        // An existing name in another case isn't offered again.
+        let groups = tag_groups(&register, &on_row, "WEEKLY SHOP");
+        assert_eq!(groups.len(), 1);
+        // A name a tag can't have says why.
+        let long = "x".repeat(65);
+        let groups = tag_groups(&register, &on_row, &long);
+        let option = &groups.last().unwrap().options[0];
+        assert!(option.disabled);
+        assert_eq!(option.hint.as_deref(), Some("at most 64 characters"));
+        assert_eq!(tag_from_key(NEW_TAG), None);
+    }
+
+    #[test]
+    fn the_split_footer_reads_as_the_states_board() {
+        let gbp = |minor| Money::new(minor, Currency::GBP);
+        let key = |key: &str| Some(CategoryKey::new(key).unwrap());
+        let mut draft = SplitDraft::from_lines(
+            gbp(-5216),
+            &[
+                SplitLine::new(gbp(-3866), key("groceries")),
+                SplitLine::new(gbp(-950), key("shopping")),
+            ],
+        );
+        let footer = split_footer(&draft);
+        assert_eq!(footer.remaining, "−£4.00");
+        assert_eq!(footer.tone, SplitTone::Unbalanced);
+        assert_eq!(
+            footer.caption.as_deref(),
+            Some("Saved when Remaining is £0.00. A new line starts with the remaining amount.")
+        );
+
+        draft.set_amount(1, Some(gbp(-1710)));
+        let footer = split_footer(&draft);
+        assert_eq!(footer.remaining, "+£3.60");
+        assert_eq!(
+            footer.caption.as_deref(),
+            Some("The lines are £3.60 more than the transaction. Saved when Remaining is £0.00.")
+        );
+
+        draft.set_amount(1, Some(gbp(-950)));
+        draft.add_line();
+        let footer = split_footer(&draft);
+        assert_eq!(
+            (footer.remaining.as_str(), footer.tone, footer.caption),
+            ("£0.00", SplitTone::Balanced, None)
+        );
+
+        let start = SplitDraft::start(gbp(-5216), None);
+        let footer = split_footer(&start);
+        assert_eq!(footer.tone, SplitTone::Pending);
+        assert_eq!(footer.remaining, "£0.00");
+
+        draft.set_amount(2, None);
+        assert_eq!(
+            split_footer(&draft).caption.as_deref(),
+            Some("Line 3 has no amount. Saved when Remaining is £0.00.")
+        );
+        draft.set_amount(2, Some(gbp(0)));
+        assert_eq!(
+            split_footer(&draft).caption.as_deref(),
+            Some("Line 3 is £0.00: give it an amount or remove it.")
         );
     }
 }

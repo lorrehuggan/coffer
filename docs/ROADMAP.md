@@ -749,8 +749,19 @@ Every tool call appears in the access log.
   build-verified. Decisions: `ARCHITECTURE.md` → "Decision record: Inbox"
 - ⬜ M3.7 Rules and categories editors
 - ⬜ M3.8 Transfer-pair confirmation
-- ⬜ M3.9 Split editor (the remaining amount fills in automatically; lines are locked to the
-  total), tags and notes in the inspector
+- ✅ M3.9 Split editor (the remaining amount fills in automatically; lines are locked to the
+  total), tags and notes in the inspector. Core's `split::draft::SplitDraft` is the
+  editor's model (remainder, the sign never typed, "Add line" filling in the rest, saved
+  only when balanced) and `edit` records each inspector edit (split, tags, note, merchant
+  name) as one undoable change batch; the register carries tags, the bank's note, the
+  user-set name and whether a row can be split. In the app (`transactions/editor.rs`,
+  `ui::tag`): Details with Merchant, Tags, Bank note and Note; the Split section with the
+  editor or its Split button; the tag menu creates public or private tags (user). "Split"
+  starts one line with the whole amount (user); Merchant editing built now (user). No
+  migration. Snapshots (`transactions-split`, `-split-short`, `-split-over`, `-details`,
+  `-split-start`, `-tag-menu`) checked by eye against `2Q3-0`, `4XF-0` and `3WT-0`; the
+  window itself only build-verified. Decisions: `ARCHITECTURE.md` → "Decision record:
+  splits, tags and notes in the inspector"
 - ⬜ M3.10 Manual transactions and cash accounts; exclude a row with a reason, with an
   "excluded" filter so nothing disappears
 - ⬜ M3.11 Link refunds, reimbursements and settlements; outstanding-claims and owed-to-me
