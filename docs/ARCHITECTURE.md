@@ -1175,8 +1175,12 @@ Versions live in `[workspace.dependencies]` in the root `Cargo.toml`; crates opt
 | Plumbing | `thiserror` (libs), `anyhow` (binary), `clap`, `tracing`, `tracing-subscriber`, `directories`, `uuid` (v7) | Logs go to stderr |
 | MCP | `rmcp` (`transport-io`), `tokio` (current-thread), `schemars` | Only the `mcp` crate / `coffer mcp` path uses tokio; `core` stays synchronous |
 
-Later: `ureq` + `roxmltree` for the ECB fetch, `mt940`, `camt053` (no default features),
-own QIF parser. Avoid GPL crates (`ofxy`, `tree_magic_mini`'s GPL data feature).
+Later: `ureq` for the ECB fetch, reading the ECB Data Portal's CSV
+(`data-api.ecb.europa.eu`, `format=csvdata`) with the `csv` crate already in import, so no
+XML parser; `mt940`; an own CAMT.053 mapping on `roxmltree` (the `camt053` crate is barely
+used); own QIF parser. Avoid GPL crates (`ofxy`, `tree_magic_mini`'s GPL data feature).
+Research and candidates per roadmap item: [`research/crates.md`](research/crates.md)
+(2026-11-13).
 
 ## Import pipeline
 
@@ -2021,3 +2025,4 @@ writes are the containment. In addition:
 - Investment holdings and prices, goals, attachments (ROADMAP L.11–L.14). Any online price
   fetch would be a second network call and needs its own decision.
 - Feature research and the list of rejected ideas: [`research/feature-ideas.md`](research/feature-ideas.md).
+- Crate research for M3–M5 and Later: [`research/crates.md`](research/crates.md).
