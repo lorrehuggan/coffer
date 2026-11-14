@@ -1145,6 +1145,68 @@ close button. Footer: a caption on the left, actions right-aligned, above a hair
   button becomes "Import and flag the mismatch"), *locked period* (`warning-soft`, lock
   icon, the rows dated on or before `reconciled_through` stay out unless the user unlocks,
   outline "Unlock…").
+- **Built in M3.4 and M3.5** (`crates/app/src/import/`; `ARCHITECTURE.md` → "Decision
+  record: the import flow"): the three steps as drawn, checked by eye against `5ZQ-0` and
+  `6J4-0` in the `import-*` snapshots (`import-map` matches the Map step row for row;
+  `import-review` and `import-review-mismatch` the Review step and the reconciliation,
+  mismatch and locked-period blocks). New from existing specs: the panel size of the
+  segmented control (`ui::segmented`: 30px, radius 8, equal segments, the inset
+  highlight, unreachable steps at `opacity-disabled`), the wide dialog (`ui::dialog`:
+  760px, a caption under the title, the footer above a hairline), a mono select value
+  (`SelectField::mono`, the Format select) and five 14px icons from the artboards' paths
+  (download, info, reconciled check, mismatch, locked period). The close button uses the
+  12px dismiss icon (stroke 1.2 where Paper's close draws 1.3). No new tokens.
+  **Decided with the user (2026-11-14)**: undrawn states composed from existing specs;
+  saved presets live in the data dir; Save as preset and Save a copy; Unlock… inert.
+  **Composed from existing specs, not drawn** (review):
+  - *A file no preset recognises*: Preset reads "No preset · your own columns"; the
+    caption "No preset recognises this file. Choose its columns below; the preview
+    updates as you go."; a required column not chosen reads "Choose a column", an
+    optional one "None in this file" (both `text-muted`); Format offers the formats
+    that read the column (as `DD/MM/YYYY`, mono), every common one under "No format
+    reads every date" when none does, and "Choose the format" until one is chosen. A
+    FILE section (section label as COLUMNS) sits under the preview, so the dialog keeps
+    its height: Encoding ("Automatic · UTF-8"), Delimiter ("Detect it · comma"),
+    Decimal ("Point · 1,234.56"), Header ("First row names the columns" / "No header
+    row"), Skip ("No lines · before the rows"). It also shows when a preset's mapping
+    has been changed, and the Preset select then adds "· changed".
+  - *Money out and money in*: the Amount select's group TWO COLUMNS offers "Money out and
+    money in"; chosen, Amount reads "Two columns · positive amounts" (or "· signed") and
+    Money out and Money in rows follow it.
+  - *What stops Review*: the preview's place shows the first missing choice or the
+    file's problem in `danger` caption type ("Choose the date format.", "The file has no
+    “Notes and #tags” column."), and "Review" is disabled (its count dropped).
+  - *OFX*: Format is a locked value "OFX"; a Statement select ("Bank account ending 1234
+    · GBP") when the file has several; the caption "An OFX file names its own fields:
+    there's nothing to map."; no Save as preset.
+  - *A flagged row's date and merchant* come from the file's cells; a later flagged row
+    is in the note ("… 2 more rows are flagged too."). Pot transfers read "To Rainy day"
+    / "From Holiday".
+  - *A file that isn't a statement* stays on File with the reason under the drop zone in
+    `danger` ("Coffer imports CSV, OFX and QFX files, and notes.pdf isn't one it can
+    read."); while reading, the drop zone's line reads "Reading monzo-november.csv…". A
+    file dragged over the zone fills it with `hover`.
+  - *Save as preset…* (M3.5): a secondary button before Back on the Map step for a CSV.
+    It opens the form in place of the columns, 440px wide: SAVE THE MAPPING AS A PRESET,
+    Name (text field, starting as the account's bank or name), Region (UK, US, Euro area),
+    ID (locked value in mono, `uk-example-bank`), a caption saying where it's saved and
+    that it holds the layout only. Footer: "Save a copy… writes the same file where you
+    choose, to keep or share." with Cancel, Save a copy… (secondary) and Save preset
+    (primary). After saving, the caption under Account reads "Saved as Example Bank.
+    Current account uses it from now on."
+  - *Review*: AFTER IMPORT leaves out "Categorised from …'s categories" when the preset
+    maps none, and "Pot transfers paired" when there are none. A first balance is
+    *Starting point* (the neutral block: "… the first Current account has, so there's
+    nothing to check it against yet."). Nothing new: the button reads "Nothing new to
+    import", disabled, and the caption "Every row and balance in this file is already in
+    the account." The button counts new rows only ("Import 9 transactions"), flagged
+    rows being recorded with the batch, not stored. Unlock… is shown disabled and the
+    block says to unlock in Reviews. While working, the primary reads "Reviewing…",
+    "Importing…" or "Saving…".
+  - *After the import*: the dialog closes and the notification bar says "Imported 9
+    transactions from `monzo-november.csv`" with Undo and dismiss, centred over the
+    body (the window minus title and status bars) rather than the canvas alone; after
+    Undo, "Undid the import of `monzo-november.csv`".
 
 **Budgets** (`6OE-0`). Transactions shell (left panel, inspector) with the Overview canvas
 padding (16px top, 24px inline).

@@ -35,7 +35,7 @@ pub mod panel;
 pub mod remove;
 pub mod restore;
 pub mod store;
-mod table;
+pub(crate) mod table;
 
 use std::path::{Path, PathBuf};
 

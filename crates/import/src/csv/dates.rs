@@ -62,6 +62,9 @@ const COMMON_DATE_FORMATS: &[&str] = &[
     "%d.%m.%Y %H:%M",
 ];
 
+/// The formats [`TimeFormat::candidates`] tries, most common first.
+const COMMON_TIME_FORMATS: &[&str] = &["%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M:%S %p"];
+
 fn items(pattern: &str, kind: &'static str) -> Result<Vec<Item<'static>>, FormatError> {
     StrftimeItems::new(pattern)
         .parse_to_owned()
@@ -161,6 +164,16 @@ impl DateFormat {
         again.eq_ignore_ascii_case(text).then_some((date, time))
     }
 
+    /// Every common format [`candidates`](Self::candidates) tries, most
+    /// common first: what a mapping screen offers when none reads a
+    /// column's values.
+    pub fn common() -> Vec<DateFormat> {
+        COMMON_DATE_FORMATS
+            .iter()
+            .map(|pattern| DateFormat::new(pattern).expect("common formats are valid"))
+            .collect()
+    }
+
     /// The common formats that read every one of `values` (empty ones are
     /// skipped), most common first. Empty if no value is given.
     ///
@@ -226,6 +239,24 @@ impl TimeFormat {
 
     pub fn pattern(&self) -> &str {
         &self.pattern
+    }
+
+    /// The common time formats that read every one of `values` (empty ones
+    /// are skipped), most common first. Empty if no value is given.
+    pub fn candidates<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<TimeFormat> {
+        let values: Vec<&str> = values
+            .into_iter()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .collect();
+        if values.is_empty() {
+            return Vec::new();
+        }
+        COMMON_TIME_FORMATS
+            .iter()
+            .map(|pattern| TimeFormat::new(pattern).expect("common formats are valid"))
+            .filter(|format| values.iter().all(|value| format.parse(value).is_some()))
+            .collect()
     }
 
     /// Reads `text` (surrounding whitespace ignored). `None` when it doesn't

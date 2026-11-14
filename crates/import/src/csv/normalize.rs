@@ -128,6 +128,29 @@ impl Positions {
         })
     }
 
+    /// The positions `field` is read from: what to show beside a row
+    /// flagged for it. Empty for a field the mapping doesn't read.
+    pub(super) fn of(&self, field: Field) -> Vec<usize> {
+        match field {
+            Field::Date => vec![self.date],
+            Field::Time => self.time.into_iter().collect(),
+            Field::Amount => match self.amount {
+                AmountAt::Signed(index) => vec![index],
+                AmountAt::Split { debit, credit, .. } => vec![debit, credit],
+            },
+            Field::Currency => self.currency.into_iter().collect(),
+            Field::Merchant => self.merchant.into_iter().collect(),
+            Field::Description => self.description.clone(),
+            Field::ExternalId => self.external_id.into_iter().collect(),
+            Field::SourceCategory => self.source_category.into_iter().collect(),
+            Field::SourceType => self.source_type.into_iter().collect(),
+            Field::OriginalAmount => self.original_amount.map(|(at, _)| at).into_iter().collect(),
+            Field::OriginalCurrency => self.original_amount.map(|(_, at)| at).into_iter().collect(),
+            Field::Note => self.note.into_iter().collect(),
+            Field::Balance => self.balance.into_iter().collect(),
+        }
+    }
+
     /// Normalizes one record, or says why it can't be.
     pub(super) fn line(
         &self,

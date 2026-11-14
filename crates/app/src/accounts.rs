@@ -189,7 +189,7 @@ impl Accounts {
         let Source::Database(store) = &self.source else {
             return;
         };
-        match store.load(store::bundled_presets()) {
+        match store.load(store.presets()) {
             Ok(data) => {
                 self.data = data;
                 self.load_error = None;

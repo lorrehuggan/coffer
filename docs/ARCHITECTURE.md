@@ -1466,6 +1466,83 @@ merchant names".
    the import carried one. Notes, names and tag names are shown as plain text and only
    ever matched, never acted on.
 
+### Decision record: the import flow (2026-11-14)
+
+M3.4 and M3.5. Marked **(user)**: decided by the user on 2026-11-14 when asked before
+the build. Everything else follows `DESIGN.md` → "Import", the CLI's `coffer import`, or
+the records above ("Import commit, dedupe and undo", "The CSV importer", "Presets").
+
+1. **Undrawn states are composed from existing specs (user)**, as in M3.2 and M3.3: the
+   Map step for a file no preset recognises (FILE section, Format candidates, the
+   money-out / money-in pair), OFX (Format locked, Statement select), a file that isn't
+   a statement, Save as preset, and the notification after an import. Recorded in
+   `DESIGN.md` → "Import" → "Built in M3.4".
+2. **Choosing follows `coffer import`, with the user in the loop.** OFX by its format; a
+   CSV preset by its own header row, one match only (several: the one an account uses,
+   else the first, and the caption says to check). Otherwise the account's preset
+   (`account.preset_id`, V15), but only if it reads the file: a preset without a header
+   row can only be chosen this way. Otherwise the columns are suggested
+   (`csv::MappingDraft::suggest`: header names, then values; deterministic, no model).
+   A date format that reads the values more than one way (`01/02/2026`) is left for the
+   user, never guessed; formats that read every value as the same dates count once. The
+   account is the only one using the preset, else the accounts panel's selection when it
+   can take the file, else the only account that can, else the user chooses. Choosing an
+   account with a preset switches to it unless the user picked a preset.
+3. **A changed preset is your own mapping.** While the mapping equals the preset's, the
+   statement is the preset's (its ID on the batch, its category map); once a column
+   changes it's read through `CsvImporter` over the user's `CsvMapping` with no preset
+   ID and no category map, in the account's currency. Saving it (point 6) makes it a
+   preset again.
+4. **Mapping in memory on the main thread; the database in the background.** Reading,
+   splitting and normalizing an export takes milliseconds, so the preview follows every
+   change at once (`import::session::Session`, pure and unit-tested). Everything that
+   touches the database or the disk runs on a background thread through
+   `import::store::ImportStore`, which opens the database per call and checks the
+   restore lock, like the other stores: the setup (presets, accounts, recent imports),
+   reading the file, the review, the commit (core takes the backup), undo, saving a
+   preset and its copy.
+5. **The Review step's AFTER IMPORT figures are a rehearsal.** `import::rehearse` runs
+   the commit's own steps (rows, pots, names, rules, transfer pairs, duplicates, links,
+   schedules) in a DB transaction that is rolled back (`change::dry_run`), with no
+   backup and no confirmation needed, refusing a stale preview like `commit`. So the
+   counts are exactly what the commit then reports (a test compares them).
+   `CommitSummary::uncategorized` counts the batch's imported rows still needing a
+   category (no category and not a confirmed transfer, or a split line without one, as
+   the Transactions view's Uncategorised). `commit` and `rehearse` share `write_batch`.
+6. **Saved presets are files in the data dir (user).** `<data dir>/presets/<region>/<bank>.toml`
+   (`paths::presets_dir`, next to the database as `backups/` is), directories `0700`,
+   files `0600`, laid out like the repository's `presets/` so a file can be contributed
+   as it is. They load next to the bundled presets (`preset::load_user_presets`,
+   `Presets::with_user_presets`) in the app, the account inspector's Preset select and
+   the CLI (`coffer import`, `coffer accounts add --preset`). A saved preset can't take
+   an ID the bundled or saved presets have, and a file isn't overwritten; one that no
+   longer loads is left out with a warning (path and reason, never transaction data),
+   so one broken file hides nothing else. Not in the database, so a backup restore
+   doesn't roll presets back, and no migration was needed. Rejected: a `user_preset`
+   table (V16).
+7. **Save as preset and Save a copy (user).** On the Map step, "Save as preset…" asks a
+   name and a region (UK, US, euro area); the ID is `<region>-<name as a slug>`
+   (`preset::slug`, accents folded). It writes the mapping as preset TOML
+   (`Preset::to_toml`, which `Preset::from_toml` reads back to the same preset: tested
+   on every bundled preset and every field), saves it and sets it as the account's
+   preset for the next import. "Save a copy…" writes the same TOML where the system's
+   save dialog says (`0600`). A new preset's category map is empty: no screen maps a
+   bank's categories yet. `Preset::new` builds a preset by writing and reading it, so a
+   saved preset passes exactly the checks a file does.
+8. **Confirming is the Review step's button.** It shows every count, the flagged rows,
+   the reconciliation block and a locked period, and with a mismatch its button reads
+   "Import and flag the mismatch"; pressing it passes core the confirmations the preview
+   asks for. Its count is new rows only, as "Import commit, dedupe and undo", point 2,
+   has it (DESIGN's "flagged rows are in the count" predates that record).
+9. **Unlock… is inert here (user).** Locks belong to the balance checks review (M3.12),
+   so the locked-period block shows the button disabled and says to unlock in Reviews;
+   locked rows stay out, as core already does.
+10. **After the commit**: the dialog closes, the accounts panel and Transactions read the
+    database again, and a notification says what was imported with Undo
+    (`import::undo`, the same as `coffer undo-import`; importing the file again brings
+    the rows back). The notification stays until dismissed or replaced.
+11. **No migration.** M3.4 and M3.5 add none.
+
 ## Architecture
 
 ```
@@ -1522,7 +1599,8 @@ Research and candidates per roadmap item: [`research/crates.md`](research/crates
    optional source ID, source category, transaction type, original (local)
    amount + currency, optional balance column, decimal separator
    (`1,234.56` vs `1.234,56`), date order (UK/EU `DD/MM` vs US `MM/DD`).
-   A mapping can be saved/exported as a preset.
+   A mapping can be saved/exported as a preset (M3.5: "Decision record: the import
+   flow", points 6 and 7).
 3. **Normalize** to `{account, date, time?, amount_minor, currency, merchant?,
    description_raw, description_normalized (whitespace-collapsed, uppercased),
    external_id?, source_category?, source_type?, original_amount_minor?,
@@ -1674,6 +1752,16 @@ the same debit and credit column, a named column without a header row).
   numbers and line counts) is public for the mapping screen. Its `Debug` and
   `CsvRecord`'s show counts
   only.
+- **The mapping screen (M3.4).** `CsvFile::read(file, &FileLayout)` splits a file before
+  any column is chosen (`FileLayout`: encoding, delimiter, skip, header, multi-line;
+  `CsvMapping::layout`). `MappingDraft` is a `CsvMapping` whose columns may still be
+  unchosen: `from_mapping` (a preset), `suggest` (header names, then values; the
+  decimal mark from the values; signs of a money-out column), `build(currency)` (the
+  first missing choice is the error, in screen order). `date_formats` lists the formats
+  that read a column, equivalent ones once; `DateFormat::common` and
+  `TimeFormat::candidates` fill the selects. `CsvImporter::problem_text` gives the
+  file's text where a flagged row's problem is ("8,99"), for the preview to show and
+  never to log.
 
 ### Presets
 
@@ -1732,8 +1820,15 @@ ignore = ["Emoji", "Address", "Receipt", "Category split", "Money Out", "Money I
   never changes once shipped. It is `<region>-<file stem>` optionally followed by
   `-more` (`uk/monzo.toml` → `uk-monzo` or `uk-monzo-current`), lowercase letters,
   digits and single hyphens, and unique; the region must match the directory.
-  `Presets::from_files` checks all of this for any `(path, text)` set, which is also
-  what user presets saved from the mapping screen (M3) can load through.
+  `Presets::from_files` checks all of this for any `(path, text)` set. User presets
+  saved from the mapping screen (M3.5) live in `<data dir>/presets/` and load through
+  the same checks, one file at a time (`Presets::with_user_presets`): a broken one is
+  reported and left out, and none can take a bundled preset's ID ("Decision record: the
+  import flow", point 6).
+- **Written back out.** `Preset::to_toml` writes a preset in this format, keys in the
+  README's order and defaults left out; `Preset::from_toml` reads it back to the same
+  preset (tested on every bundled preset). `Preset::new(PresetParts)` builds one by
+  writing and reading it.
 - **Columns not read are visible.** `ignore` lists header columns the preset reads on
   purpose not at all; `Preset::unread_columns` returns the file's other unread header
   columns, so the preview can say what a bank added instead of dropping it silently.
@@ -1887,7 +1982,8 @@ M1.11–M1.13, decided 2026-11-11 (decision record "import commit, dedupe and un
 `coffer_core::import`: `preview(db, account, file name, Statement)` →
 `ImportPreview` (every row's `RowOutcome`, the file's balances, a `Reconciliation`,
 `counts()`, `needs_confirmation()`), then `commit(db, &preview, Confirmations)` →
-`Committed::Batch(summary)` or `NothingNew`. `undo_preview(db, batch)` and
+`Committed::Batch(summary)` or `NothingNew`; `rehearse(db, &preview)` runs the commit's
+steps and rolls them back, for the Review step's figures (M3.4). `undo_preview(db, batch)` and
 `undo(db, batch)` remove a batch; `batches`, `batch` and `batch_flags` read the history.
 
 - **Row outcomes**: `New` (with its fingerprint), `AlreadyImported` (the stored row and

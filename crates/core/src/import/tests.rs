@@ -1381,3 +1381,66 @@ fn transfer_pairing_leaves_categories_alone() {
     );
     assert_eq!(fixture.count("SELECT COUNT(*) FROM transfer_group"), 1);
 }
+
+// Rehearsal --------------------------------------------------------------------
+
+#[test]
+fn rehearse_reports_what_commit_does_and_writes_nothing() {
+    let mut fixture = Fixture::new();
+    let account = fixture.account("Current");
+    description_rule(&mut fixture.db, "bean there", "food.takeaway");
+    let statement = lines(vec![
+        with_category(line(3, -340, "BEAN THERE  LONDON"), "food.eating_out"),
+        with_category(line(4, -6_125, "Example Energy"), "bills.energy"),
+        line(5, -900, "Something else"),
+    ]);
+    let preview = fixture.preview(account, statement);
+    let before = fixture.count("SELECT COUNT(*) FROM import_batch");
+
+    let rehearsed = rehearse(&fixture.db, &preview).unwrap().unwrap();
+
+    assert_eq!(fixture.count("SELECT COUNT(*) FROM import_batch"), before);
+    assert_eq!(fixture.count("SELECT COUNT(*) FROM \"transaction\""), 0);
+    assert_eq!(
+        (
+            rehearsed.transactions,
+            rehearsed.categorized_by_rules,
+            rehearsed.categorized_by_preset,
+            rehearsed.uncategorized,
+        ),
+        (3, 1, 1, 1)
+    );
+    // No backup either: only commit takes one.
+    assert!(crate::backup::list(fixture.db.path()).unwrap().is_empty());
+
+    let Committed::Batch(committed) =
+        commit(&mut fixture.db, &preview, Confirmations::default()).unwrap()
+    else {
+        panic!("expected a batch");
+    };
+    assert_eq!(
+        CommitSummary {
+            batch: committed.batch,
+            ..rehearsed
+        },
+        committed
+    );
+}
+
+#[test]
+fn rehearse_has_nothing_to_say_about_a_file_already_imported() {
+    let mut fixture = Fixture::new();
+    let account = fixture.account("Current");
+    fixture.import_batch(account, lines(vec![line(3, -340, "Coffee")]));
+    let preview = fixture.preview(account, lines(vec![line(3, -340, "Coffee")]));
+    assert_eq!(rehearse(&fixture.db, &preview).unwrap(), None);
+}
+
+#[test]
+fn rehearse_refuses_a_stale_preview() {
+    let mut fixture = Fixture::new();
+    let account = fixture.account("Current");
+    let preview = fixture.preview(account, lines(vec![line(3, -340, "Coffee")]));
+    fixture.import_batch(account, lines(vec![line(3, -340, "Coffee")]));
+    assert!(matches!(rehearse(&fixture.db, &preview), Err(Error::Stale)));
+}

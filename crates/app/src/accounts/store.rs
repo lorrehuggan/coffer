@@ -72,6 +72,31 @@ impl AccountStore {
         Self { database }
     }
 
+    /// The presets the Preset select offers: the bundled ones and those
+    /// the user saved from the import screen (M3.5), in the data dir next
+    /// to the database. A saved preset that can't be used is left out.
+    pub fn presets(&self) -> Vec<PresetChoice> {
+        let dir = coffer_core::paths::presets_dir(&self.database);
+        match coffer_import::preset::load_user_presets(&dir) {
+            Ok((presets, problems)) => {
+                for problem in problems {
+                    tracing::warn!(%problem, "a saved preset can't be used");
+                }
+                presets
+                    .iter()
+                    .map(|preset| PresetChoice {
+                        id: preset.id().to_owned(),
+                        name: preset.name().to_owned(),
+                    })
+                    .collect()
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the bundled presets don't load");
+                Vec::new()
+            }
+        }
+    }
+
     fn open(&self) -> Result<Database, StoreError> {
         if backup::restoring(&self.database)? {
             return Err(Box::new(Restoring));

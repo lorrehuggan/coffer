@@ -2,11 +2,11 @@
 //!
 //! The data directory is the platform data dir (`~/.local/share/coffer` on
 //! Linux, `~/Library/Application Support/Coffer` on macOS), unless
-//! `COFFER_DATA_DIR` names another one. The database, and later its backups,
-//! live there.
+//! `COFFER_DATA_DIR` names another one. The database, its backups and the
+//! user's saved presets live there.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
 
@@ -16,6 +16,19 @@ pub const DATA_DIR_ENV: &str = "COFFER_DATA_DIR";
 
 /// File name of the database inside the data directory.
 pub const DATABASE_FILE: &str = "coffer.db";
+
+/// Directory, next to the database, of the CSV presets the user saved
+/// from the import screen (M3.5): `<data dir>/presets/<region>/<bank>.toml`.
+pub const PRESETS_DIR: &str = "presets";
+
+/// The user's saved presets directory for the database at `database`:
+/// [`PRESETS_DIR`] next to it, as backups sit in `backups/`.
+pub fn presets_dir(database: &Path) -> PathBuf {
+    database
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(PRESETS_DIR)
+}
 
 /// The platform has no home directory to put a data directory in.
 #[derive(Debug, thiserror::Error)]

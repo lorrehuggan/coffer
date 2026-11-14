@@ -140,6 +140,34 @@ pub struct SubAccountTransfer {
     pub name: Option<Column>,
 }
 
+/// How a CSV file is split into rows, before any column is chosen: what a
+/// mapping screen needs to read a file it has no mapping for yet
+/// ([`CsvFile::read`](super::CsvFile::read)). [`CsvMapping::layout`] gives
+/// a mapping's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileLayout {
+    pub encoding: TextEncoding,
+    /// `None` detects it from the file.
+    pub delimiter: Option<Delimiter>,
+    pub skip_rows: usize,
+    pub has_header: bool,
+    pub multiline_fields: bool,
+}
+
+/// Automatic encoding, a detected delimiter, nothing skipped, a header row,
+/// one line per row: what [`CsvMapping::new`] starts with.
+impl Default for FileLayout {
+    fn default() -> FileLayout {
+        FileLayout {
+            encoding: TextEncoding::Auto,
+            delimiter: None,
+            skip_rows: 0,
+            has_header: true,
+            multiline_fields: false,
+        }
+    }
+}
+
 /// How to read one kind of CSV export: the shape a preset
 /// ([`crate::preset`]) or the mapping screen produces.
 ///
@@ -230,6 +258,26 @@ impl CsvMapping {
             balance: None,
             sub_account_transfer: None,
         }
+    }
+
+    /// How the file is split into rows.
+    pub fn layout(&self) -> FileLayout {
+        FileLayout {
+            encoding: self.encoding,
+            delimiter: self.delimiter,
+            skip_rows: self.skip_rows,
+            has_header: self.has_header,
+            multiline_fields: self.multiline_fields,
+        }
+    }
+
+    /// Sets how the file is split into rows.
+    pub fn set_layout(&mut self, layout: FileLayout) {
+        self.encoding = layout.encoding;
+        self.delimiter = layout.delimiter;
+        self.skip_rows = layout.skip_rows;
+        self.has_header = layout.has_header;
+        self.multiline_fields = layout.multiline_fields;
     }
 
     /// Every column the mapping reads.

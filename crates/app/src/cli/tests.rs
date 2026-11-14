@@ -578,7 +578,7 @@ fn import_errors_name_the_choices() {
     let error = scratch.err(&["import", &monzo, "--preset", "uk-nope"]);
     assert_eq!(
         error,
-        "there is no preset \"uk-nope\"; the bundled presets are:\n  uk-monzo  Monzo"
+        "there is no preset \"uk-nope\"; the presets are:\n  uk-monzo  Monzo"
     );
 
     // A CSV no preset recognises isn't guessed at.
@@ -800,4 +800,67 @@ fn import_reports_transfer_pairs_it_suggests() {
     .unwrap();
     let out = scratch.ok(&["import", &file.to_string_lossy(), "--account", "Savings"]);
     assert!(out.contains("Transfer pairs suggested: 1.\n"), "{out}");
+}
+
+/// Saves a preset for `csv/signed-amount.csv` where the import screen
+/// saves one: `presets/` next to the database.
+fn save_signed_amount_preset(scratch: &Scratch) {
+    use coffer_import::SourceFile;
+    use coffer_import::csv::{CsvFile, FileLayout, MappingDraft};
+    use coffer_import::preset::{Preset, PresetParts, save_user_preset};
+
+    let file = SourceFile::read(Path::new(&fixture("csv/signed-amount.csv"))).unwrap();
+    let parsed = CsvFile::read(&file, &FileLayout::default()).unwrap();
+    let mut draft = MappingDraft::suggest(&parsed, FileLayout::default());
+    // Its days are all the 12th or earlier: DD/MM or MM/DD is the user's call.
+    assert_eq!(draft.date_format, None);
+    draft.date_format = Some(coffer_import::csv::DateFormat::new("%d/%m/%Y").unwrap());
+    let preset = Preset::new(PresetParts {
+        id: "uk-example".to_owned(),
+        name: "Example Bank".to_owned(),
+        region: "uk".to_owned(),
+        mapping: draft.build(Currency::GBP).unwrap(),
+        ignore: Vec::new(),
+        category_map: Default::default(),
+        sub_account_category: None,
+    })
+    .unwrap();
+    save_user_preset(
+        &coffer_core::paths::presets_dir(&scratch.db),
+        &preset,
+        &Presets::bundled().unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn import_uses_presets_saved_from_the_import_screen() {
+    let scratch = Scratch::with_accounts();
+    save_signed_amount_preset(&scratch);
+
+    let error = scratch.err(&[
+        "import",
+        &fixture("presets/uk/monzo.csv"),
+        "--preset",
+        "uk-nope",
+    ]);
+    assert!(
+        error.ends_with("  uk-example  Example Bank\n  uk-monzo  Monzo"),
+        "{error}"
+    );
+
+    // Detected by its own header row, like a bundled preset.
+    let out = scratch.ok(&[
+        "import",
+        &fixture("csv/signed-amount.csv"),
+        "--account",
+        "Monzo",
+        "--yes",
+    ]);
+    assert!(
+        out.contains("Format:    CSV, preset uk-example (Example Bank)"),
+        "{out}"
+    );
+    let batches = scratch.batches(1);
+    assert_eq!(batches[0].preset_id.as_deref(), Some("uk-example"));
 }

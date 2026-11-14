@@ -16,6 +16,17 @@ name, any extension) that it recognises and imports, plus a test that checks the
 Fixtures must be synthetic or fully redacted: see [`fixtures/README.md`](../fixtures/README.md)
 and `AGENTS.md` → "Personal financial data". Never commit a real export.
 
+## Presets saved from the app
+
+Coffer's Import window can save a column mapping as a preset ("Save as preset…", M3.5).
+Those live in Coffer's data folder, never in this repository:
+`<data dir>/presets/<region>/<bank>.toml` (`~/.local/share/coffer/presets` on Linux,
+`~/Library/Application Support/Coffer/presets` on macOS, or under `COFFER_DATA_DIR`). They
+are written in this format, so one can be contributed here as it is: add its redacted
+fixture and test as below. "Save a copy…" writes the same file wherever you choose. A
+saved preset can't reuse a bundled preset's ID, and one that doesn't load is skipped with
+a warning. Its category map starts empty; add one by hand.
+
 ## Example
 
 The Monzo preset, [`uk/monzo.toml`](uk/monzo.toml), is the reference: copy it when

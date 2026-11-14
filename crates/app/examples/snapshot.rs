@@ -49,6 +49,16 @@
 //! - `inbox-approved`: after approving the DELIVEROO rule (`EWZ-0`'s bar,
 //!   without Undo);
 //! - `inbox-empty`: no suggestions;
+//! - `import-file`: the Import dialog's File step (Paper `6J4-0`);
+//! - `import-map`: the sample Monzo export on the Map step (`5ZQ-0`);
+//! - `import-map-own`: a CSV no preset recognises, mapped by hand (composed
+//!   for M3.4, no Paper drawing);
+//! - `import-save-preset`: "Save as preset…" (composed for M3.5);
+//! - `import-review`: the Review step on a scratch database where part of
+//!   the file was imported before (`6J4-0`);
+//! - `import-review-mismatch`: the same with entered balances that don't
+//!   match and a lock date (`6NP-0`, `6NX-0`);
+//! - `import-done`: the notification after an import;
 //! - `showcase`: the component showcase.
 //!
 //! The Inbox reads a scratch database seeded with `inbox::fixture`.
@@ -62,6 +72,8 @@ use anyhow::{Context as _, Result};
 use gpui_kit::{AnyView, App, AppContext as _, Entity, HeadlessAppContext, Window, size};
 
 use coffer_app::accounts::{Accounts, fixture as accounts_fixture};
+use coffer_app::import::store::ImportStore;
+use coffer_app::import::{ImportNotice, fixture as import_fixture};
 use coffer_app::inbox::store::{Entry, InboxStore};
 use coffer_app::inbox::{Inbox, fixture as inbox_fixture};
 use coffer_app::settings::restore::{RestoreDialog, Stage};
@@ -325,6 +337,7 @@ fn main() -> Result<()> {
         snapshot_then(&mut cx, &out, name, build, then)?;
     }
     inbox_snapshots(&mut cx, &out)?;
+    import_snapshots(&mut cx, &out)?;
     snapshot(&mut cx, &out, "showcase", |window, cx| {
         cx.new(|cx| Showcase::new(window, cx)).into()
     })?;
@@ -442,6 +455,160 @@ fn inbox_snapshots(cx: &mut HeadlessAppContext, out: &Path) -> Result<()> {
         drop(dir);
     }
     Ok(())
+}
+
+/// What an Import snapshot shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ImportShot {
+    File,
+    Map,
+    MapOwn,
+    SavePreset,
+    Review,
+    Mismatch,
+    Done,
+}
+
+/// A scratch database with Paper's accounts (Current account with Monzo's
+/// preset, Joint account, Savings), and for the Review shots part of the
+/// sample imported before, or balances and a lock date.
+fn import_database(dir: &Path, shot: ImportShot) -> Result<PathBuf> {
+    use chrono::NaiveDate;
+    use coffer_core::account::{self, AccountKind, EnteredBalance, EnteredSource, NewAccount};
+    use coffer_core::money::{Currency, Money};
+
+    let database = dir.join("coffer.db");
+    let mut db = Database::open(&database)?;
+    let mut current = NewAccount::new("Current account", AccountKind::Current, Currency::GBP);
+    current.preset = Some("uk-monzo".to_owned());
+    let current = account::create(&mut db, &current)?;
+    account::create(
+        &mut db,
+        &NewAccount::new("Joint account", AccountKind::Current, Currency::GBP),
+    )?;
+    account::create(
+        &mut db,
+        &NewAccount::new("Savings", AccountKind::Savings, Currency::GBP),
+    )?;
+    let day = |d| NaiveDate::from_ymd_opt(2026, if d > 20 { 10 } else { 11 }, d).expect("a date");
+    match shot {
+        ImportShot::Review | ImportShot::Done => {
+            // The file's last four rows (the oldest) came in an earlier export.
+            let lines: Vec<&str> = import_fixture::MONZO_NOVEMBER.lines().collect();
+            let earlier = std::iter::once(lines[0])
+                .chain(lines[lines.len() - 4..].iter().copied())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let presets = coffer_import::preset::Presets::bundled()?;
+            let statement = coffer_import::AnyImporter::import(
+                presets.get("uk-monzo").expect("bundled").importer(),
+                &coffer_import::SourceFile::from_bytes("monzo-early-november.csv", earlier),
+            )?;
+            let preview =
+                coffer_core::import::preview(&db, current, "monzo-early-november.csv", statement)?;
+            let confirm = preview.needs_confirmation();
+            coffer_core::import::commit(&mut db, &preview, confirm)?;
+        }
+        ImportShot::Mismatch => {
+            let balance = |date, minor| EnteredBalance {
+                date,
+                balance: Money::new(minor, Currency::GBP),
+                source: EnteredSource::Statement,
+                note: None,
+            };
+            account::add_balance(&mut db, current, &balance(day(31), 50_000))?;
+            account::add_balance(&mut db, current, &balance(day(4), 50_000))?;
+            account::add_balance(&mut db, current, &balance(day(9), 128_410))?;
+            coffer_core::reconciliation::lock(&mut db, current, day(4))?;
+        }
+        _ => {}
+    }
+    Ok(database)
+}
+
+/// The Import snapshots.
+fn import_snapshots(cx: &mut HeadlessAppContext, out: &Path) -> Result<()> {
+    let shots = [
+        ("import-file", ImportShot::File),
+        ("import-map", ImportShot::Map),
+        ("import-map-own", ImportShot::MapOwn),
+        ("import-save-preset", ImportShot::SavePreset),
+        ("import-review", ImportShot::Review),
+        ("import-review-mismatch", ImportShot::Mismatch),
+        ("import-done", ImportShot::Done),
+    ];
+    for (name, shot) in shots {
+        let dir = tempfile::TempDir::new()?;
+        let database = import_database(dir.path(), shot)?;
+        let with_store = matches!(
+            shot,
+            ImportShot::Review | ImportShot::Mismatch | ImportShot::Done
+        );
+        let built: Rc<RefCell<Option<Entity<ShellView>>>> = Rc::default();
+        let keep = built.clone();
+        let build = move |window: &mut Window, cx: &mut App| -> AnyView {
+            let shell = cx.new(|cx| {
+                let mut shell = ShellView::new(View::Transactions, window, cx);
+                if with_store {
+                    shell.import_into(ImportStore::new(database.clone()), cx);
+                }
+                shell
+            });
+            *keep.borrow_mut() = Some(shell.clone());
+            shell.into()
+        };
+        let then = move |window: &mut Window, cx: &mut App| {
+            let shell = built.borrow().clone().expect("the shell was built");
+            let dialog = shell.update(cx, |shell, cx| shell.open_sample_import(window, cx));
+            dialog.update(cx, |dialog, cx| {
+                match shot {
+                    ImportShot::File => return,
+                    ImportShot::MapOwn | ImportShot::SavePreset => {
+                        dialog.open_file(signed_amount_fixture(), cx)
+                    }
+                    _ => dialog.open_file(import_fixture::file(), cx),
+                }
+                dialog.set_account(coffer_core::id::AccountId::new(1), cx);
+                match shot {
+                    ImportShot::SavePreset => {
+                        dialog.open_save_form(window, cx);
+                        dialog.set_preset_name("Example Bank", window, cx);
+                    }
+                    ImportShot::Review | ImportShot::Mismatch | ImportShot::Done => {
+                        dialog.start_review(cx)
+                    }
+                    _ => {}
+                }
+            });
+            if shot == ImportShot::Done {
+                let imports = shell.read(cx).imports().clone();
+                imports.update(cx, |imports, cx| {
+                    imports.set_notice(
+                        Some(ImportNotice::Imported {
+                            batch: coffer_core::id::BatchId::new(2),
+                            message: coffer_app::import::text::imported(
+                                9,
+                                import_fixture::FILE_NAME,
+                            ),
+                        }),
+                        cx,
+                    )
+                });
+                shell.update(cx, |shell, cx| shell.close_dialog(window, cx));
+            }
+        };
+        snapshot_then(cx, out, name, build, then)?;
+        drop(dir);
+    }
+    Ok(())
+}
+
+/// `fixtures/csv/signed-amount.csv`: a layout no preset has.
+fn signed_amount_fixture() -> coffer_import::SourceFile {
+    coffer_import::SourceFile::from_bytes(
+        "example-bank-november.csv",
+        include_bytes!("../../../fixtures/csv/signed-amount.csv").to_vec(),
+    )
 }
 
 /// Which Settings dialog a snapshot opens over the screen.

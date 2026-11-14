@@ -136,6 +136,20 @@ pub enum Command {
     Categorize(CategorizeArgs),
 }
 
+/// The bundled presets and the ones the user saved from the import screen
+/// (`<data dir>/presets`). A saved preset that can't be used is left out
+/// with a warning in the log; its name and path are the user's, not
+/// transaction data.
+fn presets(database: &Path) -> anyhow::Result<Presets> {
+    let dir = coffer_core::paths::presets_dir(database);
+    let (presets, errors) =
+        coffer_import::preset::load_user_presets(&dir).context("the bundled presets don't load")?;
+    for error in errors {
+        tracing::warn!(%error, "a saved preset can't be used");
+    }
+    Ok(presets)
+}
+
 /// Runs `command` against the database at `database` (the data dir's
 /// `coffer.db` in the binary), writing its output to `out`.
 ///
@@ -146,14 +160,14 @@ pub enum Command {
 pub fn run(command: Command, database: &Path, out: &mut dyn Write) -> anyhow::Result<()> {
     match command {
         Command::Import(args) => {
-            let presets = Presets::bundled().context("the bundled presets don't load")?;
+            let presets = presets(database)?;
             let mut db = open_or_create(database)?;
             import::run(&mut db, &presets, &args, out)
         }
         Command::Accounts(AccountsArgs {
             command: Some(AccountsCommand::Add(args)),
         }) => {
-            let presets = Presets::bundled().context("the bundled presets don't load")?;
+            let presets = presets(database)?;
             let mut db = open_or_create(database)?;
             accounts::add(&mut db, &presets, &args, out)
         }

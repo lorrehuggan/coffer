@@ -23,6 +23,8 @@
 //!   mirrors those rows onto the pot (`coffer_core::sub_account`).
 
 mod raw;
+mod user;
+mod write;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -37,6 +39,9 @@ use crate::csv::{
 };
 use raw::{PresetColumn, RawAmount, RawColumn, RawDescription, RawPreset};
 
+pub use user::{SaveError, UserPresetError, load_user_presets, save_user_preset};
+pub use write::{PresetParts, slug};
+
 /// The presets in the repository's `presets/` directory, as
 /// `(path under presets/, contents)`, sorted by path (`build.rs`).
 const BUNDLED: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/bundled_presets.rs"));
@@ -48,6 +53,8 @@ pub struct Preset {
     region: String,
     importer: CsvImporter,
     ignore: Vec<String>,
+    /// Saved by the user from the mapping screen (M3.5), not bundled.
+    saved: bool,
 }
 
 /// Why a preset's TOML can't be used.
@@ -193,6 +200,7 @@ impl Preset {
             region: raw.region,
             importer,
             ignore: raw.ignore,
+            saved: false,
         })
     }
 
@@ -204,6 +212,12 @@ impl Preset {
     /// What the user sees, e.g. `Monzo (current account)`.
     pub fn name(&self) -> &str {
         crate::Detect::name(&self.importer)
+    }
+
+    /// Whether the user saved it from the mapping screen, rather than it
+    /// being bundled with Coffer ([`Presets::with_user_presets`]).
+    pub fn is_saved(&self) -> bool {
+        self.saved
     }
 
     /// `uk`, `us`, `eu`, …: the directory the preset lives in.
@@ -418,38 +432,7 @@ impl Presets {
     ) -> Result<Presets, LoadError> {
         let mut found: BTreeMap<String, (String, Preset)> = BTreeMap::new();
         for (path, text) in files {
-            let location = || LoadError::Location {
-                path: path.to_owned(),
-            };
-            let (directory, file) = path.split_once('/').ok_or_else(location)?;
-            let stem = file.strip_suffix(".toml").ok_or_else(location)?;
-            if !is_slug(directory) || !is_slug(stem) {
-                return Err(location());
-            }
-
-            let preset = Preset::from_toml(text).map_err(|error| LoadError::Preset {
-                path: path.to_owned(),
-                error,
-            })?;
-            if preset.region != directory {
-                return Err(LoadError::Region {
-                    path: path.to_owned(),
-                    region: preset.region,
-                    directory: directory.to_owned(),
-                });
-            }
-            let expected = format!("{directory}-{stem}");
-            let id_ok = preset
-                .id
-                .strip_prefix(&expected)
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'));
-            if !id_ok {
-                return Err(LoadError::IdFileName {
-                    path: path.to_owned(),
-                    id: preset.id,
-                    expected,
-                });
-            }
+            let preset = load_file(path, text)?;
             if let Some((first, _)) = found.get(&preset.id) {
                 return Err(LoadError::DuplicateId {
                     id: preset.id,
@@ -462,6 +445,39 @@ impl Presets {
         Ok(Presets {
             presets: found.into_values().map(|(_, preset)| preset).collect(),
         })
+    }
+
+    /// These presets and the user's saved ones (`(path, contents)` pairs as
+    /// for [`from_files`](Self::from_files), read from the user's presets
+    /// directory by [`load_user_presets`]), sorted by ID. A saved preset
+    /// that doesn't load, or whose ID one of these already has, is left out
+    /// and returned with the reason, so one broken file doesn't hide the
+    /// rest.
+    pub fn with_user_presets<'a>(
+        self,
+        files: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> (Presets, Vec<LoadError>) {
+        let mut presets = self.presets;
+        let mut errors = Vec::new();
+        for (path, text) in files {
+            match load_file(path, text) {
+                Ok(mut preset) => {
+                    if presets.iter().any(|known| known.id == preset.id) {
+                        errors.push(LoadError::DuplicateId {
+                            id: preset.id,
+                            first: "an earlier preset".to_owned(),
+                            second: path.to_owned(),
+                        });
+                    } else {
+                        preset.saved = true;
+                        presets.push(preset);
+                    }
+                }
+                Err(error) => errors.push(error),
+            }
+        }
+        presets.sort_by(|a, b| a.id.cmp(&b.id));
+        (Presets { presets }, errors)
     }
 
     pub fn get(&self, id: &str) -> Option<&Preset> {
@@ -490,6 +506,45 @@ impl Presets {
             .map(|preset| &preset.importer as &dyn AnyImporter)
             .collect()
     }
+}
+
+/// Reads one preset file at `path` (relative to a presets directory) and
+/// checks where it sits: `<region>/<bank>.toml`, the region its directory,
+/// the ID `<region>-<bank>` or `<region>-<bank>-…`.
+fn load_file(path: &str, text: &str) -> Result<Preset, LoadError> {
+    let location = || LoadError::Location {
+        path: path.to_owned(),
+    };
+    let (directory, file) = path.split_once('/').ok_or_else(location)?;
+    let stem = file.strip_suffix(".toml").ok_or_else(location)?;
+    if !is_slug(directory) || !is_slug(stem) {
+        return Err(location());
+    }
+
+    let preset = Preset::from_toml(text).map_err(|error| LoadError::Preset {
+        path: path.to_owned(),
+        error,
+    })?;
+    if preset.region != directory {
+        return Err(LoadError::Region {
+            path: path.to_owned(),
+            region: preset.region,
+            directory: directory.to_owned(),
+        });
+    }
+    let expected = format!("{directory}-{stem}");
+    let id_ok = preset
+        .id
+        .strip_prefix(&expected)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'));
+    if !id_ok {
+        return Err(LoadError::IdFileName {
+            path: path.to_owned(),
+            id: preset.id,
+            expected,
+        });
+    }
+    Ok(preset)
 }
 
 impl<'a> IntoIterator for &'a Presets {

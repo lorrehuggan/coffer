@@ -5,6 +5,7 @@
 pub mod accounts;
 pub mod cli;
 pub mod format;
+pub mod import;
 pub mod inbox;
 pub mod settings;
 pub mod shell;

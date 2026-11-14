@@ -24,6 +24,11 @@
 //! database, and the shell saves them again shortly after they change and
 //! when the window closes.
 //!
+//! Importing (M3.4): ⌘I, the Transactions toolbar's Import, or a file
+//! dropped anywhere on the window opens the Import dialog
+//! ([`crate::import::dialog`]); after an import the accounts panel and
+//! Transactions read the database again, and the notification offers Undo.
+//!
 //! It also owns the accounts ([`Accounts`], M3.2), which the panel, the
 //! Transactions inspector and the account dialogs share, and opens those
 //! dialogs over everything when the panel or inspector asks; and Settings
@@ -41,15 +46,19 @@ use gpui_kit::AnyView;
 use gpui_kit::component::window_border;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    Action, App, AppContext as _, Bounds, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyBinding, KeyBindingContextPredicate, ParentElement as _, Render, SharedString,
-    Styled as _, Subscription, Task, Window, WindowOptions, div, px, size,
+    Action, App, AppContext as _, Bounds, Context, Entity, ExternalPaths, FocusHandle,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyBindingContextPredicate,
+    ParentElement as _, Render, SharedString, Styled as _, Subscription, Task, WeakEntity, Window,
+    WindowOptions, div, px, size,
 };
 
 use crate::accounts::add_balance::AddBalanceDialog;
 use crate::accounts::new_account::NewAccountDialog;
 use crate::accounts::store::AccountStore;
 use crate::accounts::{self, Accounts, AccountsEvent, DialogClosed};
+use crate::import::dialog::ImportDialog;
+use crate::import::store::ImportStore;
+use crate::import::{self, Imports, ImportsChanged};
 use crate::inbox::store::InboxStore;
 use crate::inbox::view::InboxView;
 use crate::inbox::{self, Inbox};
@@ -99,6 +108,8 @@ gpui_kit::actions!(
         ShowRules,
         /// ⌘,: open Settings.
         OpenSettings,
+        /// ⌘I: import a statement (M3.4).
+        ImportStatement,
     ]
 );
 
@@ -215,7 +226,7 @@ impl View {
 /// Binds the shell's shortcuts and the Transactions table's keys. Call once,
 /// before [`open`] or the first [`ShellView`].
 pub fn init(cx: &mut App) {
-    let bindings: [(&str, Box<dyn Action>); 9] = [
+    let bindings: [(&str, Box<dyn Action>); 10] = [
         ("secondary-1", Box::new(ShowOverview)),
         ("secondary-2", Box::new(ShowTransactions)),
         ("secondary-3", Box::new(ShowTrends)),
@@ -225,6 +236,7 @@ pub fn init(cx: &mut App) {
         ("secondary-7", Box::new(ShowReviews)),
         ("secondary-8", Box::new(ShowRules)),
         ("secondary-,", Box::new(OpenSettings)),
+        ("secondary-i", Box::new(ImportStatement)),
     ];
     let context = Rc::new(
         KeyBindingContextPredicate::parse(SHELL_CONTEXT).expect("the shell's key context parses"),
@@ -302,6 +314,9 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
             });
             let mut shell =
                 ShellView::with_all(view, accounts, source, inbox, settings, window, cx);
+            if let Ok(database) = paths::database_path() {
+                shell.import_into(ImportStore::new(database), cx);
+            }
             if let Some(store) = store {
                 shell.keep_window_state(store, window, cx);
             }
@@ -336,6 +351,11 @@ pub struct ShellView {
     settings: Entity<SettingsView>,
     /// The dialog open over the window, and its subscription.
     dialog: Option<(AnyView, Subscription)>,
+    /// Where imports go, and the notification after one (M3.4).
+    imports: Entity<Imports>,
+    /// The Import dialog while it's the one open, for a file dropped on
+    /// the window.
+    import_dialog: Option<WeakEntity<ImportDialog>>,
     /// The accounts panel's focus: a Tab stop where the arrow keys move the
     /// selected account.
     panel_focus: FocusHandle,
@@ -435,6 +455,9 @@ impl ShellView {
                 this.on_settings_event(event.clone(), window, cx)
             }),
         ];
+        let imports = cx.new(|_| Imports::sample());
+        let mut subscriptions = subscriptions;
+        subscriptions.push(Self::watch_imports(&imports, cx));
         let inbox_view = cx.new(|cx| InboxView::new(inbox.clone(), cx));
         if view == View::Inbox {
             inbox_view.read(cx).focus_handle().clone().focus(window, cx);
@@ -448,11 +471,83 @@ impl ShellView {
             inbox_view,
             settings,
             dialog: None,
+            imports,
+            import_dialog: None,
             panel_focus: cx.focus_handle(),
             focus,
             persistence: None,
             _subscriptions: subscriptions,
         }
+    }
+
+    /// Imports go into the database `store` opens from now on (without
+    /// one, the Import dialog shows the sample export and can't import).
+    pub fn import_into(&mut self, store: ImportStore, cx: &mut Context<Self>) {
+        self.imports = cx.new(|_| Imports::from_store(store));
+        let subscription = Self::watch_imports(&self.imports, cx);
+        self._subscriptions.push(subscription);
+    }
+
+    /// After an import or its undo, the panel and Transactions read the
+    /// database again.
+    fn watch_imports(imports: &Entity<Imports>, cx: &mut Context<Self>) -> Subscription {
+        cx.subscribe(imports, |this, _, _: &ImportsChanged, cx| {
+            this.accounts.update(cx, |accounts, cx| accounts.reload(cx));
+            this.transactions
+                .update(cx, |transactions, cx| transactions.reload(cx));
+            cx.notify();
+        })
+    }
+
+    /// Where imports go, and the notification after one.
+    pub fn imports(&self) -> &Entity<Imports> {
+        &self.imports
+    }
+
+    /// Opens the Import dialog, reading `path` at once when given (a file
+    /// dropped on the window). A file dropped while it's open goes to it.
+    pub fn open_import(
+        &mut self,
+        path: Option<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(open) = self.import_dialog.as_ref().and_then(WeakEntity::upgrade) {
+            if let Some(path) = path {
+                open.update(cx, |dialog, cx| dialog.open_path(path, cx));
+            }
+            return;
+        }
+        if self.dialog.is_some() {
+            return;
+        }
+        let imports = self.imports.clone();
+        let selected = self.accounts.read(cx).selected();
+        let dialog = cx.new(|cx| ImportDialog::new(imports, selected, path, window, cx));
+        self.import_dialog = Some(dialog.downgrade());
+        self.open_dialog(dialog, window, cx);
+    }
+
+    /// Shows the sample Import dialog (snapshots): the sample export on
+    /// its Map step.
+    pub fn open_sample_import(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<ImportDialog> {
+        let imports = self.imports.clone();
+        let dialog = cx.new(|cx| ImportDialog::sample(imports, window, cx));
+        self.import_dialog = Some(dialog.downgrade());
+        self.open_dialog(dialog.clone(), window, cx);
+        dialog
+    }
+
+    /// Closes the open dialog, as its own Cancel would.
+    pub fn close_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.dialog = None;
+        self.import_dialog = None;
+        self.focus.focus(window, cx);
+        cx.notify();
     }
 
     /// The accounts the panel shows.
@@ -547,6 +642,7 @@ impl ShellView {
         let subscription =
             cx.subscribe_in(&dialog, window, |this, _, _: &DialogClosed, window, cx| {
                 this.dialog = None;
+                this.import_dialog = None;
                 this.focus.focus(window, cx);
                 cx.notify();
             });
@@ -763,7 +859,9 @@ fn status_bar(ai_on: bool, cx: &mut Context<ShellView>) -> StatusBar {
 impl Render for ShellView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = self.view;
+        let notice = import::notice_layer(&self.imports, cx);
         let body = div()
+            .relative()
             .flex()
             .flex_1()
             .min_h_0()
@@ -783,7 +881,8 @@ impl Render for ShellView {
                 View::Inbox => this.child(self.inbox_view.clone()),
                 View::Settings => this.child(self.settings.clone()),
                 _ => this.child(self.render_unbuilt()),
-            });
+            })
+            .children(notice);
         window_border().child(
             div()
                 .key_context(SHELL_CONTEXT)
@@ -818,6 +917,15 @@ impl Render for ShellView {
                 )
                 .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
                     this.show(View::Settings, window, cx)
+                }))
+                .on_action(cx.listener(|this, _: &ImportStatement, window, cx| {
+                    this.open_import(None, window, cx)
+                }))
+                // A statement dropped anywhere on the window (`6J4-0`).
+                .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                    if let Some(path) = paths.paths().first().cloned() {
+                        this.open_import(Some(path), window, cx);
+                    }
                 }))
                 .size_full()
                 .flex()

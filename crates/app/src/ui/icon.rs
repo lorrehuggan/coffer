@@ -97,6 +97,19 @@ pub enum Glyph {
     Alert,
     /// Dismiss a notification (Paper `HF9-0`). 12px.
     Dismiss,
+    /// The Import drop zone's well: an arrow down onto a line (Paper
+    /// `6JV-0`). 14px.
+    Download,
+    /// Information: a circle with an i, the import's "Not reconciled"
+    /// (Paper `6N3-0`). 14px.
+    Info,
+    /// The import's "Reconciled": a 14px check (Paper `6NI-0`).
+    Reconciled,
+    /// The import's "Balances don't match": a circle with an exclamation
+    /// mark (Paper `6NP-0`). 14px.
+    Mismatch,
+    /// The import's locked period: a 14px lock (Paper `6NX-0`).
+    LockedPeriod,
 }
 
 impl Glyph {
@@ -131,7 +144,13 @@ impl Glyph {
             Self::Close | Self::Minimize | Self::Maximize | Self::Lock | Self::YouSet => {
                 size::ICON_XS
             }
-            Self::Settings | Self::Warning => size::ICON_MD,
+            Self::Settings
+            | Self::Warning
+            | Self::Download
+            | Self::Info
+            | Self::Reconciled
+            | Self::Mismatch
+            | Self::LockedPeriod => size::ICON_MD,
             Self::ChevronDown => size::MARKER,
             Self::Panel | Self::Mark => size::ICON_LG,
         }
@@ -280,6 +299,26 @@ impl Glyph {
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
                 r#"<path d="M3 3L9 9M9 3L3 9"/></svg>"#
             ),
+            Self::Download => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M7 2V9M4 6L7 9L10 6M2.5 11.5H11.5"/></svg>"#
+            ),
+            Self::Info => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">"#,
+                r#"<circle cx="7" cy="7" r="5.5"/><path d="M7 6.25V9.75M7 4.25V4.3"/></svg>"#
+            ),
+            Self::Reconciled => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">"#,
+                r#"<path d="M3 7.25L6 10.25L11 4.25"/></svg>"#
+            ),
+            Self::Mismatch => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">"#,
+                r#"<circle cx="7" cy="7" r="5.5"/><path d="M7 4.25V7.75M7 9.7V9.75"/></svg>"#
+            ),
+            Self::LockedPeriod => concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">"#,
+                r#"<rect x="3" y="6.25" width="8" height="5.25" rx="1.25"/><path d="M4.75 6.25V4.75C4.75 3.5 5.75 2.5 7 2.5C8.25 2.5 9.25 3.5 9.25 4.75V6.25"/></svg>"#
+            ),
         }
     }
 
@@ -307,7 +346,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Glyph; 34] = [
+    const ALL: [Glyph; 39] = [
         Glyph::Account,
         Glyph::Pot,
         Glyph::Plus,
@@ -342,6 +381,11 @@ mod tests {
         Glyph::Copy,
         Glyph::Alert,
         Glyph::Dismiss,
+        Glyph::Download,
+        Glyph::Info,
+        Glyph::Reconciled,
+        Glyph::Mismatch,
+        Glyph::LockedPeriod,
     ];
 
     /// The `viewBox` side in the markup, which `size` must match so strokes
