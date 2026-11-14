@@ -90,7 +90,7 @@ key_enum! {
 
 impl AliasKind {
     /// The rule match kind whose validation an alias pattern shares.
-    const fn match_kind(self) -> MatchKind {
+    pub(crate) const fn match_kind(self) -> MatchKind {
         match self {
             AliasKind::Exact => MatchKind::Is,
             AliasKind::Prefix => MatchKind::StartsWith,

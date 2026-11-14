@@ -1238,6 +1238,57 @@ Everything else follows `DESIGN.md` → "Accounts panel" or an earlier record.
    selection. The table isn't filtered by it until it reads the database (M3.3); on the
    views without an inspector, selection only highlights the row.
 
+### Decision record: Inbox (2026-11-14)
+
+M3.6 and M3.14. Marked **(user)**: decided by the user on 2026-11-14 when asked before
+the build. Everything else follows `DESIGN.md` → "Inbox", "Inbox impact preview" and the
+"Inbox impact preview" record above. No migration.
+
+1. **The preview lists, core computes (`inbox::preview`).** `impact` counts; `preview`
+   lists the rows approving would change (a rule's or a name's matches, a
+   categorisation's items), what each has now and after, the rows left alone because the
+   user set them, the spending each category gains or loses, the rule that decides a
+   rule's matches today, the categorisations a rule settles, a wide rule summed by
+   merchant (the first 3, the rest, the ones you set), and a transfer's or refund's
+   effect on its month. It plans with the approval's own code in a rolled-back
+   transaction, so the list can't drift from what approving does. Up to 10 matches are
+   listed, else the newest 6. `describe` resolves what any suggestion names (decided ones
+   too); `covered_by` finds the pending rule that would settle a categorisation.
+2. **Approving a rule from the Inbox applies it to history.** As the D6.6 preview says
+   ("Changes 5 past transactions"): `ApproveOptions { apply_to_history: true }`, never
+   over a category the user set (point 1 above). The CLI keeps `--apply-to-history`
+   opt-in.
+3. **Approve all and Reject all are all or nothing**, per group (one kind from one
+   source): `approve_all` and a new `reject_all` in one DB transaction. Approve all leaves
+   out wide rules and any suggestion that can't be approved now. A suggestion a rule
+   earlier in the list settled is skipped, as `approve_all` already does.
+4. **No undo yet (user).** Undoing an approval would have to remove the rule, alias,
+   link or transfer it made as well as revert its batch, and V13's trigger keeps a
+   decided suggestion decided, so it needs a migration and its own item. After an
+   approval the D6.3 bar says what changed, without Undo; the D6.6 copy that offers an
+   undo is left out.
+5. **A categorisation with several items is one row (user)**: "N transactions", opening
+   in place like a rule with each transaction listed. Approving it approves every item,
+   as core always has.
+6. **Category colours are ranked when read (user).** `reporting::palette`: the six
+   spending categories with the most spent in the 12 months to today get `chart-1` …
+   `chart-6`, the rest the "Other" marker. Not stored yet, so they can change as spending
+   does; storing them on the category ("Data visualisation") is still to come, and M3.3
+   can use the same function.
+7. **Untrusted text is plain text.** Rationales, patterns, names, client names and bank
+   text go through `envelope::shown` (the CLI's stripping, moved to core): control,
+   invisible and bidi characters removed, whitespace collapsed, cut to a length. GPUI
+   draws text without markup or links, and nothing in it is acted on.
+8. **The app holds no connection (as M3.2).** `inbox::store::InboxStore` opens the
+   database per call and checks the restore lock. The pending list is read with every
+   preview when the Inbox opens and after each decision, on the main thread (decision
+   record "Inbox impact preview", point 6). The tab's badge counts pending suggestions
+   from AI clients; Coffer's own aren't counted.
+9. **Left for later (user).** D6.4's CHECKS section (M3.12), "Show in Transactions"
+   (needs M3.3's filters) and "Edit in Rules…" (M3.7, M3.13) aren't drawn. Client display
+   names come with the AI access settings (M3.15); until then the Inbox shows the
+   `--client` name.
+
 ## Architecture
 
 ```

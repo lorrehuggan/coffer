@@ -1024,6 +1024,26 @@ replaced by filters:
   contains UBER", Account, Date) with a caption that approving changes only this
   transaction; Raw description; "One transaction" + outline "Show in Transactions". D6.6
   replaces the caption with an "If you approve" section: see "Inbox impact preview".
+- **Built in M3.6/M3.14** (`crates/app/src/inbox/`; `ARCHITECTURE.md` → "Decision
+  record: Inbox"): the panel, groups, open preview and inspector of `564-0`, `ABK-0`,
+  `DL8-0` and `EWZ-0`, from the database. Groups are per kind *and* source, so each
+  footer names one source. Left out until their items (user, 2026-11-14): CHECKS (M3.12),
+  "Show N in Transactions" (M3.3), "Edit in Rules…" (M3.7). Client names are the
+  `--client` names until display names (M3.15), so the card header reads
+  "claude-code · 2h ago". **Composed from existing specs, not drawn** (user, 2026-11-14):
+  - *After approving*: D6.3's undo bar with no Undo button, and the D6.6 captions drop
+    "One change you can undo" and "open it in Rules"; no approval can be undone yet.
+  - *Approved / Rejected*: the same groups, read-only: no NOW values, footers or action
+    buttons; the action lane shows the decision date (mono 11/14 `text-muted`). The
+    inspector shows a Decision section (date, the user's reason) instead of the buttons.
+  - *Several items in one categorisation*: one row, "N transactions" in the item lane,
+    "Several" where the items differ; selected, it opens like a rule with each
+    transaction (BANK TEXT · NOW · AFTER · DATE · AMOUNT).
+  - *Empty*: the Empty state component (`13L-0`) centred on the canvas ("Nothing to
+    review", "No approved suggestions", "Nothing matches these filters"); nothing
+    selected: one caption in the inspector.
+  - *Coffer's own rows*: the suggested value in `text-secondary` with the sparkle's slot
+    empty, and ✓ in `text`, so no moldavite shows.
 
 **Import** (`5ZQ-0` map step over Transactions; states board `6J4-0`). A dialog
 (`--container-dialog-wide`, 760px) over the window, backdrop `chrome` at `opacity-muted`

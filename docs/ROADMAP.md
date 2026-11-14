@@ -721,7 +721,16 @@ Every tool call appears in the access log.
 - ⬜ M3.4 Import flow: pick file → detect/choose preset → column-mapping screen with live
   preview → dedupe/reconcile summary → commit
 - ⬜ M3.5 Save/export a mapping as a preset
-- ⬜ M3.6 Inbox: bulk approve/reject AI suggestions
+- ✅ M3.6 Inbox: bulk approve/reject AI suggestions. `crates/app/src/inbox/`: the panel
+  (INBOX Pending/Approved/Rejected, KIND, SOURCE as filters), the groups (one per kind and
+  source, widest reach first) with Approve all (n) / Reject all, all or none
+  (`inbox::approve_all`, new `inbox::reject_all`), row ✓/✕ on hover and selection, A / R /
+  ↑↓, the agent card and Coffer's neutral one, Approved and Rejected read-only; the tab's
+  badge counts agents' pending suggestions. `InboxStore` opens the database per call. A
+  rule approved here is applied to history, never over a category you set. No undo yet,
+  no CHECKS, Show in Transactions or Edit in Rules (user). Snapshots (`inbox-*`) checked
+  by eye against `564-0`, `ABK-0`, `DL8-0`, `EWZ-0`; the window itself only
+  build-verified. Decisions: `ARCHITECTURE.md` → "Decision record: Inbox"
 - ⬜ M3.7 Rules and categories editors
 - ⬜ M3.8 Transfer-pair confirmation
 - ⬜ M3.9 Split editor (the remaining amount fills in automatically; lines are locked to the
@@ -734,8 +743,15 @@ Every tool call appears in the access log.
   reconciliation: assertion results per account, lock and unlock
 - ⬜ M3.13 Rules: "Create a rule from this edit?", apply-to-history preview, merchant alias
   editor
-- ⬜ M3.14 Inbox impact preview: what approving each suggestion would change (e.g. "changes
-  143 past transactions; 12 have a category you set")
+- ✅ M3.14 Inbox impact preview: what approving each suggestion would change (e.g. "changes
+  143 past transactions; 12 have a category you set"). `coffer_core::inbox::preview`
+  (`describe`, `preview`, `covered_by`): the rows a rule, name or categorisation would
+  change with now and after and the ones it leaves alone, spending by category, what
+  decides a rule's matches today, what it settles, a wide rule summed by merchant, a
+  transfer's or refund's month; computed when shown, by the approval's own code rolled
+  back. In the app: the selected suggestion opens in place, the wide-rule warning, and
+  the inspector's "If you approve". Category colours ranked at read time
+  (`reporting::palette`, user); untrusted text through `envelope::shown`
 - ⬜ M3.15 AI access settings: enabled clients, access levels, revoke, kill switch, and the
   access log
 - ⬜ M3.16 Backups (list, create, restore with the M1.28 checks) and the export dialog

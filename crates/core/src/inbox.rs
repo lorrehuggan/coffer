@@ -47,6 +47,7 @@ mod approve;
 mod impact;
 pub mod own;
 pub mod payload;
+pub mod preview;
 mod reports;
 
 use std::fmt;
@@ -60,7 +61,9 @@ use crate::id::ChangeBatchId;
 use crate::mcp_client::{ClientName, RESERVED_CLIENT_NAME};
 use crate::rule::{UnknownKey, key_enum};
 
-pub use approve::{Applied, ApproveError, ApproveOptions, Approved, approve, approve_all, reject};
+pub use approve::{
+    Applied, ApproveError, ApproveOptions, Approved, approve, approve_all, reject, reject_all,
+};
 pub use impact::{
     AliasImpact, CategorizationImpact, Detail, Impact, LinkImpact, RuleImpact, TransferImpact,
     WIDE_MERCHANTS, impact,
@@ -477,6 +480,64 @@ pub fn list(db: &Database, filter: &Filter) -> Result<Vec<Suggestion>, Error> {
         )?
         .collect::<Result<Vec<_>, _>>()?;
     rows.into_iter().collect()
+}
+
+/// How many suggestions the Inbox's left panel counts: by status, and the
+/// pending ones by kind and by source.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Counts {
+    pub pending: usize,
+    pub approved: usize,
+    pub rejected: usize,
+    /// Pending suggestions by kind; kinds with none are left out.
+    pub pending_by_kind: std::collections::BTreeMap<SuggestionKind, usize>,
+    /// Suggestions by source (a client's name or [`COFFER_SOURCE`]) with
+    /// how many are pending: every source that filed one, any status.
+    pub by_source: std::collections::BTreeMap<String, usize>,
+}
+
+impl Counts {
+    /// Suggestions with `status`.
+    pub fn with_status(&self, status: SuggestionStatus) -> usize {
+        match status {
+            SuggestionStatus::Pending => self.pending,
+            SuggestionStatus::Approved => self.approved,
+            SuggestionStatus::Rejected => self.rejected,
+        }
+    }
+}
+
+/// The Inbox's counts ([`Counts`]).
+pub fn counts(db: &Database) -> Result<Counts, Error> {
+    let mut counts = Counts::default();
+    let mut statement = db.conn().prepare(
+        "SELECT status, kind, source_client, COUNT(*) FROM suggestion \
+         GROUP BY status, kind, source_client",
+    )?;
+    let mut rows = statement.query([])?;
+    while let Some(row) = rows.next()? {
+        let status: String = row.get(0)?;
+        let kind: String = row.get(1)?;
+        let source: String = row.get(2)?;
+        let count = usize::try_from(row.get::<_, i64>(3)?).unwrap_or(0);
+        let (Ok(status), Ok(kind)) = (
+            SuggestionStatus::from_str(&status),
+            SuggestionKind::from_str(&kind),
+        ) else {
+            continue;
+        };
+        let pending = counts.by_source.entry(source).or_default();
+        match status {
+            SuggestionStatus::Pending => {
+                counts.pending += count;
+                *pending += count;
+                *counts.pending_by_kind.entry(kind).or_default() += count;
+            }
+            SuggestionStatus::Approved => counts.approved += count,
+            SuggestionStatus::Rejected => counts.rejected += count,
+        }
+    }
+    Ok(counts)
 }
 
 #[cfg(test)]

@@ -723,26 +723,59 @@ pub fn reject(
     id: SuggestionId,
     reason: Option<&str>,
 ) -> Result<(), ApproveError> {
+    reject_all(db, &[id], reason).map_err(|error| match error {
+        ApproveError::InList { error, .. } => *error,
+        other => other,
+    })
+}
+
+/// Rejects every suggestion in `ids` with the same optional `reason`, in
+/// one DB transaction: all of them or, on any error, none (the Inbox's
+/// "Reject all"). The error is [`ApproveError::InList`], naming the
+/// suggestion that failed, or [`ApproveError::Repeated`].
+pub fn reject_all(
+    db: &mut Database,
+    ids: &[SuggestionId],
+    reason: Option<&str>,
+) -> Result<(), ApproveError> {
     let reason = reason.map(str::trim);
     if reason.is_some_and(|text| text.is_empty() || text.chars().count() > MAX_REASON_CHARS) {
         return Err(ApproveError::Reason);
     }
+    let mut seen = BTreeSet::new();
+    if let Some(&repeated) = ids.iter().find(|id| !seen.insert(**id)) {
+        return Err(ApproveError::Repeated(repeated));
+    }
     let tx = db
         .conn_mut()
         .transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let suggestion = get_in(&tx, id)?;
+    for &id in ids {
+        reject_in(&tx, id, reason).map_err(|error| ApproveError::InList {
+            id,
+            error: Box::new(error),
+        })?;
+    }
+    tx.commit()?;
+    tracing::debug!(rejected = ids.len(), "rejected suggestions");
+    Ok(())
+}
+
+fn reject_in(
+    conn: &Connection,
+    id: SuggestionId,
+    reason: Option<&str>,
+) -> Result<(), ApproveError> {
+    let suggestion = get_in(conn, id)?;
     if suggestion.status != SuggestionStatus::Pending {
         return Err(ApproveError::NotPending {
             id,
             status: suggestion.status,
         });
     }
-    tx.execute(
+    conn.execute(
         "UPDATE suggestion SET status = 'rejected', decision_reason = ?1, \
          decided_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?2",
         rusqlite::params![reason, id],
     )?;
-    tx.commit()?;
-    tracing::debug!(suggestion = %id, "rejected a suggestion");
     Ok(())
 }

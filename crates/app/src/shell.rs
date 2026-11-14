@@ -14,9 +14,9 @@
 //! (Ctrl on Linux and Windows). Clicking the Settings button while Settings
 //! is open goes back to the view it was opened from.
 //!
-//! Transactions is the only screen built so far (D5, fixture data). The
-//! others show the shell around an [`EmptyState`] that says so, until their
-//! roadmap items land.
+//! Transactions (D5, fixture data) and the Inbox (M3.6, from the database)
+//! are built. The others show the shell around an [`EmptyState`] that says
+//! so, until their roadmap items land.
 //!
 //! The shell owns which view is open and the window's saved state
 //! ([`window_state`]): [`open`] restores the bounds and the view from the
@@ -47,6 +47,9 @@ use crate::accounts::add_balance::AddBalanceDialog;
 use crate::accounts::new_account::NewAccountDialog;
 use crate::accounts::store::AccountStore;
 use crate::accounts::{self, Accounts, AccountsEvent, DialogClosed};
+use crate::inbox::store::InboxStore;
+use crate::inbox::view::InboxView;
+use crate::inbox::{self, Inbox};
 use crate::theme::tokens::{color, size as token_size, typography};
 use crate::transactions::{self, TransactionsView};
 use crate::ui::button::IconButton;
@@ -195,7 +198,7 @@ impl View {
 
     /// Whether its screen exists yet.
     pub fn is_built(self) -> bool {
-        self == View::Transactions
+        matches!(self, View::Transactions | View::Inbox)
     }
 }
 
@@ -225,6 +228,7 @@ pub fn init(cx: &mut App) {
     cx.bind_keys(bindings);
     transactions::init(cx);
     accounts::init(cx);
+    inbox::init(cx);
 }
 
 /// Opens Coffer's window as it was last left: the saved bounds and view
@@ -241,6 +245,10 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
     let accounts = match paths::database_path() {
         Ok(database) => Accounts::from_store(AccountStore::new(database)),
         Err(error) => Accounts::unavailable(format!("Coffer has no data folder: {error}")),
+    };
+    let inbox = match paths::database_path() {
+        Ok(database) => Inbox::from_store(InboxStore::new(database)),
+        Err(error) => Inbox::unavailable(format!("Coffer has no data folder: {error}")),
     };
     let saved = store.as_ref().and_then(WindowStore::load);
     let fallback = Bounds::centered(None, size(px(1440.), px(900.)), cx);
@@ -265,7 +273,8 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
     gpui_kit::open_window(options, cx, move |window, cx| {
         cx.new(|cx| {
             let accounts = cx.new(|_| accounts);
-            let mut shell = ShellView::with_accounts(view, accounts, window, cx);
+            let inbox = cx.new(|_| inbox);
+            let mut shell = ShellView::with_data(view, accounts, inbox, window, cx);
             if let Some(store) = store {
                 shell.keep_window_state(store, window, cx);
             }
@@ -293,6 +302,10 @@ pub struct ShellView {
     before_settings: View,
     transactions: Entity<TransactionsView>,
     accounts: Entity<Accounts>,
+    /// The suggestions (M3.6), which the Inbox's panel, canvas and the
+    /// tab's badge share.
+    inbox: Entity<Inbox>,
+    inbox_view: Entity<InboxView>,
     /// The dialog open over the window, and its subscription.
     dialog: Option<(AnyView, Subscription)>,
     /// The accounts panel's focus: a Tab stop where the arrow keys move the
@@ -311,10 +324,23 @@ impl ShellView {
         Self::with_accounts(view, accounts, window, cx)
     }
 
-    /// The shell showing `view` with `accounts` in its panel.
+    /// The shell showing `view` with `accounts` in its panel and an empty
+    /// Inbox.
     pub fn with_accounts(
         view: View,
         accounts: Entity<Accounts>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let inbox = cx.new(|_| Inbox::empty());
+        Self::with_data(view, accounts, inbox, window, cx)
+    }
+
+    /// The shell showing `view` with `accounts` and `inbox`.
+    pub fn with_data(
+        view: View,
+        accounts: Entity<Accounts>,
+        inbox: Entity<Inbox>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -331,12 +357,19 @@ impl ShellView {
                 this.on_accounts_event(*event, window, cx)
             }),
             cx.observe(&accounts, |_, _, cx| cx.notify()),
+            cx.observe(&inbox, |_, _, cx| cx.notify()),
         ];
+        let inbox_view = cx.new(|cx| InboxView::new(inbox.clone(), cx));
+        if view == View::Inbox {
+            inbox_view.read(cx).focus_handle().clone().focus(window, cx);
+        }
         Self {
             view,
             before_settings: View::default(),
             transactions,
             accounts,
+            inbox,
+            inbox_view,
             dialog: None,
             panel_focus: cx.focus_handle(),
             focus,
@@ -348,6 +381,11 @@ impl ShellView {
     /// The accounts the panel shows.
     pub fn accounts(&self) -> &Entity<Accounts> {
         &self.accounts
+    }
+
+    /// The suggestions the Inbox shows.
+    pub fn inbox(&self) -> &Entity<Inbox> {
+        &self.inbox
     }
 
     /// The dialog open over the window, if any.
@@ -415,7 +453,19 @@ impl ShellView {
         if self.view == view {
             return;
         }
-        self.focus.focus(window, cx);
+        if view == View::Inbox {
+            // What approving would change is computed when shown (decision
+            // record "Inbox impact preview", point 6), and A, R and ↑↓ work
+            // at once.
+            self.inbox.update(cx, |inbox, cx| inbox.reload(cx));
+            self.inbox_view
+                .read(cx)
+                .focus_handle()
+                .clone()
+                .focus(window, cx);
+        } else {
+            self.focus.focus(window, cx);
+        }
         if view == View::Settings {
             self.before_settings = self.view;
         }
@@ -517,9 +567,12 @@ impl ShellView {
                     .active(self.view == view)
                     .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)));
                 if view == View::Inbox {
-                    // Fixture: the pending suggestions on the Paper
-                    // artboards, until the Inbox reads them (M3.6).
-                    tab = tab.badge("12");
+                    // Pending suggestions from AI clients; Coffer's own
+                    // don't count (`DESIGN.md` → "Inbox impact preview").
+                    let pending = self.inbox.read(cx).badge();
+                    if pending > 0 {
+                        tab = tab.badge(SharedString::from(pending.to_string()));
+                    }
                 }
                 bar.tab(tab)
             },
@@ -589,12 +642,13 @@ impl Render for ShellView {
                     cx,
                 ))
             })
-            .map(|this| {
-                if view == View::Transactions {
-                    this.child(self.transactions.clone())
-                } else {
-                    this.child(self.render_unbuilt())
-                }
+            .when(view == View::Inbox, |this| {
+                this.child(inbox::panel::render(&self.inbox, cx))
+            })
+            .map(|this| match view {
+                View::Transactions => this.child(self.transactions.clone()),
+                View::Inbox => this.child(self.inbox_view.clone()),
+                _ => this.child(self.render_unbuilt()),
             });
         window_border().child(
             div()
