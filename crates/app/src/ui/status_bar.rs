@@ -7,7 +7,7 @@ use std::rc::Rc;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce, Rgba, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, div,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
 };
 
 use crate::theme::tokens::{color, radius, size, spacing, typography};
@@ -105,6 +105,13 @@ impl StatusItem {
         self
     }
 
+    /// Leads the text with a `danger` dot: a balance check failing (D6.4,
+    /// Paper `8SE-0`).
+    pub fn danger_dot(mut self) -> Self {
+        self.lead = Some(Lead::Dot(color::DANGER));
+        self
+    }
+
     /// Leads the text with `glyph` in `text-muted`: the `refused` icon
     /// before "AI access off" (Paper `GXO-0`).
     pub fn muted_icon(mut self, glyph: Glyph) -> Self {
@@ -152,6 +159,8 @@ impl StatusItem {
             Some(action) => vec![
                 div()
                     .id(gpui_kit::ElementId::Name(action.id))
+                    // Lets UI tests find it; a no-op outside them.
+                    .test_support()
                     .flex()
                     .flex_none()
                     .items_center()

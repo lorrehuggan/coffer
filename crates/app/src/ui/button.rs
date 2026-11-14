@@ -415,6 +415,7 @@ pub struct Button {
     label: SharedString,
     variant: ButtonVariant,
     shortcut: Option<SharedString>,
+    icon: Option<Glyph>,
 }
 
 impl Button {
@@ -425,7 +426,15 @@ impl Button {
             label: label.into(),
             variant: ButtonVariant::default(),
             shortcut: None,
+            icon: None,
         }
+    }
+
+    /// Leads the label with `glyph` in the label's colour, 6px before it
+    /// (D6.4's "`lock` Lock through 31 Oct…", Paper `98K-0`).
+    pub fn icon(mut self, glyph: Glyph) -> Self {
+        self.icon = Some(glyph);
+        self
     }
 
     /// Sets which row of the button table this is.
@@ -517,7 +526,16 @@ impl RenderOnce for Button {
                 .child(glyph.render().text_color(paint(icon_color)))
                 .child(label)
                 .into_any_element(),
-            None => label.into_any_element(),
+            None => match self.icon {
+                Some(glyph) => div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing::S1_5)
+                    .child(glyph.render().text_color(paint(look.foreground)))
+                    .child(label)
+                    .into_any_element(),
+                None => label.into_any_element(),
+            },
         };
         let content = match self.shortcut {
             Some(keys) => {

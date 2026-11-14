@@ -56,6 +56,10 @@ use crate::accounts::add_balance::AddBalanceDialog;
 use crate::accounts::new_account::NewAccountDialog;
 use crate::accounts::store::AccountStore;
 use crate::accounts::{self, Accounts, AccountsEvent, DialogClosed};
+use crate::checks::lock::{LockDialog, UnlockDialog};
+use crate::checks::store::ChecksStore;
+use crate::checks::view::ChecksView;
+use crate::checks::{self, Checks, ChecksEvent, Queue};
 use crate::import::dialog::ImportDialog;
 use crate::import::store::ImportStore;
 use crate::import::{self, Imports, ImportsChanged};
@@ -251,6 +255,7 @@ pub fn init(cx: &mut App) {
     transactions::init(cx);
     accounts::init(cx);
     inbox::init(cx);
+    checks::init(cx);
     settings::init(cx);
 }
 
@@ -280,6 +285,10 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
     let inbox = match paths::database_path() {
         Ok(database) => Inbox::from_store(InboxStore::new(database)),
         Err(error) => Inbox::unavailable(format!("Coffer has no data folder: {error}")),
+    };
+    let checks = match paths::database_path() {
+        Ok(database) => Checks::from_store(ChecksStore::new(database)),
+        Err(error) => Checks::unavailable(format!("Coffer has no data folder: {error}")),
     };
     let settings_store = paths::database_path().map(SettingsStore::new);
     let saved = store.as_ref().and_then(WindowStore::load);
@@ -317,6 +326,8 @@ pub fn open(cx: &mut App) -> gpui_kit::Result<()> {
             if let Ok(database) = paths::database_path() {
                 shell.import_into(ImportStore::new(database), cx);
             }
+            let checks = cx.new(|_| checks);
+            shell.install_checks(checks, window, cx);
             if let Some(store) = store {
                 shell.keep_window_state(store, window, cx);
             }
@@ -348,6 +359,11 @@ pub struct ShellView {
     /// tab's badge share.
     inbox: Entity<Inbox>,
     inbox_view: Entity<InboxView>,
+    /// The review queues (M3.12), under CHECKS in the Inbox's panel, and
+    /// the status bar's failing balance checks.
+    checks: Entity<Checks>,
+    checks_view: Entity<ChecksView>,
+    checks_subscriptions: Vec<Subscription>,
     settings: Entity<SettingsView>,
     /// The dialog open over the window, and its subscription.
     dialog: Option<(AnyView, Subscription)>,
@@ -462,6 +478,8 @@ impl ShellView {
         if view == View::Inbox {
             inbox_view.read(cx).focus_handle().clone().focus(window, cx);
         }
+        let checks = cx.new(|_| Checks::empty());
+        let checks_view = cx.new(|cx| ChecksView::new(checks.clone(), cx));
         Self {
             view,
             before_settings: View::default(),
@@ -469,6 +487,9 @@ impl ShellView {
             accounts,
             inbox,
             inbox_view,
+            checks,
+            checks_view,
+            checks_subscriptions: Vec::new(),
             settings,
             dialog: None,
             imports,
@@ -495,6 +516,9 @@ impl ShellView {
             this.accounts.update(cx, |accounts, cx| accounts.reload(cx));
             this.transactions
                 .update(cx, |transactions, cx| transactions.reload(cx));
+            // An import or its undo adds or clears possible duplicates and
+            // changes the balance checks.
+            this.checks.update(cx, |checks, cx| checks.reload(cx));
             cx.notify();
         })
     }
@@ -560,6 +584,81 @@ impl ShellView {
         &self.inbox
     }
 
+    /// Uses `checks` for the review queues (the shell starts with empty
+    /// ones that read nothing).
+    pub fn install_checks(
+        &mut self,
+        checks: Entity<Checks>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.checks_subscriptions = vec![
+            cx.subscribe_in(&checks, window, |this, _, event, window, cx| {
+                this.on_checks_event(*event, window, cx)
+            }),
+            cx.observe(&checks, |_, _, cx| cx.notify()),
+        ];
+        self.checks_view = cx.new(|cx| ChecksView::new(checks.clone(), cx));
+        self.checks = checks;
+        cx.notify();
+    }
+
+    /// The review queues.
+    pub fn checks(&self) -> &Entity<Checks> {
+        &self.checks
+    }
+
+    fn on_checks_event(&mut self, event: ChecksEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            ChecksEvent::Shown(queue) => {
+                if self.view != View::Inbox {
+                    self.show(View::Inbox, window, cx);
+                }
+                let focus = match queue {
+                    Some(_) => self.checks_view.read(cx).focus_handle().clone(),
+                    None => self.inbox_view.read(cx).focus_handle().clone(),
+                };
+                focus.focus(window, cx);
+                cx.notify();
+            }
+            ChecksEvent::LockRequested(account) => {
+                let checks = self.checks.clone();
+                let dialog = cx.new(|cx| LockDialog::new(checks, account, window, cx));
+                self.open_dialog(dialog, window, cx);
+            }
+            ChecksEvent::UnlockRequested(account) => {
+                let checks = self.checks.clone();
+                let dialog = cx.new(|cx| UnlockDialog::new(checks, account, window, cx));
+                self.open_dialog(dialog, window, cx);
+            }
+            ChecksEvent::AddBalanceRequested(account) => {
+                self.on_accounts_event(AccountsEvent::AddBalanceRequested(account), window, cx)
+            }
+            // A merge, an undo or a lock changed what the accounts panel
+            // and Transactions read.
+            ChecksEvent::Changed => {
+                self.accounts.update(cx, |accounts, cx| accounts.reload(cx));
+                self.transactions
+                    .update(cx, |transactions, cx| transactions.reload(cx));
+            }
+        }
+    }
+
+    /// Opens Balance checks on `account`'s failing check: the flagged dot
+    /// in the Accounts panel, and the status bar's failing checks.
+    pub fn show_balance_checks(
+        &mut self,
+        account: Option<coffer_core::id::AccountId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.show(View::Inbox, window, cx);
+        self.checks.update(cx, |checks, cx| match account {
+            Some(account) => checks.show_account(account, cx),
+            None => checks.show(Queue::Balances, cx),
+        });
+    }
+
     /// Settings: AI access, backups and export.
     pub fn settings(&self) -> &Entity<SettingsView> {
         &self.settings
@@ -592,6 +691,9 @@ impl ShellView {
                 let accounts = self.accounts.clone();
                 let dialog = cx.new(|cx| AddBalanceDialog::new(accounts, account, window, cx));
                 self.open_dialog(dialog, window, cx);
+            }
+            AccountsEvent::ChecksRequested(account) => {
+                self.show_balance_checks(Some(account), window, cx)
             }
         }
     }
@@ -643,6 +745,8 @@ impl ShellView {
             cx.subscribe_in(&dialog, window, |this, _, _: &DialogClosed, window, cx| {
                 this.dialog = None;
                 this.import_dialog = None;
+                // A balance added or a lock changed: the checks read again.
+                this.checks.update(cx, |checks, cx| checks.reload(cx));
                 this.focus.focus(window, cx);
                 cx.notify();
             });
@@ -673,11 +777,14 @@ impl ShellView {
             // record "Inbox impact preview", point 6), and A, R and ↑↓ work
             // at once.
             self.inbox.update(cx, |inbox, cx| inbox.reload(cx));
-            self.inbox_view
-                .read(cx)
-                .focus_handle()
-                .clone()
-                .focus(window, cx);
+            // The CHECKS counts, and the open queue, are read again too.
+            self.checks.update(cx, |checks, cx| checks.reload(cx));
+            let focus = if self.checks.read(cx).queue().is_some() {
+                self.checks_view.read(cx).focus_handle().clone()
+            } else {
+                self.inbox_view.read(cx).focus_handle().clone()
+            };
+            focus.focus(window, cx);
         } else {
             self.focus.focus(window, cx);
         }
@@ -830,7 +937,7 @@ impl ShellView {
 /// until each reads the database. The first item follows the kill switch
 /// (M3.15): "AI access off" with the `refused` icon while it's off
 /// (Paper `GW6-0`); either opens Settings → AI clients.
-fn status_bar(ai_on: bool, cx: &mut Context<ShellView>) -> StatusBar {
+fn status_bar(ai_on: bool, failing: usize, cx: &mut Context<ShellView>) -> StatusBar {
     // The fixture holds a page of the month; the status bar counts the
     // whole import, as Paper does.
     const IMPORTED: usize = 328;
@@ -843,9 +950,24 @@ fn status_bar(ai_on: bool, cx: &mut Context<ShellView>) -> StatusBar {
     } else {
         StatusItem::text("AI access off").muted_icon(Glyph::Refused)
     };
+    // A failing balance check replaces "Reconciled" (`DESIGN.md` → "Review
+    // queues"), and opens Balance checks.
+    let checks = if failing > 0 {
+        let shell = cx.entity().downgrade();
+        StatusItem::text(format!(
+            "{failing} balance {} failing",
+            if failing == 1 { "check" } else { "checks" }
+        ))
+        .danger_dot()
+        .on_click("status-balance-checks", move |window, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.show_balance_checks(None, window, cx));
+        })
+    } else {
+        StatusItem::text("Reconciled").icon(Glyph::Check)
+    };
     StatusBar::new()
         .start(ai.on_click("status-ai-access", open))
-        .start(StatusItem::text("Reconciled").icon(Glyph::Check))
+        .start(checks)
         .start(StatusItem::text(
             "Imported 2 min ago from monzo-november.csv",
         ))
@@ -874,10 +996,13 @@ impl Render for ShellView {
                 ))
             })
             .when(view == View::Inbox, |this| {
-                this.child(inbox::panel::render(&self.inbox, cx))
+                this.child(inbox::panel::render(&self.inbox, &self.checks, cx))
             })
             .map(|this| match view {
                 View::Transactions => this.child(self.transactions.clone()),
+                View::Inbox if self.checks.read(cx).queue().is_some() => {
+                    this.child(self.checks_view.clone())
+                }
                 View::Inbox => this.child(self.inbox_view.clone()),
                 View::Settings => this.child(self.settings.clone()),
                 _ => this.child(self.render_unbuilt()),
@@ -935,7 +1060,11 @@ impl Render for ShellView {
                 .text_color(color::TEXT)
                 .child(self.render_title_bar(cx))
                 .child(body)
-                .child(status_bar(self.settings.read(cx).ai_on(), cx))
+                .child(status_bar(
+                    self.settings.read(cx).ai_on(),
+                    self.checks.read(cx).failing(),
+                    cx,
+                ))
                 .when_some(
                     self.dialog.as_ref().map(|(view, _)| view.clone()),
                     |this, dialog| this.child(dialog),

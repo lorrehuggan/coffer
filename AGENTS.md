@@ -22,8 +22,9 @@ data and checked with Claude Code against a real Monzo export (2026-11-13). M3 h
 started: M3.1 (the app shell and window state), M3.2 (accounts management), M3.3 (the
 Transactions view on the database), M3.4 with M3.5 (the import flow and saving a
 mapping as a preset), M3.6 with M3.14 (the Inbox and its impact preview),
-M3.15 (AI access settings), M3.16 (backups and the export dialog) and M3.9 (the split
-editor, tags and notes in the inspector) are done.
+M3.9 (the split editor, tags and notes in the inspector), M3.12 (the review queues:
+possible duplicates and balance checks, under CHECKS in the Inbox), M3.15 (AI access
+settings) and M3.16 (backups and the export dialog) are done.
 The Cargo
 workspace below exists (M1.1). `crates/core` has the database setup (`db`, `paths`: data
 dir, WAL, permissions, migrations; M1.3), the initial schema
@@ -145,7 +146,16 @@ approve"), `text` (labels, untrusted text made plain with `envelope::shown`) and
 `fixture` (D6.6's sample suggestions, seeded through core into a scratch database). Its
 read model is core's `inbox::preview` (`describe`, `preview`, `covered_by`), plus
 `inbox::counts`, `inbox::reject_all` and `reporting::palette` (category colours ranked
-at read time). The other views show the shell and `ui::empty_state`. And
+at read time). The review queues (M3.12) are `crates/app/src/checks/`: `Checks` (the
+open queue, selections, merges, dismissals, undo and locks through
+`store::ChecksStore`, which opens the database per call), `duplicates` (the pair open
+side by side and "If you merge"), `balances` (checks per account, the failing window,
+the lock prompt), `lock` (the lock and unlock dialogs), `view` (M / N / ←→ / ↑↓, the
+undo bar), `text` and `fixture` (D6.4's sample accounts, seeded through core); the
+Inbox panel's CHECKS rows open them, the status bar counts failing checks and the
+accounts panel's flagged dot opens them. Their read model is core's `checks` (a pair's
+merge planned by `duplicate`'s own code and rolled back; each check's base, window and
+the pair that explains it; lockable dates). The other views show the shell and `ui::empty_state`. And
 `coffer --showcase` opens the component showcase. The CLI (`coffer_app::cli`, M1.18) has
 `import` (bundled and saved presets), `accounts` (`list`, `add`, `--preset` since M3.2), `undo-import`, `backup` (`--list`) and
 `restore <file> [--yes]` (M1.28) and `export --format csv|json` (M1.29), and since M2

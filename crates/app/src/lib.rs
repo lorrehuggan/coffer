@@ -3,6 +3,7 @@
 //! built from this crate.
 
 pub mod accounts;
+pub mod checks;
 pub mod cli;
 pub mod format;
 pub mod import;

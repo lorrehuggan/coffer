@@ -16,7 +16,8 @@ use gpui_kit::component::list::ListItem;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, ClickEvent, ElementId, HighlightStyle, InteractiveElement as _, IntoElement,
-    ParentElement as _, RenderOnce, Rgba, SharedString, Styled as _, StyledText, Window, div,
+    ParentElement as _, RenderOnce, Rgba, SharedString, StatefulInteractiveElement as _,
+    Styled as _, StyledText, Window, div,
 };
 
 use crate::theme::focus::{FocusRingExt as _, FocusRingPlacement};
@@ -107,6 +108,7 @@ pub struct ListRow {
     focus_visible: bool,
     preview: Option<PreviewState>,
     on_click: Option<ClickHandler>,
+    on_flag_click: Option<ClickHandler>,
 }
 
 impl ListRow {
@@ -127,6 +129,7 @@ impl ListRow {
             focus_visible: false,
             preview: None,
             on_click: None,
+            on_flag_click: None,
         }
     }
 
@@ -195,6 +198,17 @@ impl ListRow {
 
     /// Puts a 6px `danger` dot before the trailing value: something about
     /// the row needs attention, such as a failed balance check.
+    /// Runs `handler` when the flagged dot is clicked, instead of the
+    /// row's own click: the Accounts panel's dot opens the failing balance
+    /// check (`docs/DESIGN.md` → "Review queues").
+    pub fn on_flag_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_flag_click = Some(Box::new(handler));
+        self
+    }
+
     pub fn flagged(mut self, flagged: bool) -> Self {
         self.flagged = flagged;
         self
@@ -383,13 +397,22 @@ impl RenderOnce for ListRow {
                     .child(label_text(&self.label, self.label_suffix.as_ref())),
             )
             .when(self.flagged, |this| {
-                this.child(
-                    div()
-                        .flex_none()
-                        .size(size::DOT)
-                        .rounded(radius::LABEL)
-                        .bg(color::DANGER),
-                )
+                let dot = div()
+                    .flex_none()
+                    .size(size::DOT)
+                    .rounded(radius::LABEL)
+                    .bg(color::DANGER);
+                match self.on_flag_click {
+                    Some(handler) => this.child(
+                        dot.id(SharedString::from(format!("{}-flag", self.id)))
+                            .on_click(move |event, window, cx| {
+                                // The row under it would take the click too.
+                                cx.stop_propagation();
+                                handler(event, window, cx)
+                            }),
+                    ),
+                    None => this.child(dot),
+                }
             })
             .when_some(self.trailing, |this, value| {
                 // A selected row lifts its balance a step, as its label.

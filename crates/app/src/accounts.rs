@@ -64,6 +64,9 @@ pub enum AccountsEvent {
     NewAccountRequested,
     /// "Add balance…" in the inspector: open Add balance for the account.
     AddBalanceRequested(AccountId),
+    /// The flagged dot in the panel: open the account's failing balance
+    /// check in the Inbox's Balance checks (`DESIGN.md` → "Review queues").
+    ChecksRequested(AccountId),
 }
 
 /// A dialog is done: the change was saved, or the user cancelled. The
@@ -177,6 +180,11 @@ impl Accounts {
     /// Asks the shell to open Add balance for `account`.
     pub fn request_add_balance(&mut self, account: AccountId, cx: &mut Context<Self>) {
         cx.emit(AccountsEvent::AddBalanceRequested(account));
+    }
+
+    /// The flagged dot: ask the shell to open the account's balance checks.
+    pub fn request_checks(&mut self, account: AccountId, cx: &mut Context<Self>) {
+        cx.emit(AccountsEvent::ChecksRequested(account));
     }
 
     /// Reads the accounts again.

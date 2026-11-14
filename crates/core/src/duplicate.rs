@@ -648,7 +648,10 @@ fn candidate_from_row(row: &Row<'_>) -> rusqlite::Result<Candidate> {
     })
 }
 
-fn load_candidate(conn: &Connection, id: DuplicateCandidateId) -> Result<Candidate, Error> {
+pub(crate) fn load_candidate(
+    conn: &Connection,
+    id: DuplicateCandidateId,
+) -> Result<Candidate, Error> {
     conn.query_row(
         &format!("SELECT {CANDIDATE_COLUMNS} FROM duplicate_candidate c WHERE c.id = ?1"),
         [id],
@@ -691,9 +694,17 @@ pub fn of_transaction(db: &Database, transaction: TransactionId) -> Result<Vec<C
 /// The row a merge of candidate `id` keeps unless told otherwise (module
 /// docs, "Merging").
 pub fn default_keep(db: &Database, id: DuplicateCandidateId) -> Result<TransactionId, Error> {
-    let candidate = load_candidate(db.conn(), id)?;
-    let a = load_side(db.conn(), candidate.transaction_a)?;
-    let b = load_side(db.conn(), candidate.transaction_b)?;
+    default_keep_in(db.conn(), id)
+}
+
+/// [`default_keep`] in `conn`'s transaction.
+pub(crate) fn default_keep_in(
+    conn: &Connection,
+    id: DuplicateCandidateId,
+) -> Result<TransactionId, Error> {
+    let candidate = load_candidate(conn, id)?;
+    let a = load_side(conn, candidate.transaction_a)?;
+    let b = load_side(conn, candidate.transaction_b)?;
     Ok(best_sourced(&a, &b))
 }
 
@@ -886,7 +897,8 @@ impl MergePreview {
 
 /// Runs the merge in `conn`'s transaction. With no locked row, also writes
 /// the batch and marks the candidates merged, and returns the batch.
-fn plan(
+/// [`crate::checks`] runs it in a rolled-back transaction.
+pub(crate) fn plan(
     conn: &Connection,
     requests: &[MergeRequest],
 ) -> Result<(MergePreview, Option<ChangeBatchId>), Error> {

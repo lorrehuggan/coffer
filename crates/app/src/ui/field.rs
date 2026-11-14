@@ -155,8 +155,10 @@ impl SelectField {
         }
     }
 
-    /// Sets the value in Geist Mono at body size: a date format
-    /// (`DD/MM/YYYY`, the Import dialog's Format, Paper `5ZQ-0`).
+    /// Sets the value in Geist Mono, the hint staying in UI type: a date
+    /// format (`DD/MM/YYYY`, the Import dialog's Format, Paper `5ZQ-0`) or a
+    /// date ("31 Oct 2026 · latest passing check", the lock dialog, Paper
+    /// `9MQ-0`).
     pub fn mono(mut self, mono: bool) -> Self {
         self.mono = mono;
         self
@@ -237,13 +239,16 @@ impl RenderOnce for SelectField {
                     .min_w_0()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .text_role(if self.mono {
-                        typography::MONO_AMOUNT
-                    } else {
-                        typography::BODY
-                    })
+                    .text_role(typography::BODY)
                     .text_color(value_color)
-                    .child(self.value)
+                    .map(|this| {
+                        if self.mono {
+                            this.flex()
+                                .child(div().text_role(typography::MONO_AMOUNT).child(self.value))
+                        } else {
+                            this.child(self.value)
+                        }
+                    })
                     .when_some(self.hint, |this, hint| {
                         this.flex().child(
                             div()
